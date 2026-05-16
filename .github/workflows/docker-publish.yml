@@ -47,3 +47,25 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Update HelmRelease in fuzzlab
+        env:
+          PAT: ${{ secrets.PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "PAT is not set. Skipping fuzzlab update."
+            exit 0
+          fi
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          git clone https://oauth2:${PAT}@github.com/sepffuzzball/fuzzlab.git
+          cd fuzzlab
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Replace the first instance of 'tag: ...' or all if multiple, assuming one main image
+          sed -i -E "s/(tag: ).*/\1$SHORT_SHA/" kubernetes/apps/web/genrpg/dev/helmrelease.yaml
+          
+          git add kubernetes/apps/web/genrpg/dev/helmrelease.yaml
+          # Only commit and push if there are changes
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore(genrpg): update image tag to $SHORT_SHA" && git push)
+
