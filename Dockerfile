@@ -1,10 +1,21 @@
-FROM nginx:1.27-alpine
+FROM node:20-alpine
 
-COPY index.html /usr/share/nginx/html/
-COPY core /usr/share/nginx/html/core
-COPY packages /usr/share/nginx/html/packages
+WORKDIR /app
 
-EXPOSE 80
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY src ./src
+COPY public ./public
+COPY core ./core
+COPY packages ./packages
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://127.0.0.1/ || exit 1
+  CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
+
+CMD ["npm", "start"]

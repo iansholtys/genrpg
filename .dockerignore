@@ -1,5 +1,6 @@
 .git
 .github
 .dockerignore
-Dockerfile
 *.md
+node_modules
+npm-debug.log

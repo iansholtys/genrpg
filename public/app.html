@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GenRPG</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body class="app-shell">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">GenRPG</p>
+      <h1>Instances</h1>
+    </div>
+    <div class="user-panel">
+      <span id="userLabel">Signed in</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="secondary-button">Log out</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="instance-tools" aria-label="Create instance">
+      <form id="instanceForm" class="instance-form">
+        <label>
+          <span>Name</span>
+          <input name="name" required maxlength="120" autocomplete="off">
+        </label>
+        <label>
+          <span>Description</span>
+          <textarea name="description" rows="3" maxlength="600"></textarea>
+        </label>
+        <button type="submit">Create Instance</button>
+      </form>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <h2>Your instances</h2>
+        <span id="instanceCount"></span>
+      </div>
+      <div id="message" class="message" role="status"></div>
+      <div id="instances" class="instance-list"></div>
+    </section>
+  </main>
+</body>
+</html>
