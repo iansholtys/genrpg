@@ -1,0 +1,24 @@
+@media (max-width: 760px) {
+  .topbar,
+  .user-panel,
+  .instance-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topbar,
+  .user-panel,
+  .instance-card,
+  .instance-form {
+    display: grid;
+  }
+
+  .instance-form,
+  .instance-card {
+    grid-template-columns: 1fr;
+  }
+
+  dl {
+    grid-template-columns: 1fr;
+  }
+}

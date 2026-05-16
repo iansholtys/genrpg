@@ -1,0 +1,28 @@
+@use "variables" as *;
+
+.login-screen {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.login-panel {
+  width: min(100%, 28rem);
+  border: 1px solid var(--line);
+  border-radius: $radius;
+  background: $login-panel-bg;
+  padding: 2rem;
+  box-shadow: 0 1.25rem 3rem rgba(0, 0, 0, 0.35);
+
+  h1 {
+    margin: 0;
+    letter-spacing: 0;
+    font-size: 2rem;
+  }
+}
+
+.login-copy {
+  margin: 0.75rem 0 1.5rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
