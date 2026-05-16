@@ -360,6 +360,18 @@ genrpgApi.post("/packages/git/pull", requireAdmin, async (req, res, next) => {
       await execAsync(`git clone "${url}" "${targetDir}"`);
     }
     
+    const client = await pool.connect();
+    try {
+      await client.query(
+        `INSERT INTO packages (package, version) VALUES ($1, 0) ON CONFLICT DO NOTHING`,
+        [preview.machineName]
+      );
+    } finally {
+      client.release();
+    }
+    
+    await applyPackageUpdates(pool);
+    
     res.json({ success: true });
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to pull package" });
