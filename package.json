@@ -1,0 +1,21 @@
+{
+  "name": "genrpg",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GenRPG web application",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js"
+  },
+  "dependencies": {
+    "connect-pg-simple": "9.0.1",
+    "express": "^4.22.2",
+    "express-session": "^1.19.0",
+    "openid-client": "5.7.1",
+    "pg": "8.12.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,262 @@
+:root {
+  color-scheme: dark;
+  --bg: #121417;
+  --panel: #1a1f24;
+  --panel-strong: #20272e;
+  --line: #33404a;
+  --text: #f1f5f2;
+  --muted: #a9b5ad;
+  --accent: #65c18c;
+  --accent-strong: #8ccf5f;
+  --danger: #ff9b8d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(101, 193, 140, 0.16), transparent 32rem),
+    linear-gradient(135deg, #121417 0%, #171d20 52%, #141718 100%);
+  color: var(--text);
+}
+
+button,
+.login-button {
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #08120d;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+button:hover,
+.login-button:hover {
+  background: var(--accent-strong);
+}
+
+.secondary-button {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.secondary-button:hover {
+  background: var(--panel-strong);
+}
+
+.login-screen {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.login-panel {
+  width: min(100%, 28rem);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(26, 31, 36, 0.92);
+  padding: 2rem;
+  box-shadow: 0 1.25rem 3rem rgba(0, 0, 0, 0.35);
+}
+
+.login-panel h1,
+.topbar h1,
+.section-heading h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.login-panel h1 {
+  font-size: 2rem;
+}
+
+.login-copy,
+.empty-state,
+.message,
+.instance-card p,
+dt,
+.eyebrow,
+#instanceCount,
+#userLabel {
+  color: var(--muted);
+}
+
+.login-copy {
+  margin: 0.75rem 0 1.5rem;
+  line-height: 1.55;
+}
+
+.eyebrow {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  background: rgba(18, 20, 23, 0.88);
+}
+
+.topbar h1 {
+  font-size: 1.5rem;
+}
+
+.user-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.workspace {
+  width: min(70rem, 100%);
+  margin: 0 auto;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.instance-tools {
+  margin-bottom: 2rem;
+}
+
+.instance-form {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 2fr) auto;
+  align-items: end;
+  gap: 1rem;
+}
+
+label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  padding: 0.75rem;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.section-heading h2 {
+  font-size: 1.1rem;
+}
+
+.message {
+  min-height: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.message[data-tone="error"] {
+  color: var(--danger);
+}
+
+.message[data-tone="success"] {
+  color: var(--accent-strong);
+}
+
+.instance-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.instance-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(26, 31, 36, 0.88);
+  padding: 1rem;
+}
+
+.instance-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.instance-card p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 1rem;
+  margin: 0;
+}
+
+dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+dd {
+  margin: 0.15rem 0 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .topbar,
+  .user-panel,
+  .instance-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topbar,
+  .user-panel,
+  .instance-card,
+  .instance-form {
+    display: grid;
+  }
+
+  .instance-form,
+  .instance-card {
+    grid-template-columns: 1fr;
+  }
+
+  dl {
+    grid-template-columns: 1fr;
+  }
+}
