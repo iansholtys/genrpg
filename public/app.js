@@ -25,6 +25,13 @@ $(function () {
   let currentPreviewUrl = null;
   let instancesTable = null;
   let gitPackagesTable = null;
+  const packageNameByMachineName = new Map();
+
+  function formatInstancePackageLabels(packageNames) {
+    return (packageNames || [])
+      .map((machineName) => packageNameByMachineName.get(machineName) || machineName)
+      .join(", ") || "None";
+  }
 
   function setPreviewMessage(message, tone = "neutral") {
     elements.$packagePreviewMessage.text(message).attr("data-tone", tone);
@@ -74,7 +81,11 @@ $(function () {
 
     instancesTable = new Table({
       id: "instances-table",
-      rowCount: { show: true, noun: "instance" },
+      rowCount: {
+        show: true,
+        nounSingular: "instance",
+        nounPlural: "instances",
+      },
       searchPlaceholder: "Search instances…",
       defaultSort: { field: "name" },
       columns: [
@@ -89,7 +100,7 @@ $(function () {
           title: "Packages",
           field: "packageNames",
           sortable: false,
-          valueFunction: (instance) => (instance.packageNames || []).join(", ") || "None",
+          valueFunction: (instance) => formatInstancePackageLabels(instance.packageNames),
         },
         { title: "Permission" },
         {
@@ -101,10 +112,10 @@ $(function () {
         },
       ],
       emptyState: {
-        message: "No instances yet",
+        message: "No instances found",
         icon: "",
-        detailNoData: "Create an instance using the form above.",
-        detailFiltered: "Try a different search term.",
+        detailNoData: "You have not created any instances yet.",
+        detailFiltered: "No instances match your search.",
       },
     });
 
@@ -123,7 +134,11 @@ $(function () {
 
     gitPackagesTable = new Table({
       id: "git-packages-table",
-      rowCount: { show: true, noun: "package" },
+      rowCount: {
+        show: true,
+        nounSingular: "package",
+        nounPlural: "packages",
+      },
       searchPlaceholder: "Search installed packages…",
       defaultSort: { field: "name" },
       columns: [
@@ -150,10 +165,10 @@ $(function () {
         },
       ],
       emptyState: {
-        message: "No git packages installed",
+        message: "No packages found",
         icon: "",
-        detailNoData: "Install a package using the form above.",
-        detailFiltered: "Try a different search term.",
+        detailNoData: "No packages are installed yet.",
+        detailFiltered: "No matching installed packages.",
       },
     });
 
@@ -261,6 +276,10 @@ $(function () {
         elements.$managePackagesButton.prop("hidden", false);
       }
       elements.$userLabel.text(label);
+      packageNameByMachineName.clear();
+      for (const pkg of packages) {
+        packageNameByMachineName.set(pkg.machineName, pkg.name);
+      }
       renderPackages(packages);
       renderInstances(instances);
       setMessage("");
