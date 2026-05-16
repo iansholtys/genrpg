@@ -1,0 +1,31 @@
+@use "variables" as *;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, $accent-glow, transparent 32rem),
+    linear-gradient(135deg, #121417 0%, #171d20 52%, #141718 100%);
+  color: var(--text);
+}
+
+.eyebrow {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.empty-state,
+.message,
+dt,
+#instanceCount,
+#userLabel {
+  color: var(--muted);
+}

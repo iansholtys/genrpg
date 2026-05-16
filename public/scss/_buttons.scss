@@ -1,0 +1,32 @@
+@use "variables" as *;
+
+button,
+.login-button {
+  border: 0;
+  border-radius: $radius;
+  background: var(--accent);
+  color: $button-text;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+
+  &:hover {
+    background: var(--accent-strong);
+  }
+}
+
+.secondary-button {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+
+  &:hover {
+    background: var(--panel-strong);
+  }
+}

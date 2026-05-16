@@ -1,0 +1,28 @@
+@use "variables" as *;
+
+.package-tools {
+  margin-bottom: 2rem;
+}
+
+.package-list {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: $radius;
+  background: $panel-overlay;
+  padding: 1rem;
+}
+
+.package-option {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+
+  input {
+    width: auto;
+    margin: 0;
+  }
+}

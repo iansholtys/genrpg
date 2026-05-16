@@ -1,0 +1,71 @@
+@use "variables" as *;
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  background: $topbar-bg;
+
+  h1 {
+    margin: 0;
+    letter-spacing: 0;
+    font-size: 1.5rem;
+  }
+}
+
+.user-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.workspace {
+  width: min(70rem, 100%);
+  margin: 0 auto;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+
+  h2 {
+    margin: 0;
+    letter-spacing: 0;
+    font-size: 1.1rem;
+  }
+}
+
+.update-banner {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--line);
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  background: $banner-bg;
+  z-index: 10;
+
+  &[hidden] {
+    display: none;
+  }
+
+  p {
+    margin: 0;
+    color: var(--text);
+  }
+}

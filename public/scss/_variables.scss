@@ -1,0 +1,20 @@
+:root {
+  color-scheme: dark;
+  --bg: #121417;
+  --panel: #1a1f24;
+  --panel-strong: #20272e;
+  --line: #33404a;
+  --text: #f1f5f2;
+  --muted: #a9b5ad;
+  --accent: #65c18c;
+  --accent-strong: #8ccf5f;
+  --danger: #ff9b8d;
+}
+
+$radius: 8px;
+$panel-overlay: rgba(26, 31, 36, 0.88);
+$login-panel-bg: rgba(26, 31, 36, 0.92);
+$topbar-bg: rgba(18, 20, 23, 0.88);
+$banner-bg: rgba(18, 20, 23, 0.96);
+$accent-glow: rgba(101, 193, 140, 0.16);
+$button-text: #08120d;
