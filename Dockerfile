@@ -9,6 +9,7 @@ RUN npm ci --omit=dev
 
 COPY src ./src
 COPY public ./public
+RUN test -f public/components/reusable/table/table.js
 COPY genrpg ./genrpg
 COPY packages ./packages
 

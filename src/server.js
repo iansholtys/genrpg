@@ -247,13 +247,18 @@ app.post("/logout", (req, res, next) => {
   });
 });
 
-app.get("/static/:asset", (req, res) => {
-  if (!["app.js", "styles.css"].includes(req.params.asset)) {
-    res.status(404).send("Not found");
-    return;
-  }
+const publicDir = path.join(__dirname, "..", "public");
 
-  res.sendFile(path.join(__dirname, "..", "public", req.params.asset));
+app.use(
+  "/static/css",
+  express.static(path.join(publicDir, "css"), { index: false, fallthrough: false }),
+);
+app.use(
+  "/static/components",
+  express.static(path.join(publicDir, "components"), { index: false, fallthrough: false }),
+);
+app.get("/static/app.js", (req, res) => {
+  res.sendFile(path.join(publicDir, "app.js"));
 });
 app.use(ensureAuthenticated);
 

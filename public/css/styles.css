@@ -231,28 +231,19 @@ textarea {
   color: var(--accent-strong);
 }
 
-.instance-list {
-  display: grid;
-  gap: 0.75rem;
+#instances .table-component .table-filter,
+#gitPackagesList .table-component .table-filter {
+  margin-bottom: 0.75rem;
 }
-
-.instance-card {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(26, 31, 36, 0.88);
-  padding: 1rem;
+#instances .data-table .actions-cell,
+#gitPackagesList .data-table .actions-cell {
+  text-align: right;
+  white-space: nowrap;
 }
-.instance-card h3 {
-  margin: 0 0 0.35rem;
-  font-size: 1rem;
-}
-.instance-card p {
-  margin: 0;
-  line-height: 1.45;
+#instances .table-status-muted,
+#gitPackagesList .table-status-muted {
   color: var(--muted);
+  font-size: 0.9rem;
 }
 
 dl {
@@ -274,19 +265,16 @@ dd {
 
 @media (max-width: 760px) {
   .topbar,
-  .user-panel,
-  .instance-card {
+  .user-panel {
     align-items: stretch;
     flex-direction: column;
   }
   .topbar,
   .user-panel,
-  .instance-card,
   .instance-form {
     display: grid;
   }
-  .instance-form,
-  .instance-card {
+  .instance-form {
     grid-template-columns: 1fr;
   }
   dl {

@@ -1,0 +1,40 @@
+// Theme tokens for `.table-component` — aligned with GenRPG :root variables.
+
+.table-component {
+  --table-border: var(--line);
+  --table-card-bg: var(--panel);
+  --table-radius: 8px;
+
+  --table-text: var(--text);
+  --table-text-muted: var(--muted);
+
+  --table-filter-gap: 1rem;
+  --table-filter-margin-bottom: 1rem;
+  --table-filter-padding: 0.75rem 1rem;
+
+  --table-search-font-size: 0.9rem;
+  --table-search-width: 14rem;
+  --table-search-padding: 0.5rem 2rem 0.5rem 0.75rem;
+  --table-search-radius: 8px;
+  --table-search-clear-offset: 0.5rem;
+  --table-search-clear-font-size: 0.875rem;
+  --table-search-clear-padding: 0.25rem;
+  --table-search-clear-size: 1.25rem;
+
+  --table-empty-padding: 2.5rem;
+  --table-empty-icon-font-size: 3rem;
+  --table-empty-icon-margin-bottom: 0.75rem;
+  --table-empty-title-margin: 0 0 0.5rem;
+
+  --table-bg-header: var(--panel-strong);
+  --table-hover: rgba(32, 39, 46, 0.65);
+  --table-hover-header: rgba(32, 39, 46, 0.9);
+  --table-row-count-font-size: 0.85rem;
+  --table-font-size: 0.9rem;
+  --table-font-size-sm: 0.8rem;
+  --table-cell-padding: 0.75em 0.875em;
+  --table-cell-padding-sm: 0.5rem 0.375rem;
+  --table-cell-padding-xs: 0.375rem 0.25rem;
+  --table-sort-icon-margin-left: 0.5rem;
+  --table-sort-icon-font-size: 0.75rem;
+}

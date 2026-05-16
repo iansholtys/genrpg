@@ -4,13 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GenRPG</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/css/table-vars.css">
+  <link rel="stylesheet" href="/static/components/reusable/table/styles/table.css">
+  <link rel="stylesheet" href="/static/css/styles.css">
   <script
     src="https://code.jquery.com/jquery-3.7.1.min.js"
     integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
     crossorigin="anonymous"
     defer
   ></script>
+  <script src="/static/components/reusable/table/table.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body class="app-shell">
@@ -53,10 +56,9 @@
     <section>
       <div class="section-heading">
         <h2>Your instances</h2>
-        <span id="instanceCount"></span>
       </div>
       <div id="message" class="message" role="status"></div>
-      <div id="instances" class="instance-list"></div>
+      <div id="instances"></div>
     </section>
   </main>
 

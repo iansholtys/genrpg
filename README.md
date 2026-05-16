@@ -22,9 +22,28 @@ Optional OIDC settings:
 
 Admins can see all instances. Non-admin users only see instances where they have an `Owner`, `Editor`, or `Viewer` row in `instance_user_permissions`.
 
+## Reusable UI components
+
+Shared jQuery components live in a [git submodule](https://github.com/iansholtys/reusable-components) at `public/components/reusable`.
+
+After cloning this repository:
+
+```sh
+git submodule update --init --recursive
+```
+
+Or clone with submodules in one step:
+
+```sh
+git clone --recurse-submodules <repo-url>
+```
+
+You can also run `npm run submodules`. Docker builds expect the submodule to be checked out on the host before `docker build` (the `public/` copy includes those files).
+
 ## Run
 
 ```sh
+npm run submodules
 docker compose up --build
 ```
 

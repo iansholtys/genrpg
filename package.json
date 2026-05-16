@@ -7,9 +7,10 @@
   "scripts": {
     "start": "node src/server.js",
     "db:apply": "node src/db/versions.js",
-    "build:css": "sass public/scss/styles.scss public/styles.css --style=expanded --no-source-map",
-    "watch:css": "sass public/scss/styles.scss public/styles.css --watch --no-source-map",
-    "check": "node --check src/server.js && node --check src/db/pool.js && node --check src/db/versions.js && node --check src/packages.js && node --check src/updates.js"
+    "build:css": "sass public/scss/styles.scss public/css/styles.css --style=expanded --no-source-map && sass public/scss/_table-vars.scss public/css/table-vars.css --style=expanded --no-source-map",
+    "watch:css": "sass public/scss/styles.scss:public/css/styles.css public/scss/_table-vars.scss:public/css/table-vars.css --watch --no-source-map",
+    "check": "node --check src/server.js && node --check src/db/pool.js && node --check src/db/versions.js && node --check src/packages.js && node --check src/updates.js",
+    "submodules": "git submodule update --init --recursive"
   },
   "dependencies": {
     "connect-pg-simple": "9.0.1",

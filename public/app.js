@@ -3,7 +3,6 @@ $(function () {
     $instances: $("#instances"),
     $packageList: $("#packageList"),
     $message: $("#message"),
-    $instanceCount: $("#instanceCount"),
     $userLabel: $("#userLabel"),
     $instanceForm: $("#instanceForm"),
     $updateBanner: $("#updateBanner"),
@@ -24,6 +23,8 @@ $(function () {
 
   let currentUser = null;
   let currentPreviewUrl = null;
+  let instancesTable = null;
+  let gitPackagesTable = null;
 
   function setPreviewMessage(message, tone = "neutral") {
     elements.$packagePreviewMessage.text(message).attr("data-tone", tone);
@@ -66,42 +67,102 @@ $(function () {
     );
   }
 
-  function renderInstances(instances) {
-    elements.$instanceCount.text(`${instances.length} total`);
-
-    if (!instances.length) {
-      elements.$instances.html('<p class="empty-state">No instances yet.</p>');
-      return;
+  function ensureInstancesTable() {
+    if (instancesTable) {
+      return instancesTable;
     }
 
-    elements.$instances.html(
-      instances
-        .map(
-          (instance) => `
-        <article class="instance-card">
-          <div>
-            <h3>${escapeHtml(instance.name)}</h3>
-            <p>${escapeHtml(instance.description || "No description")}</p>
-          </div>
-          <dl>
-            <div>
-              <dt>Packages</dt>
-              <dd>${escapeHtml((instance.packageNames || []).join(", ") || "None")}</dd>
-            </div>
-            <div>
-              <dt>Permission</dt>
-              <dd>${escapeHtml(instance.permission)}</dd>
-            </div>
-            <div>
-              <dt>Updated</dt>
-              <dd>${formatDate(instance.update_datetime)}</dd>
-            </div>
-          </dl>
-        </article>
-      `,
-        )
-        .join(""),
-    );
+    instancesTable = new Table({
+      id: "instances-table",
+      rowCount: { show: true, noun: "instance" },
+      searchPlaceholder: "Search instances…",
+      defaultSort: { field: "name" },
+      columns: [
+        { title: "Name", searchable: true },
+        {
+          title: "Description",
+          searchable: true,
+          valueFunction: (instance) => instance.description || "",
+          renderFunction: (value) => escapeHtml(value || "No description"),
+        },
+        {
+          title: "Packages",
+          field: "packageNames",
+          sortable: false,
+          valueFunction: (instance) => (instance.packageNames || []).join(", ") || "None",
+        },
+        { title: "Permission" },
+        {
+          title: "Updated",
+          field: "update_datetime",
+          renderFunction: (value) => formatDate(value),
+          sortFunction: (a, b) =>
+            new Date(a.update_datetime).getTime() - new Date(b.update_datetime).getTime(),
+        },
+      ],
+      emptyState: {
+        message: "No instances yet",
+        icon: "",
+        detailNoData: "Create an instance using the form above.",
+        detailFiltered: "Try a different search term.",
+      },
+    });
+
+    elements.$instances.empty().append(instancesTable.init());
+    return instancesTable;
+  }
+
+  function renderInstances(instances) {
+    ensureInstancesTable().setData(instances);
+  }
+
+  function ensureGitPackagesTable() {
+    if (gitPackagesTable) {
+      return gitPackagesTable;
+    }
+
+    gitPackagesTable = new Table({
+      id: "git-packages-table",
+      rowCount: { show: true, noun: "package" },
+      searchPlaceholder: "Search installed packages…",
+      defaultSort: { field: "name" },
+      columns: [
+        { title: "Name", searchable: true },
+        { title: "Repository", field: "url", searchable: true },
+        { title: "Local Version" },
+        { title: "Remote Version" },
+        {
+          title: "Actions",
+          sortable: false,
+          headerClass: "actions-cell",
+          cellClass: "actions-cell",
+          renderFunction: (_value, pkg) => {
+            if (pkg.canUpdate) {
+              return $("<button>", {
+                type: "button",
+                class: "primary-button update-git-pkg-btn",
+                text: "Update",
+              }).attr("data-url", pkg.url);
+            }
+
+            return $("<span>", { class: "table-status-muted", text: "Up to date" });
+          },
+        },
+      ],
+      emptyState: {
+        message: "No git packages installed",
+        icon: "",
+        detailNoData: "Install a package using the form above.",
+        detailFiltered: "Try a different search term.",
+      },
+    });
+
+    elements.$gitPackagesList.empty().append(gitPackagesTable.init());
+    return gitPackagesTable;
+  }
+
+  function renderGitPackages(statuses) {
+    ensureGitPackagesTable().setData(statuses);
   }
 
   function escapeHtml(value) {
@@ -210,41 +271,15 @@ $(function () {
   }
 
   async function loadGitPackages() {
-    elements.$gitPackagesList.html('<p class="empty-state">Loading installed packages...</p>');
+    if (!gitPackagesTable) {
+      elements.$gitPackagesList.html('<p class="empty-state">Loading installed packages...</p>');
+    }
 
     try {
       const data = await requestJson("/api/genrpg/packages/git/status");
-      if (!data.statuses || data.statuses.length === 0) {
-        elements.$gitPackagesList.html('<p class="empty-state">No git packages installed.</p>');
-        return;
-      }
-
-      elements.$gitPackagesList.html(
-        data.statuses
-          .map(
-            (pkg) => `
-      <article class="instance-card" style="margin-bottom: 1rem;">
-        <div>
-          <h3>${escapeHtml(pkg.name)}</h3>
-          <p>${escapeHtml(pkg.url)}</p>
-        </div>
-        <dl>
-          <div><dt>Local</dt><dd>${escapeHtml(pkg.localVersion)}</dd></div>
-          <div><dt>Remote</dt><dd>${escapeHtml(pkg.remoteVersion)}</dd></div>
-          <div>
-            ${
-              pkg.canUpdate
-                ? `<button type="button" class="primary-button update-git-pkg-btn" data-url="${escapeHtml(pkg.url)}">Update</button>`
-                : "<span>Up to date</span>"
-            }
-          </div>
-        </dl>
-      </article>
-    `,
-          )
-          .join(""),
-      );
+      renderGitPackages(data?.statuses || []);
     } catch (err) {
+      gitPackagesTable = null;
       elements.$gitPackagesList.html(
         `<p class="empty-state">Failed to load packages: ${escapeHtml(err.message)}</p>`,
       );
