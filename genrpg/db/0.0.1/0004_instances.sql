@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS instances (
   guid uuid PRIMARY KEY,
   name text NOT NULL,
   description text NOT NULL DEFAULT '',
+  packages text NOT NULL DEFAULT 'genrpg',
   create_datetime timestamptz NOT NULL DEFAULT now(),
   update_datetime timestamptz NOT NULL DEFAULT now()
 );

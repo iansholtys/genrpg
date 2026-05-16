@@ -8,6 +8,13 @@ const { Issuer, generators } = require("openid-client");
 
 const { pool } = require("./db/pool");
 const { applySchemaVersions } = require("./db/versions");
+const {
+  PackageLoadError,
+  loadPackages,
+  parsePackageCsv,
+  validatePackageSelection,
+} = require("./packages");
+const { PackageUpdateError, applyPackageUpdates, checkPackageUpdates } = require("./updates");
 
 const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-in-production";
@@ -61,6 +68,15 @@ function getRedirectUri(req) {
   if (OIDC_REDIRECT_URI) return OIDC_REDIRECT_URI;
   const baseUrl = APP_BASE_URL || `${req.protocol}://${req.get("host")}`;
   return new URL("/auth/callback", baseUrl).toString();
+}
+
+function requireAdmin(req, res, next) {
+  if (req.session.user?.admin) {
+    next();
+    return;
+  }
+
+  res.status(403).json({ error: "Admin access required" });
 }
 
 function ensureAuthenticated(req, res, next) {
@@ -233,11 +249,44 @@ app.get("/static/:asset", (req, res) => {
 });
 app.use(ensureAuthenticated);
 
-app.get("/api/me", (req, res) => {
+const genrpgApi = express.Router();
+
+genrpgApi.get("/me", (req, res) => {
   res.json({ user: req.session.user });
 });
 
-app.get("/api/instances", async (req, res, next) => {
+genrpgApi.get("/packages", async (req, res, next) => {
+  try {
+    res.json(await loadPackages());
+  } catch (error) {
+    if (error instanceof PackageLoadError) {
+      res.status(error.status).json({ error: error.message, details: error.details });
+      return;
+    }
+
+    next(error);
+  }
+});
+
+genrpgApi.post("/update", requireAdmin, async (req, res, next) => {
+  try {
+    if (req.body?.update === true) {
+      res.json(await applyPackageUpdates(pool));
+      return;
+    }
+
+    res.json(await checkPackageUpdates(pool));
+  } catch (error) {
+    if (error instanceof PackageUpdateError) {
+      res.status(error.status).json({ error: error.message, details: error.details });
+      return;
+    }
+
+    next(error);
+  }
+});
+
+genrpgApi.get("/instances", async (req, res, next) => {
   try {
     const user = req.session.user;
     const result = await pool.query(
@@ -246,6 +295,7 @@ app.get("/api/instances", async (req, res, next) => {
           i.guid,
           i.name,
           i.description,
+          i.packages,
           i.create_datetime,
           i.update_datetime,
           CASE
@@ -262,20 +312,38 @@ app.get("/api/instances", async (req, res, next) => {
       [user.guid, user.admin],
     );
 
-    res.json({ instances: result.rows });
+    res.json({
+      instances: result.rows.map((instance) => ({
+        ...instance,
+        packageNames: parsePackageCsv(instance.packages),
+      })),
+    });
   } catch (error) {
     next(error);
   }
 });
 
-app.post("/api/instances", async (req, res, next) => {
+genrpgApi.post("/instances", async (req, res, next) => {
   try {
     const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
     const description =
       typeof req.body.description === "string" ? req.body.description.trim() : "";
+    const selectedPackages = Array.isArray(req.body.packages) ? req.body.packages : null;
 
     if (!name) {
       res.status(400).json({ error: "Instance name is required" });
+      return;
+    }
+
+    if (!selectedPackages) {
+      res.status(400).json({ error: "Packages are required" });
+      return;
+    }
+
+    const { packages } = await loadPackages();
+    const packageSelection = validatePackageSelection(selectedPackages, packages);
+    if (!packageSelection.valid) {
+      res.status(400).json({ error: "Invalid package selection", details: packageSelection.details });
       return;
     }
 
@@ -286,11 +354,11 @@ app.post("/api/instances", async (req, res, next) => {
       await client.query("BEGIN");
       const instance = await client.query(
         `
-          INSERT INTO instances (guid, name, description)
-          VALUES ($1, $2, $3)
-          RETURNING guid, name, description, create_datetime, update_datetime
+          INSERT INTO instances (guid, name, description, packages)
+          VALUES ($1, $2, $3, $4)
+          RETURNING guid, name, description, packages, create_datetime, update_datetime
         `,
-        [instanceGuid, name, description],
+        [instanceGuid, name, description, packageSelection.packageCsv],
       );
 
       if (!req.session.user.admin) {
@@ -307,6 +375,7 @@ app.post("/api/instances", async (req, res, next) => {
       res.status(201).json({
         instance: {
           ...instance.rows[0],
+          packageNames: parsePackageCsv(instance.rows[0].packages),
           permission: req.session.user.admin ? "Admin" : "Owner",
         },
       });
@@ -317,9 +386,16 @@ app.post("/api/instances", async (req, res, next) => {
       client.release();
     }
   } catch (error) {
+    if (error instanceof PackageLoadError) {
+      res.status(error.status).json({ error: error.message, details: error.details });
+      return;
+    }
+
     next(error);
   }
 });
+
+app.use("/api/genrpg", genrpgApi);
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "..", "public", "app.html"));

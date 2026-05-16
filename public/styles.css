@@ -136,6 +136,57 @@ dt,
   padding: clamp(1rem, 4vw, 3rem);
 }
 
+.package-tools {
+  margin-bottom: 2rem;
+}
+
+.package-list {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(26, 31, 36, 0.88);
+  padding: 1rem;
+}
+
+.package-option {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.package-option input {
+  width: auto;
+  margin: 0;
+}
+
+.update-banner {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--line);
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  background: rgba(18, 20, 23, 0.96);
+  z-index: 10;
+}
+
+.update-banner[hidden] {
+  display: none;
+}
+
+.update-banner p {
+  margin: 0;
+  color: var(--text);
+}
+
 .instance-tools {
   margin-bottom: 2rem;
 }

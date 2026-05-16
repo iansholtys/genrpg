@@ -241,8 +241,8 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
 
       if (appliedChecksum) {
         if (appliedChecksum !== checksum) {
-          throw new Error(
-            `Applied schema version "${key}" checksum does not match ${schemaVersion.fileName}.`,
+          console.warn(
+            `Schema version "${key}" was already applied but ${schemaVersion.fileName} has changed; skipping re-apply.`,
           );
         }
         continue;

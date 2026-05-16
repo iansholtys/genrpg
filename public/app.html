@@ -22,6 +22,13 @@
   </header>
 
   <main class="workspace">
+    <section class="package-tools" aria-label="Packages">
+      <div class="section-heading">
+        <h2>Packages</h2>
+      </div>
+      <div id="packageList" class="package-list" role="group" aria-label="Enabled packages"></div>
+    </section>
+
     <section class="instance-tools" aria-label="Create instance">
       <form id="instanceForm" class="instance-form">
         <label>
@@ -45,5 +52,10 @@
       <div id="instances" class="instance-list"></div>
     </section>
   </main>
+
+  <aside id="updateBanner" class="update-banner" hidden>
+    <p>Database package updates are available.</p>
+    <button type="button" id="applyUpdatesButton">Update</button>
+  </aside>
 </body>
 </html>
