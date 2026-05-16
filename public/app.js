@@ -6,8 +6,21 @@ const userLabel = document.querySelector("#userLabel");
 const form = document.querySelector("#instanceForm");
 const updateBanner = document.querySelector("#updateBanner");
 const applyUpdatesButton = document.querySelector("#applyUpdatesButton");
+const managePackagesButton = document.querySelector("#managePackagesButton");
+const packageModal = document.querySelector("#packageModal");
+const closePackageModal = document.querySelector("#closePackageModal");
+const packagePreviewForm = document.querySelector("#packagePreviewForm");
+const packagePreviewResult = document.querySelector("#packagePreviewResult");
+const pullPackageButton = document.querySelector("#pullPackageButton");
+const packagePreviewMessage = document.querySelector("#packagePreviewMessage");
 
 let currentUser = null;
+let currentPreviewUrl = null;
+
+function setPreviewMessage(message, tone = "neutral") {
+  packagePreviewMessage.textContent = message;
+  packagePreviewMessage.dataset.tone = tone;
+}
 
 function setMessage(message, tone = "neutral") {
   messageElement.textContent = message;
@@ -167,7 +180,10 @@ async function load() {
 
     currentUser = user;
     userLabel.textContent = user.email || user.displayName || "Signed in";
-    if (user.admin) userLabel.textContent += " (admin)";
+    if (user.admin) {
+      userLabel.textContent += " (admin)";
+      managePackagesButton.hidden = false;
+    }
     renderPackages(packages);
     renderInstances(instances);
     setMessage("");
@@ -205,5 +221,82 @@ form.addEventListener("submit", async (event) => {
 });
 
 applyUpdatesButton.addEventListener("click", applyUpdates);
+
+managePackagesButton.addEventListener("click", () => {
+  packageModal.showModal();
+});
+
+closePackageModal.addEventListener("click", () => {
+  packageModal.close();
+});
+
+packagePreviewForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const formData = new FormData(packagePreviewForm);
+  const repoUrl = formData.get("repoUrl");
+
+  const submitButton = packagePreviewForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  setPreviewMessage("Previewing...", "neutral");
+  packagePreviewResult.hidden = true;
+
+  try {
+    const data = await requestJson("/api/genrpg/packages/git/preview", {
+      method: "POST",
+      body: JSON.stringify({ url: repoUrl }),
+    });
+
+    document.querySelector("#previewName").textContent = data.name;
+    document.querySelector("#previewMachineName").textContent = data.machineName;
+    document.querySelector("#previewRemoteVersion").textContent = data.remoteVersion;
+    document.querySelector("#previewLocalVersion").textContent = data.localVersion || "Not installed";
+    
+    if (data.isNew) {
+      pullPackageButton.textContent = "Install Package";
+      setPreviewMessage("This package is not currently installed.", "neutral");
+    } else if (data.canUpdate) {
+      pullPackageButton.textContent = "Update Package";
+      setPreviewMessage("An update is available for this package.", "success");
+    } else {
+      pullPackageButton.textContent = "Reinstall Package";
+      setPreviewMessage("This package is up to date.", "neutral");
+    }
+
+    currentPreviewUrl = repoUrl;
+    packagePreviewResult.hidden = false;
+  } catch (error) {
+    setPreviewMessage(error.message, "error");
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
+pullPackageButton.addEventListener("click", async () => {
+  if (!currentPreviewUrl) return;
+
+  pullPackageButton.disabled = true;
+  setPreviewMessage("Pulling package...", "neutral");
+
+  try {
+    await requestJson("/api/genrpg/packages/git/pull", {
+      method: "POST",
+      body: JSON.stringify({ url: currentPreviewUrl }),
+    });
+
+    setPreviewMessage("Package pulled successfully.", "success");
+    packagePreviewForm.reset();
+    currentPreviewUrl = null;
+    
+    setTimeout(() => {
+      packageModal.close();
+      packagePreviewResult.hidden = true;
+      load();
+    }, 1500);
+  } catch (error) {
+    setPreviewMessage(error.message, "error");
+  } finally {
+    pullPackageButton.disabled = false;
+  }
+});
 
 load();

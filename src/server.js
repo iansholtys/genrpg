@@ -1,5 +1,13 @@
 const crypto = require("node:crypto");
 const path = require("node:path");
+const os = require("node:os");
+const { exec } = require("node:child_process");
+const { promisify } = require("node:util");
+const fs = require("node:fs/promises");
+const yaml = require("yaml");
+const semver = require("semver");
+
+const execAsync = promisify(exec);
 
 const express = require("express");
 const session = require("express-session");
@@ -265,6 +273,96 @@ genrpgApi.get("/packages", async (req, res, next) => {
     }
 
     next(error);
+  }
+});
+
+async function previewGitPackage(url) {
+  const tmpDir = path.join(os.tmpdir(), "genrpg-pkg-" + crypto.randomUUID());
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    await execAsync(`git clone --depth 1 "${url}" "${tmpDir}"`);
+    
+    const files = await fs.readdir(tmpDir);
+    const manifestFile = files.find(f => f.endsWith(".package.yml") || f.endsWith(".package.yaml"));
+    
+    if (!manifestFile) {
+      throw new Error("No *.package.yml or *.package.yaml found in the repository root.");
+    }
+    
+    const manifestContent = await fs.readFile(path.join(tmpDir, manifestFile), "utf8");
+    const raw = yaml.parse(manifestContent);
+    
+    if (!raw.name || !raw.machine_name || !raw.version) {
+      throw new Error("Manifest is missing name, machine_name, or version.");
+    }
+    
+    return {
+      name: raw.name,
+      machineName: raw.machine_name,
+      remoteVersion: raw.version,
+    };
+  } finally {
+    try {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    } catch (e) {
+      console.error("Failed to clean up tmp dir", e);
+    }
+  }
+}
+
+genrpgApi.post("/packages/git/preview", requireAdmin, async (req, res, next) => {
+  try {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: "Repository URL is required" });
+    }
+    
+    const preview = await previewGitPackage(url);
+    
+    const { packages } = await loadPackages();
+    const localPkg = packages.find(p => p.machineName === preview.machineName);
+    
+    const localVersion = localPkg ? localPkg.version : null;
+    const isNew = !localVersion;
+    const canUpdate = localVersion && semver.valid(preview.remoteVersion) && semver.valid(localVersion) 
+                      ? semver.gt(preview.remoteVersion, localVersion) 
+                      : false;
+    
+    res.json({
+      ...preview,
+      localVersion,
+      isNew,
+      canUpdate
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to preview package" });
+  }
+});
+
+genrpgApi.post("/packages/git/pull", requireAdmin, async (req, res, next) => {
+  try {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: "Repository URL is required" });
+    }
+    
+    const preview = await previewGitPackage(url);
+    const targetDir = path.join(__dirname, "..", "packages", preview.machineName);
+    
+    try {
+      await fs.access(targetDir);
+      // Exists. Pull updates.
+      await execAsync(`git remote set-url origin "${url}"`, { cwd: targetDir });
+      await execAsync(`git pull`, { cwd: targetDir });
+    } catch {
+      // Doesn't exist. Clone.
+      await execAsync(`git clone "${url}" "${targetDir}"`);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to pull package" });
   }
 });
 
