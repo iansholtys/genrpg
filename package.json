@@ -6,7 +6,8 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js"
+    "db:apply": "node src/db/versions.js",
+    "check": "node --check src/server.js && node --check src/db/pool.js && node --check src/db/versions.js"
   },
   "dependencies": {
     "connect-pg-simple": "9.0.1",

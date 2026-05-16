@@ -7,7 +7,7 @@ RUN npm ci --omit=dev
 
 COPY src ./src
 COPY public ./public
-COPY core ./core
+COPY genrpg ./genrpg
 COPY packages ./packages
 
 ENV NODE_ENV=production

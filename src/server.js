@@ -5,7 +5,9 @@ const express = require("express");
 const session = require("express-session");
 const PgSession = require("connect-pg-simple")(session);
 const { Issuer, generators } = require("openid-client");
-const { Pool } = require("pg");
+
+const { pool } = require("./db/pool");
+const { applySchemaVersions } = require("./db/versions");
 
 const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-in-production";
@@ -21,16 +23,6 @@ const ADMIN_EMAILS = new Set(
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean),
 );
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  host: process.env.PGHOST,
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
-  database: process.env.PGDATABASE,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-  ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : undefined,
-});
 
 let oidcClientPromise;
 
@@ -48,65 +40,6 @@ function requireConfig() {
   if (missing.length) {
     throw new Error(`Missing required configuration: ${missing.join(", ")}`);
   }
-}
-
-async function initializeDatabase() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      guid uuid PRIMARY KEY,
-      oidc_issuer text NOT NULL,
-      oidc_subject text NOT NULL,
-      email text,
-      display_name text,
-      admin boolean NOT NULL DEFAULT false,
-      create_datetime timestamptz NOT NULL DEFAULT now(),
-      update_datetime timestamptz NOT NULL DEFAULT now(),
-      UNIQUE (oidc_issuer, oidc_subject)
-    );
-
-    CREATE TABLE IF NOT EXISTS instances (
-      guid uuid PRIMARY KEY,
-      name text NOT NULL,
-      description text NOT NULL DEFAULT '',
-      create_datetime timestamptz NOT NULL DEFAULT now(),
-      update_datetime timestamptz NOT NULL DEFAULT now()
-    );
-
-    CREATE TABLE IF NOT EXISTS instance_user_permissions (
-      instance_guid uuid NOT NULL REFERENCES instances(guid) ON DELETE CASCADE,
-      user_guid uuid NOT NULL REFERENCES users(guid) ON DELETE CASCADE,
-      permission text NOT NULL CHECK (permission IN ('Owner', 'Editor', 'Viewer')),
-      create_datetime timestamptz NOT NULL DEFAULT now(),
-      update_datetime timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (instance_guid, user_guid)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_instance_user_permissions_user
-      ON instance_user_permissions(user_guid);
-
-    CREATE OR REPLACE FUNCTION set_update_datetime()
-    RETURNS trigger AS $$
-    BEGIN
-      NEW.update_datetime = now();
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-
-    DROP TRIGGER IF EXISTS users_update_datetime ON users;
-    CREATE TRIGGER users_update_datetime
-      BEFORE UPDATE ON users
-      FOR EACH ROW EXECUTE FUNCTION set_update_datetime();
-
-    DROP TRIGGER IF EXISTS instances_update_datetime ON instances;
-    CREATE TRIGGER instances_update_datetime
-      BEFORE UPDATE ON instances
-      FOR EACH ROW EXECUTE FUNCTION set_update_datetime();
-
-    DROP TRIGGER IF EXISTS instance_user_permissions_update_datetime ON instance_user_permissions;
-    CREATE TRIGGER instance_user_permissions_update_datetime
-      BEFORE UPDATE ON instance_user_permissions
-      FOR EACH ROW EXECUTE FUNCTION set_update_datetime();
-  `);
 }
 
 async function getOidcClient(req) {
@@ -189,7 +122,7 @@ app.use(
     store: new PgSession({
       pool,
       tableName: "session",
-      createTableIfMissing: true,
+      createTableIfMissing: false,
     }),
     name: "genrpg.sid",
     secret: SESSION_SECRET,
@@ -419,7 +352,10 @@ app.use((error, req, res, next) => {
 
 async function main() {
   requireConfig();
-  await initializeDatabase();
+  const { applied } = await applySchemaVersions({ pool });
+  if (applied.length) {
+    console.log(`Applied database schema versions: ${applied.join(", ")}`);
+  }
   app.listen(PORT, () => {
     console.log(`GenRPG listening on port ${PORT}`);
   });
