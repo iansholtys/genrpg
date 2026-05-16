@@ -136,7 +136,7 @@ $(function () {
   }
 
   function getSelectedPackages() {
-    return elements.$instanceForm
+    return elements.$packageList
       .find('input[name="package"]:checked')
       .map(function () {
         return this.value;
