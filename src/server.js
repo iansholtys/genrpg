@@ -311,6 +311,64 @@ async function previewGitPackage(url) {
   }
 }
 
+genrpgApi.get("/packages/git/status", requireAdmin, async (req, res, next) => {
+  try {
+    const { packages } = await loadPackages();
+    const statuses = [];
+
+    for (const pkg of packages) {
+      if (pkg.machineName === "genrpg") continue;
+
+      const pkgPath = path.join(__dirname, "..", pkg.path);
+      try {
+        await fs.access(path.join(pkgPath, ".git"));
+      } catch {
+        continue; // Not a git repository
+      }
+
+      try {
+        const { stdout: urlStdout } = await execAsync(`git remote get-url origin`, { cwd: pkgPath });
+        const url = urlStdout.trim();
+
+        await execAsync(`git fetch origin`, { cwd: pkgPath });
+        
+        let branchRef = "origin/main";
+        try {
+          const { stdout: refStdout } = await execAsync(`git rev-parse --abbrev-ref origin/HEAD`, { cwd: pkgPath });
+          if (refStdout.trim()) {
+            branchRef = refStdout.trim();
+          }
+        } catch {
+          // fallback to origin/main
+        }
+
+        const { stdout: manifestContent } = await execAsync(`git show ${branchRef}:${pkg.machineName}.package.yml`, { cwd: pkgPath });
+        const raw = yaml.parse(manifestContent);
+        const remoteVersion = raw.version || "0.0.0";
+
+        const canUpdate = semver.valid(remoteVersion) && semver.valid(pkg.version) 
+                          ? semver.gt(remoteVersion, pkg.version) 
+                          : false;
+
+        statuses.push({
+          name: pkg.name,
+          machineName: pkg.machineName,
+          localVersion: pkg.version,
+          remoteVersion,
+          url,
+          canUpdate
+        });
+      } catch (err) {
+        console.error(`Failed to get git status for ${pkg.machineName}:`, err);
+      }
+    }
+
+    res.json({ statuses });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to fetch git statuses" });
+  }
+});
+
 genrpgApi.post("/packages/git/preview", requireAdmin, async (req, res, next) => {
   try {
     const { url } = req.body;

@@ -73,9 +73,18 @@
           </label>
           <button type="submit" id="previewPackageButton">Preview Package</button>
         </form>
+        
+        <div id="installedGitPackages" class="installed-packages-section">
+          <hr>
+          <h3>Installed Git Packages</h3>
+          <div id="gitPackagesList" class="git-packages-list" role="list">
+            <p class="empty-state">Loading installed packages...</p>
+          </div>
+        </div>
+
         <div id="packagePreviewResult" hidden>
           <hr>
-          <h3>Package Details</h3>
+          <h3>Package Preview</h3>
           <dl>
             <div><dt>Name</dt><dd id="previewName"></dd></div>
             <div><dt>Machine Name</dt><dd id="previewMachineName"></dd></div>

@@ -13,6 +13,7 @@ const packagePreviewForm = document.querySelector("#packagePreviewForm");
 const packagePreviewResult = document.querySelector("#packagePreviewResult");
 const pullPackageButton = document.querySelector("#pullPackageButton");
 const packagePreviewMessage = document.querySelector("#packagePreviewMessage");
+const gitPackagesList = document.querySelector("#gitPackagesList");
 
 let currentUser = null;
 let currentPreviewUrl = null;
@@ -222,8 +223,65 @@ form.addEventListener("submit", async (event) => {
 
 applyUpdatesButton.addEventListener("click", applyUpdates);
 
+async function loadGitPackages() {
+  gitPackagesList.innerHTML = '<p class="empty-state">Loading installed packages...</p>';
+  try {
+    const data = await requestJson("/api/genrpg/packages/git/status");
+    if (!data.statuses || data.statuses.length === 0) {
+      gitPackagesList.innerHTML = '<p class="empty-state">No git packages installed.</p>';
+      return;
+    }
+
+    gitPackagesList.innerHTML = data.statuses.map(pkg => `
+      <article class="instance-card" style="margin-bottom: 1rem;">
+        <div>
+          <h3>${escapeHtml(pkg.name)}</h3>
+          <p>${escapeHtml(pkg.url)}</p>
+        </div>
+        <dl>
+          <div><dt>Local</dt><dd>${escapeHtml(pkg.localVersion)}</dd></div>
+          <div><dt>Remote</dt><dd>${escapeHtml(pkg.remoteVersion)}</dd></div>
+          <div>
+            ${pkg.canUpdate 
+              ? `<button type="button" class="primary-button update-git-pkg-btn" data-url="${escapeHtml(pkg.url)}">Update</button>`
+              : `<span>Up to date</span>`
+            }
+          </div>
+        </dl>
+      </article>
+    `).join("");
+
+    gitPackagesList.querySelectorAll(".update-git-pkg-btn").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        const url = e.target.dataset.url;
+        e.target.disabled = true;
+        e.target.textContent = "Updating...";
+        
+        try {
+          await requestJson("/api/genrpg/packages/git/pull", {
+            method: "POST",
+            body: JSON.stringify({ url }),
+          });
+          e.target.textContent = "Updated!";
+          setTimeout(() => {
+            loadGitPackages();
+            load();
+          }, 1000);
+        } catch (error) {
+          e.target.disabled = false;
+          e.target.textContent = "Error";
+          alert("Failed to update: " + error.message);
+        }
+      });
+    });
+  } catch (err) {
+    gitPackagesList.innerHTML = `<p class="empty-state">Failed to load packages: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
 managePackagesButton.addEventListener("click", () => {
   packageModal.showModal();
+  loadGitPackages();
 });
 
 closePackageModal.addEventListener("click", () => {
