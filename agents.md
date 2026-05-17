@@ -1,23 +1,23 @@
 # GenRPG Architecture & Agent Guide
 
-Welcome to the `genrpg` repository! This document provides essential context and architectural details for AI coding agents working on this project. 
+This document provides essential context and architectural details for AI coding agents working on this project.
 
 ## Tech Stack Overview
 - **Backend Environment:** Node.js (v20+)
 - **Web Framework:** Express.js
 - **Database:** PostgreSQL (with `pg` and `connect-pg-simple` for session management)
-- **Styling:** SCSS compiled to Vanilla CSS
+- **Styling:** SCSS compiled to CSS
 - **Authentication:** OpenID Connect (`openid-client`)
-- **Package/Module System:** Git-based packages
 
 ## Repository Structure & Core Systems
 
-### 1. The Package System (Extensibility)
-GenRPG is designed to be highly extensible. Core functionality exists in the main repository, but additional features and systems are pulled down as separate Git repositories into the `packages/` directory.
+### 1. Extensibility (Package system)
+GenRPG is highly extensible. The main repository includes core functionality such as auth and database storage, with additional features and systems provided by separate Git repositories in the `packages/` directory.
+
 - **Location:** `packages/<package-name>/`
-- **Mechanism:** The backend endpoints clone/pull git repositories into this directory.
-- **Metadata:** Each package defines a `*.package.yml` file which contains its metadata. `src/packages.js` and `src/updates.js` are responsible for managing these packages, extracting metadata, and comparing semantic versions to apply updates.
-- **Important:** When adding features that are meant to be modular, consider if they belong in a separate package repository rather than the core GenRPG repo.
+- **Mechanism:** GenRPG clones/pulls git repositories into this directory.
+- **Dependencies:** Packages can build on the functionality of other packages. To ensure a Package is available, it can be listed as a requirement, including a semantic version.
+- **Metadata:** Each package defines a `*.package.yml` file which contains its metadata, including version and requirements. `src/packages.js` and `src/updates.js` manage these packages, extract metadata, compare semantic versions and apply updates.
 
 ### 2. Database & Updates
 Use **PostgreSQL**
@@ -31,8 +31,11 @@ Use **PostgreSQL**
   - Package schema: `<machine-name>.*` - Do not use the `public` schema for package schema, rather use the `<machine-name>` schema which matches the package's `machine_name`.
 
 ### 3. Styling (SCSS to CSS)
-We use compiled SCSS for styling to maintain a modern, rich aesthetic.
-- **Location:** Source files are in `public/scss/`. Compiled output goes to `public/css/`.
+Styling is written in SCSS for brevity and consistency before being compiled into CSS.
+
+- **Location:** GenRPG core and Packages can use their own conventions with how they store SCSS and CSS files.
+  - For GenRPG, global styling is usually stored in `public/scss/` and `public/css`.
+  - For Packages, it is common to have separate directories for each UI component, each containing the JS, SCSS and CSS for that component.
 - **Workflow:** When modifying styles, **always edit the `.scss` files**. Do not directly edit the generated `.css` files.
 - **Commands:**
   - Build CSS: `npm run build:css`
@@ -45,9 +48,10 @@ We use compiled SCSS for styling to maintain a modern, rich aesthetic.
 - Environment variables are managed via `.env` (see `.env.example`).
 
 ## Guidelines for AI Agents
-1. **Understand the Package Boundary:** Make sure you know whether the code you are modifying belongs to the core GenRPG system (`src/`) or a specific package.
-2. **Follow SCSS Workflows:** If asked to update styles, locate the corresponding `public/scss/` file, make changes, and remind the user to run `npm run build:css` or `npm run watch:css`.
+
+1. **Understand the Package Boundary:** Make sure you know whether the code you are modifying belongs to the core GenRPG system (`src/`) or a specific Package.
+2. **Follow SCSS Workflows:** If asked to update styles, locate the corresponding SCSS file(s), make changes, and run `npm run build:css`.
 3. **Database Changes:** The `db/*.sql` files define database changes (creating/modifying tables, etc.) needed for a fresh install of a Package. As storage requirements change, these files should be updated to stay current. For existing installs, a `*.updates.js` file must be provided which applies the same changes.
-4. For example, if a new version of a Package requires a new column on a table that Package creates, the corresponding `*.sql` file should be updated to include that column when doing the `CREATE TABLE`, and the `*.updates.js` file should get an update function with an `ALTER TABLE` command. Update functions may be more complicated if the schema changes enough that data must be migrated, e.g. splitting one table into several or changing a column type.
-5. **No Tailwind:** Rely on our existing SCSS pipeline. Do not introduce TailwindCSS unless explicitly requested.
-6. **Node/Express Idioms:** Stick to the existing vanilla JS and Express patterns found in `src/server.js` and other routes.
+  1. For example, if a new version of a Package requires a new column on a table that Package creates, the corresponding `*.sql` file should be updated to include that column when doing the `CREATE TABLE`, and the `*.updates.js` file should get an update function with an `ALTER TABLE` command. Update functions may be more complicated if the schema changes enough that data must be migrated, e.g. splitting one table into several or changing a column type.
+4. **No Tailwind:** Do not introduce TailwindCSS unless explicitly requested.
+5. **Node/Express Idioms:** Stick to the existing vanilla JS and Express patterns found in `src/server.js` and other routes.
