@@ -21,6 +21,10 @@ $(function () {
     $previewLocalVersion: $("#previewLocalVersion"),
     $exitInstanceButton: $("#exitInstanceButton"),
     $workspace: $("body > .workspace"),
+    $instanceLoading: $("#instanceLoading"),
+    $instanceLoadingName: $("#instanceLoadingName"),
+    $instanceLoadingProgress: $("#instanceLoadingProgress"),
+    $instanceLoadingStatus: $("#instanceLoadingStatus"),
   };
 
   let currentUser = null;
@@ -379,10 +383,60 @@ $(function () {
     });
   }
 
-  async function loadInstanceAssets({ css, js }) {
-    await Promise.all(css.map((href) => loadStylesheet(href)));
-    for (const src of js) {
+  function showInstanceLoading(instanceName, totalFiles) {
+    const progressMax = totalFiles || 1;
+
+    elements.$workspace.prop("hidden", true);
+    elements.$instanceLoadingName.text(instanceName);
+    elements.$instanceLoadingProgress.attr({ value: 0, max: progressMax });
+    elements.$instanceLoadingStatus.text(
+      totalFiles === 0 ? "Starting instance…" : `Loading 0 of ${totalFiles} files…`,
+    );
+    elements.$instanceLoading.prop("hidden", false);
+  }
+
+  function updateInstanceLoadingProgress(loaded, total) {
+    const progressMax = total || 1;
+    const progressValue = total === 0 ? progressMax : loaded;
+
+    elements.$instanceLoadingProgress.attr({ value: progressValue, max: progressMax });
+    elements.$instanceLoadingStatus.text(
+      total === 0 ? "Starting instance…" : `Loading ${loaded} of ${total} files…`,
+    );
+  }
+
+  function hideInstanceLoading() {
+    elements.$instanceLoading.prop("hidden", true);
+  }
+
+  async function loadInstanceAssets({ css, js }, onProgress) {
+    const stylesheetUrls = css || [];
+    const scriptUrls = js || [];
+    const total = stylesheetUrls.length + scriptUrls.length;
+
+    if (total === 0) {
+      onProgress?.(0, 0);
+      return;
+    }
+
+    let loaded = 0;
+    const reportProgress = () => {
+      loaded += 1;
+      onProgress?.(loaded, total);
+    };
+
+    await Promise.all(
+      stylesheetUrls.map((href) =>
+        loadStylesheet(href).then((link) => {
+          reportProgress();
+          return link;
+        }),
+      ),
+    );
+
+    for (const src of scriptUrls) {
       await loadScript(src);
+      reportProgress();
     }
   }
 
@@ -406,6 +460,7 @@ $(function () {
     injectedStylesheets = [];
     injectedScripts = [];
     activeInstance = null;
+    hideInstanceLoading();
     elements.$exitInstanceButton.prop("hidden", true);
     elements.$workspace.prop("hidden", false);
   }
@@ -419,9 +474,21 @@ $(function () {
     elements.$instances.find(".enter-instance-btn").prop("disabled", true);
 
     try {
-      setMessage("Loading instance…", "neutral");
       const assets = await requestJson(`/api/genrpg/instances/${instanceGuid}/assets`);
-      await loadInstanceAssets(assets);
+      if (!assets) {
+        return;
+      }
+
+      const stylesheetUrls = assets.css || [];
+      const scriptUrls = assets.js || [];
+      const totalFiles = stylesheetUrls.length + scriptUrls.length;
+
+      showInstanceLoading(instanceName, totalFiles);
+      await loadInstanceAssets(
+        { css: stylesheetUrls, js: scriptUrls },
+        updateInstanceLoadingProgress,
+      );
+      hideInstanceLoading();
 
       activeInstance = {
         guid: instanceGuid,
@@ -439,9 +506,10 @@ $(function () {
       );
 
       elements.$exitInstanceButton.prop("hidden", false);
-      elements.$workspace.prop("hidden", true);
-      setMessage(`Entered instance "${instanceName}".`, "success");
     } catch (error) {
+      hideInstanceLoading();
+      elements.$workspace.prop("hidden", false);
+
       for (const link of injectedStylesheets) {
         link.remove();
       }

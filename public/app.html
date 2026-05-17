@@ -38,6 +38,21 @@
     </div>
   </header>
 
+  <section
+    id="instanceLoading"
+    class="instance-loading"
+    hidden
+    aria-live="polite"
+    aria-busy="true"
+    aria-label="Loading instance"
+  >
+    <p class="eyebrow">GenRPG</p>
+    <h2>Loading instance</h2>
+    <p id="instanceLoadingName" class="instance-loading__name"></p>
+    <progress id="instanceLoadingProgress" class="instance-loading__progress" value="0" max="1"></progress>
+    <p id="instanceLoadingStatus" class="instance-loading__status"></p>
+  </section>
+
   <main class="workspace">
     <section class="package-tools" aria-label="Packages">
       <div class="section-heading">

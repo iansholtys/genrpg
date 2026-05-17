@@ -171,6 +171,51 @@ textarea {
   padding: clamp(1rem, 4vw, 3rem);
 }
 
+.instance-loading {
+  width: min(70rem, 100%);
+  margin: 0 auto;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+.instance-loading[hidden] {
+  display: none;
+}
+.instance-loading h2 {
+  margin: 0.25rem 0 0;
+  letter-spacing: 0;
+  font-size: 1.5rem;
+}
+.instance-loading__name {
+  margin: 0.5rem 0 1.5rem;
+  color: var(--accent-strong);
+  font-size: 1.25rem;
+}
+.instance-loading__progress {
+  display: block;
+  width: 100%;
+  height: 0.5rem;
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+.instance-loading__progress::-webkit-progress-bar {
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+.instance-loading__progress::-webkit-progress-value {
+  border-radius: 8px;
+  background: var(--accent);
+}
+.instance-loading__progress::-moz-progress-bar {
+  border-radius: 8px;
+  background: var(--accent);
+}
+.instance-loading__status {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .section-heading {
   display: flex;
   align-items: center;
