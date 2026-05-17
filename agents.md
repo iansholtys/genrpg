@@ -22,13 +22,13 @@ GenRPG is highly extensible. The main repository includes core functionality suc
 ### 2. Database & Updates
 Use **PostgreSQL**
 - **Where SQL files live:**
-  - Core schema: `genrpg/db/<semver>/<order>_<name>.sql` (e.g., `genrpg/db/1.0.0/0001_initial.sql`)
-  - Package schema: `packages/<package-name>/db/<semver>/<order>_<name>.sql`
-- **Update Logic:** `src/db/versions.js` automatically discovers these directories, parses semantic versions, and applies the `.sql` scripts in order. It tracks applied updates in a `schema_versions` table. It also should handle the creation of the schema defined in the package's `.package.yml` file if the schema doesn't already exist.
+  - Core schema: `genrpg/db/<order>_<name>.sql` (e.g., `genrpg/db/0001_initial.sql`)
+  - Package schema: `packages/<package-name>/db/<order>_<name>.sql`
+- **Update Logic:** `src/db/versions.js` automatically discovers these directories, and applies the `.sql` scripts in order. It tracks applied updates in a `schema_versions` table. It also should handle the creation of the schema matching the package's `machine_name` if the schema doesn't already exist.
 - **Running Updates:** Use `npm run db:apply`
 - **Fully qualify SQL queries:** Always qualify your SQL queries.
   - Core schema: `genrpg.*` - Do not use the `public` schema for the core schema, rather use the `genrpg` schema.
-  - Package schema: `<short-package-name>.*` - Do not use the `public` schema for package schema, rather use the `<short-package-name>` schema which should be defined in the package's `.package.yml` file.
+  - Package schema: `<machine-name>.*` - Do not use the `public` schema for package schema, rather use the `<machine-name>` schema which matches the package's `machine_name`.
 
 ### 3. Styling (SCSS to CSS)
 Styling is written in SCSS for brevity and consistency before being compiled into CSS.

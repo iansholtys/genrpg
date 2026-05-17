@@ -82,14 +82,14 @@ function sortPackagesByDependencies(packages) {
 }
 
 async function getAppliedVersions(client) {
-  const result = await client.query(`SELECT package, version FROM packages`);
+  const result = await client.query(`SELECT package, version FROM genrpg.packages`);
   return new Map(result.rows.map((row) => [row.package, row.version]));
 }
 
 async function setAppliedVersion(client, machineName, version) {
   await client.query(
     `
-      INSERT INTO packages (package, version)
+      INSERT INTO genrpg.packages (package, version)
       VALUES ($1, $2)
       ON CONFLICT (package)
       DO UPDATE SET version = EXCLUDED.version
@@ -114,6 +114,15 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
   const pkg = packages.find((entry) => entry.machineName === machineName);
   if (!pkg) {
     return { applied: [] };
+  }
+
+  if (pkg.machineName) {
+    const client = await pool.connect();
+    try {
+      await client.query(`CREATE SCHEMA IF NOT EXISTS "${pkg.machineName}"`);
+    } finally {
+      client.release();
+    }
   }
 
   const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
@@ -197,6 +206,15 @@ async function applyPackageUpdates(pool) {
   const applied = [];
 
   for (const pkg of orderedPackages) {
+    if (pkg.machineName) {
+      const client = await pool.connect();
+      try {
+        await client.query(`CREATE SCHEMA IF NOT EXISTS "${pkg.machineName}"`);
+      } finally {
+        client.release();
+      }
+    }
+
     const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
     const latestVersion = getLatestVersion(updatesModule);
     if (!latestVersion) continue;
@@ -242,4 +260,6 @@ module.exports = {
   checkPackageUpdates,
   applyPackageUpdates,
   applyPackageUpdatesForMachine,
+  loadUpdatesModule,
+  getLatestVersion,
 };
