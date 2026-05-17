@@ -26,7 +26,12 @@ const {
   validatePackageSelection,
   resolveInstanceAssets,
 } = require("./packages");
-const { PackageUpdateError, applyPackageUpdates, checkPackageUpdates } = require("./updates");
+const {
+  PackageUpdateError,
+  applyPackageUpdates,
+  applyPackageUpdatesForMachine,
+  checkPackageUpdates,
+} = require("./updates");
 
 const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-in-production";
@@ -279,7 +284,7 @@ genrpgApi.get("/me", (req, res) => {
 
 genrpgApi.get("/packages", async (req, res, next) => {
   try {
-    res.json(await loadPackages());
+    res.json(await loadPackages({ strict: false }));
   } catch (error) {
     if (error instanceof PackageLoadError) {
       res.status(error.status).json({ error: error.message, details: error.details });
@@ -327,7 +332,7 @@ async function previewGitPackage(url) {
 
 genrpgApi.get("/packages/git/status", requireAdmin, async (req, res, next) => {
   try {
-    const { packages } = await loadPackages();
+    const { packages, configurationIssues } = await loadPackages({ strict: false });
     const statuses = [];
 
     for (const pkg of packages) {
@@ -377,9 +382,14 @@ genrpgApi.get("/packages/git/status", requireAdmin, async (req, res, next) => {
       }
     }
 
-    res.json({ statuses });
+    res.json({ statuses, configurationIssues });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Failed to fetch git statuses" });
+    if (error instanceof PackageLoadError) {
+      res.status(error.status).json({ error: error.message, details: error.details });
+      return;
+    }
+
+    next(error);
   }
 });
 
@@ -391,8 +401,8 @@ genrpgApi.post("/packages/git/preview", requireAdmin, async (req, res, next) => 
     }
     
     const preview = await previewGitPackage(url);
-    
-    const { packages } = await loadPackages();
+
+    const { packages } = await loadPackages({ strict: false });
     const localPkg = packages.find(p => p.machineName === preview.machineName);
     
     const localVersion = localPkg ? localPkg.version : null;
@@ -442,10 +452,23 @@ genrpgApi.post("/packages/git/pull", requireAdmin, async (req, res, next) => {
       client.release();
     }
     
-    await applyPackageUpdates(pool);
     invalidatePackageCache();
 
-    res.json({ success: true });
+    let updateWarning = null;
+    try {
+      await applyPackageUpdatesForMachine(pool, preview.machineName);
+    } catch (error) {
+      console.error(`Failed to apply DB updates for ${preview.machineName}:`, error);
+      updateWarning = error.message || "Failed to apply package database updates";
+    }
+
+    const { configurationIssues } = await loadPackages({ strict: false });
+
+    res.json({
+      success: true,
+      configurationIssues,
+      updateWarning,
+    });
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to pull package" });
   }
@@ -572,7 +595,7 @@ genrpgApi.post("/instances", async (req, res, next) => {
       return;
     }
 
-    const { packages } = await loadPackages();
+    const { packages } = await loadPackages({ strict: true });
     const packageSelection = validatePackageSelection(selectedPackages, packages);
     if (!packageSelection.valid) {
       res.status(400).json({ error: "Invalid package selection", details: packageSelection.details });

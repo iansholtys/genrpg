@@ -312,12 +312,14 @@ async function discoverPackages() {
     }
   }
 
-  if (details.length) {
-    throw new PackageLoadError("Invalid package configuration", details);
-  }
-
   packages.sort((a, b) => a.machineName.localeCompare(b.machineName));
-  return { packages };
+  return { packages, configurationIssues: details };
+}
+
+function assertValidPackageConfiguration(configurationIssues) {
+  if (configurationIssues.length) {
+    throw new PackageLoadError("Invalid package configuration", configurationIssues);
+  }
 }
 
 async function enrichPackageWithAssets(pkg) {
@@ -416,9 +418,13 @@ async function refreshPackageCache() {
   return packageCache;
 }
 
-async function loadPackages() {
+async function loadPackages({ strict = false } = {}) {
   if (!packageCache) {
     await refreshPackageCache();
+  }
+
+  if (strict) {
+    assertValidPackageConfiguration(packageCache.configurationIssues);
   }
 
   return packageCache;
@@ -427,7 +433,7 @@ async function loadPackages() {
 // Loads optional *.assets.yml manifests; used for Enter Instance, not routine package listing.
 async function loadPackagesWithAssets() {
   if (!packagesWithAssetsCache) {
-    const { packages } = await loadPackages();
+    const { packages } = await loadPackages({ strict: true });
     packagesWithAssetsCache = {
       packages: await enrichAllPackagesWithAssets(packages),
     };
@@ -489,6 +495,7 @@ module.exports = {
   PackageLoadError,
   REPO_ROOT,
   STATIC_PKG_PREFIX,
+  assertValidPackageConfiguration,
   loadPackages,
   loadPackagesWithAssets,
   invalidatePackageCache,

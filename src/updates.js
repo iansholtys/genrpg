@@ -109,8 +109,60 @@ async function runVersionStep(client, updatesModule, version) {
   await step(client);
 }
 
+async function applyPackageUpdatesForMachine(pool, machineName) {
+  const { packages } = await loadPackages({ strict: false });
+  const pkg = packages.find((entry) => entry.machineName === machineName);
+  if (!pkg) {
+    return { applied: [] };
+  }
+
+  const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
+  const latestVersion = getLatestVersion(updatesModule);
+  if (!latestVersion) {
+    return { applied: [] };
+  }
+
+  let currentVersion = 0;
+  const readClient = await pool.connect();
+  try {
+    const appliedVersions = await getAppliedVersions(readClient);
+    currentVersion = appliedVersions.get(pkg.machineName) ?? 0;
+  } finally {
+    readClient.release();
+  }
+
+  if (currentVersion >= latestVersion) {
+    return { applied: [] };
+  }
+
+  for (let version = currentVersion + 1; version <= latestVersion; version += 1) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await runVersionStep(client, updatesModule, version);
+      await setAppliedVersion(client, pkg.machineName, version);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  return {
+    applied: [
+      {
+        machineName: pkg.machineName,
+        fromVersion: currentVersion,
+        toVersion: latestVersion,
+      },
+    ],
+  };
+}
+
 async function buildUpdateStatus(client) {
-  const { packages } = await loadPackages();
+  const { packages } = await loadPackages({ strict: false });
   const appliedVersions = await getAppliedVersions(client);
   const statuses = [];
 
@@ -140,7 +192,7 @@ async function checkPackageUpdates(pool) {
 }
 
 async function applyPackageUpdates(pool) {
-  const { packages } = await loadPackages();
+  const { packages } = await loadPackages({ strict: false });
   const orderedPackages = sortPackagesByDependencies(packages);
   const applied = [];
 
@@ -189,4 +241,5 @@ module.exports = {
   PackageUpdateError,
   checkPackageUpdates,
   applyPackageUpdates,
+  applyPackageUpdatesForMachine,
 };

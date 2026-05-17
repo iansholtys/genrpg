@@ -156,6 +156,21 @@ $(function () {
     elements.$message.text(message).attr("data-tone", tone);
   }
 
+  function formatConfigurationIssues(issues) {
+    return (issues || []).join(" ");
+  }
+
+  function showConfigurationIssues(issues, { tone = "error" } = {}) {
+    if (!issues?.length) {
+      return;
+    }
+
+    setMessage(
+      `Package configuration needs attention: ${formatConfigurationIssues(issues)}`,
+      tone,
+    );
+  }
+
   function formatDate(value) {
     return new Intl.DateTimeFormat(undefined, {
       dateStyle: "medium",
@@ -510,11 +525,12 @@ $(function () {
 
   async function load() {
     try {
-      const [{ user }, { instances }, { packages }] = await Promise.all([
+      const [{ user }, { instances }, packagePayload] = await Promise.all([
         requestJson("/api/genrpg/me"),
         requestJson("/api/genrpg/instances"),
         requestJson("/api/genrpg/packages"),
       ]);
+      const { packages, configurationIssues = [] } = packagePayload;
 
       currentUser = user;
       let label = user.email || user.displayName || "Signed in";
@@ -530,6 +546,7 @@ $(function () {
       renderPackages(packages);
       renderInstances(instances);
       setMessage("");
+      showConfigurationIssues(configurationIssues);
       await checkForUpdates();
     } catch (error) {
       setMessage(error.message, "error");
@@ -544,6 +561,7 @@ $(function () {
     try {
       const data = await requestJson("/api/genrpg/packages/git/status");
       renderGitPackages(data?.statuses || []);
+      showConfigurationIssues(data?.configurationIssues);
     } catch (err) {
       gitPackagesTable = null;
       elements.$gitPackagesList.html(
@@ -608,11 +626,15 @@ $(function () {
     $btn.prop("disabled", true).text("Updating...");
 
     try {
-      await requestJson("/api/genrpg/packages/git/pull", {
+      const result = await requestJson("/api/genrpg/packages/git/pull", {
         method: "POST",
         body: JSON.stringify({ url }),
       });
       $btn.text("Updated!");
+      if (result.updateWarning) {
+        alert(`Package updated, but database migrations failed: ${result.updateWarning}`);
+      }
+      showConfigurationIssues(result.configurationIssues, { tone: "error" });
       setTimeout(function () {
         loadGitPackages();
         load();
@@ -670,12 +692,24 @@ $(function () {
     setPreviewMessage("Pulling package...", "neutral");
 
     try {
-      await requestJson("/api/genrpg/packages/git/pull", {
+      const result = await requestJson("/api/genrpg/packages/git/pull", {
         method: "POST",
         body: JSON.stringify({ url: currentPreviewUrl }),
       });
 
-      setPreviewMessage("Package pulled successfully.", "success");
+      if (result.updateWarning) {
+        setPreviewMessage(
+          `Package pulled, but database migrations failed: ${result.updateWarning}`,
+          "error",
+        );
+      } else if (result.configurationIssues?.length) {
+        setPreviewMessage(
+          `Package pulled. ${formatConfigurationIssues(result.configurationIssues)}`,
+          "error",
+        );
+      } else {
+        setPreviewMessage("Package pulled successfully.", "success");
+      }
       elements.$packagePreviewForm[0].reset();
       currentPreviewUrl = null;
 
