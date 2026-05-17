@@ -95,12 +95,9 @@ async function requireAdmin(req, res, next) {
 
   try {
     // Refresh admin status dynamically from the database
-    const result = await pool.query(
-      `SELECT admin FROM genrpg.users WHERE guid = $1`,
-      [req.session.user.guid]
-    );
+    const isAdmin = await isGlobalAdmin(req.session.user.guid);
 
-    if (result.rows.length && result.rows[0].admin) {
+    if (isAdmin) {
       req.session.user.admin = true;
       next();
       return;
@@ -162,6 +159,11 @@ function userSummary(row) {
     displayName: row.display_name,
     admin: row.admin,
   };
+}
+
+async function isGlobalAdmin(userGuid) {
+  const result = await pool.query(`SELECT admin FROM genrpg.users WHERE guid = $1`, [userGuid]);
+  return result.rows[0]?.admin || false;
 }
 
 const app = express();
@@ -641,6 +643,7 @@ genrpgApi.post("/update", requireAdmin, async (req, res, next) => {
 });
 
 async function loadAccessibleInstance(instanceGuid, user) {
+  const isAdmin = await isGlobalAdmin(user.guid);
   const result = await pool.query(
     `
       SELECT
@@ -655,7 +658,7 @@ async function loadAccessibleInstance(instanceGuid, user) {
       WHERE i.guid = $2
         AND ($3::boolean OR iur.user_guid IS NOT NULL)
     `,
-    [user.guid, instanceGuid, user.admin],
+    [user.guid, instanceGuid, isAdmin],
   );
 
   return result.rows[0] || null;
@@ -689,7 +692,7 @@ async function getUserInstancePermissions(instanceGuid, userGuid) {
 }
 
 async function canUserManageInstance(instanceGuid, user, requiredPermission) {
-  if (user.admin) return true;
+  if (await isGlobalAdmin(user.guid)) return true;
   const permissions = await getUserInstancePermissions(instanceGuid, user.guid);
   return permissions.has(requiredPermission);
 }
@@ -697,9 +700,19 @@ async function canUserManageInstance(instanceGuid, user, requiredPermission) {
 // Resolves instance package assets from the in-memory package cache (no per-request YAML I/O).
 genrpgApi.get("/instances/:guid/assets", async (req, res, next) => {
   try {
-    const instance = await loadAccessibleInstance(req.params.guid, req.session.user);
+    const instanceGuid = req.params.guid;
+    const user = req.session.user;
+
+    const instance = await loadAccessibleInstance(instanceGuid, user);
     if (!instance) {
       res.status(404).json({ error: "Instance not found" });
+      return;
+    }
+
+    // Must have the run permission to load game assets
+    const canRun = await canUserManageInstance(instanceGuid, user, "instance.run");
+    if (!canRun) {
+      res.status(403).json({ error: "You do not have permission to run this instance" });
       return;
     }
 
@@ -725,6 +738,7 @@ genrpgApi.get("/instances/:guid/assets", async (req, res, next) => {
 genrpgApi.get("/instances", async (req, res, next) => {
   try {
     const user = req.session.user;
+    const isAdmin = await isGlobalAdmin(user.guid);
     const result = await pool.query(
       `
         SELECT
@@ -762,7 +776,7 @@ genrpgApi.get("/instances", async (req, res, next) => {
         WHERE $2::boolean OR iur.user_guid IS NOT NULL
         ORDER BY i.update_datetime DESC
       `,
-      [user.guid, user.admin],
+      [user.guid, isAdmin],
     );
 
     res.json({
@@ -833,7 +847,7 @@ genrpgApi.post("/instances", async (req, res, next) => {
         instance: {
           ...instance.rows[0],
           packageNames: parsePackageCsv(instance.rows[0].packages),
-          role: req.session.user.admin ? "Admin" : "Instance_Owner",
+          role: await isGlobalAdmin(req.session.user.guid) ? "Admin" : "Instance_Owner",
           can_manage_users: true,
           can_delete: true,
         },
@@ -1170,7 +1184,8 @@ genrpgApi.put("/instances/:guid/users/:userGuid", async (req, res, next) => {
     const roleName = roleResult.rows[0].name;
 
     // GMs cannot assign Instance_Owner
-    if (!user.admin) {
+    const isAdmin = await isGlobalAdmin(user.guid);
+    if (!isAdmin) {
       const callerRole = await getUserInstanceRole(instanceGuid, user.guid);
       if (callerRole === "Instance_GM" && roleName === "Instance_Owner") {
         res.status(403).json({ error: "GMs cannot assign the Instance_Owner role" });
@@ -1207,7 +1222,8 @@ genrpgApi.delete("/instances/:guid/users/:userGuid", async (req, res, next) => {
     }
 
     // GMs cannot remove Instance_Owners
-    if (!user.admin) {
+    const isAdmin = await isGlobalAdmin(user.guid);
+    if (!isAdmin) {
       const callerRole = await getUserInstanceRole(instanceGuid, user.guid);
       const targetRole = await getUserInstanceRole(instanceGuid, targetUserGuid);
       if (callerRole === "Instance_GM" && targetRole === "Instance_Owner") {
