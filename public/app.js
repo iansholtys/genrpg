@@ -300,11 +300,60 @@ $(function () {
     ensureInstancesTable().setData(instances);
   }
 
-  function ensureGitPackagesTable() {
-    if (gitPackagesTable) {
-      return gitPackagesTable;
+  function buildGitPackagesTable(statuses) {
+    const hasUninstalled = statuses.some((pkg) => !pkg.installed);
+    const hasActions = hasUninstalled || statuses.some((pkg) => pkg.canUpdate);
+
+    const columns = [
+      { title: "Name", searchable: true },
+      { title: "Repository", field: "url", searchable: true },
+    ];
+
+    if (hasUninstalled) {
+      columns.push({
+        title: "Status",
+        field: "installed",
+        renderFunction: (_value, pkg) => {
+          if (pkg.installed) {
+            return $("<span>", { class: "table-status-installed", text: "Installed" });
+          }
+          return $("<span>", { class: "table-status-available", text: "Available" });
+        },
+      });
     }
 
+    columns.push({ title: "Local Version" });
+    columns.push({ title: "Remote Version" });
+
+    if (hasActions) {
+      columns.push({
+        title: "Actions",
+        sortable: false,
+        headerClass: "actions-cell",
+        cellClass: "actions-cell",
+        renderFunction: (_value, pkg) => {
+          if (!pkg.installed) {
+            return $("<button>", {
+              type: "button",
+              class: "primary-button install-git-pkg-btn",
+              text: "Install",
+            }).attr("data-machine-name", pkg.machineName);
+          }
+
+          if (pkg.canUpdate) {
+            return $("<button>", {
+              type: "button",
+              class: "primary-button update-git-pkg-btn",
+              text: "Update",
+            }).attr("data-url", pkg.url);
+          }
+
+          return $("<span>", { class: "table-status-muted", text: "Up to date" });
+        },
+      });
+    }
+
+    // Destroy the old table and build a fresh one with the right columns
     gitPackagesTable = new Table({
       id: "git-packages-table",
       rowCount: {
@@ -314,47 +363,7 @@ $(function () {
       },
       searchPlaceholder: "Search packages…",
       defaultSort: { field: "name" },
-      columns: [
-        { title: "Name", searchable: true },
-        { title: "Repository", field: "url", searchable: true },
-        {
-          title: "Status",
-          field: "installed",
-          renderFunction: (_value, pkg) => {
-            if (pkg.installed) {
-              return $("<span>", { class: "table-status-installed", text: "Installed" });
-            }
-            return $("<span>", { class: "table-status-available", text: "Available" });
-          },
-        },
-        { title: "Local Version" },
-        { title: "Remote Version" },
-        {
-          title: "Actions",
-          sortable: false,
-          headerClass: "actions-cell",
-          cellClass: "actions-cell",
-          renderFunction: (_value, pkg) => {
-            if (!pkg.installed) {
-              return $("<button>", {
-                type: "button",
-                class: "primary-button install-git-pkg-btn",
-                text: "Install",
-              }).attr("data-machine-name", pkg.machineName);
-            }
-
-            if (pkg.canUpdate) {
-              return $("<button>", {
-                type: "button",
-                class: "primary-button update-git-pkg-btn",
-                text: "Update",
-              }).attr("data-url", pkg.url);
-            }
-
-            return $("<span>", { class: "table-status-muted", text: "Up to date" });
-          },
-        },
-      ],
+      columns,
       emptyState: {
         message: "No packages found",
         icon: "",
@@ -364,11 +373,7 @@ $(function () {
     });
 
     elements.$gitPackagesList.empty().append(gitPackagesTable.init());
-    return gitPackagesTable;
-  }
-
-  function renderGitPackages(statuses) {
-    ensureGitPackagesTable().setData(statuses);
+    gitPackagesTable.setData(statuses);
   }
 
   function escapeHtml(value) {
@@ -654,7 +659,7 @@ $(function () {
 
     try {
       const data = await requestJson("/api/genrpg/packages/git/status");
-      renderGitPackages(data?.statuses || []);
+      buildGitPackagesTable(data?.statuses || []);
       showConfigurationIssues(data?.configurationIssues);
     } catch (err) {
       gitPackagesTable = null;

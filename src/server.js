@@ -545,11 +545,38 @@ genrpgApi.post("/packages/install", requireAdmin, async (req, res, next) => {
       checkClient.release();
     }
 
-    // Apply schema versions (creates schema + runs SQL files)
+    // Create the package schema
+    const schemaClient = await pool.connect();
+    try {
+      await schemaClient.query(`CREATE SCHEMA IF NOT EXISTS "${machineName}"`);
+    } finally {
+      schemaClient.release();
+    }
+
+    // Apply schema versions (runs SQL files)
     await applySchemaVersions({ pool });
 
     // Apply update steps
     await applyPackageUpdatesForMachine(pool, machineName);
+
+    // Ensure the package is registered in genrpg.packages even if it had
+    // no SQL files or update steps — this is what marks it as "installed".
+    const { loadUpdatesModule, getLatestVersion } = require("./updates");
+    const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
+    const latestVersion = getLatestVersion(updatesModule);
+    const registerClient = await pool.connect();
+    try {
+      await registerClient.query(
+        `
+          INSERT INTO genrpg.packages (package, version)
+          VALUES ($1, $2)
+          ON CONFLICT (package) DO UPDATE SET version = EXCLUDED.version
+        `,
+        [machineName, latestVersion],
+      );
+    } finally {
+      registerClient.release();
+    }
 
     invalidatePackageCache();
 
