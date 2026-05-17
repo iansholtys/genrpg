@@ -868,7 +868,7 @@ genrpgApi.post("/instances", async (req, res, next) => {
   }
 });
 
-genrpgApi.get("/users", requireAdmin, async (req, res, next) => {
+genrpgApi.get("/users", async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT guid, email, display_name, admin FROM genrpg.users ORDER BY display_name`,
