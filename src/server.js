@@ -87,9 +87,26 @@ function getRedirectUri(req) {
   return new URL("/auth/callback", baseUrl).toString();
 }
 
-function requireAdmin(req, res, next) {
-  if (req.session.user?.admin) {
-    next();
+async function requireAdmin(req, res, next) {
+  if (!req.session.user) {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+
+  try {
+    // Refresh admin status dynamically from the database
+    const result = await pool.query(
+      `SELECT admin FROM genrpg.users WHERE guid = $1`,
+      [req.session.user.guid]
+    );
+
+    if (result.rows.length && result.rows[0].admin) {
+      req.session.user.admin = true;
+      next();
+      return;
+    }
+  } catch (error) {
+    next(error);
     return;
   }
 
@@ -279,8 +296,22 @@ app.use(ensureAuthenticated);
 
 const genrpgApi = express.Router();
 
-genrpgApi.get("/me", (req, res) => {
-  res.json({ user: req.session.user });
+genrpgApi.get("/me", async (req, res, next) => {
+  try {
+    if (req.session.user) {
+      // Keep session fresh so UI updates immediately upon promotion/demotion
+      const result = await pool.query(
+        `SELECT guid, email, display_name, admin FROM genrpg.users WHERE guid = $1`,
+        [req.session.user.guid]
+      );
+      if (result.rows.length) {
+        req.session.user = userSummary(result.rows[0]);
+      }
+    }
+    res.json({ user: req.session.user });
+  } catch (error) {
+    next(error);
+  }
 });
 
 genrpgApi.get("/packages", async (req, res, next) => {
@@ -823,7 +854,7 @@ genrpgApi.post("/instances", async (req, res, next) => {
   }
 });
 
-genrpgApi.get("/users", requireAdmin, async (req, res, next) => {
+genrpgApi.get("/users", async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT guid, email, display_name, admin FROM genrpg.users ORDER BY display_name`,
