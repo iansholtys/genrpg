@@ -675,10 +675,16 @@ app.use((error, req, res, next) => {
 
 async function main() {
   requireConfig();
+
+  // Ensure the genrpg schema exists before anything else, so the session
+  // table (and other core tables) can be created by applySchemaVersions.
+  await pool.query('CREATE SCHEMA IF NOT EXISTS genrpg');
+
   const { applied } = await applySchemaVersions({ pool });
   if (applied.length) {
     console.log(`Applied database schema versions: ${applied.join(", ")}`);
   }
+
   app.listen(PORT, () => {
     console.log(`GenRPG listening on port ${PORT}`);
   });
