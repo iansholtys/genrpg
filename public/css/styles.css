@@ -284,6 +284,7 @@ textarea {
 .package-modal,
 .manage-users-modal,
 .manage-roles-modal,
+.manage-global-users-modal,
 .delete-instance-modal {
   max-width: 52rem;
   width: 92vw;
@@ -297,6 +298,7 @@ textarea {
 .package-modal::backdrop,
 .manage-users-modal::backdrop,
 .manage-roles-modal::backdrop,
+.manage-global-users-modal::backdrop,
 .delete-instance-modal::backdrop {
   background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(4px);

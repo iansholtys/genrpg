@@ -823,12 +823,65 @@ genrpgApi.post("/instances", async (req, res, next) => {
   }
 });
 
-genrpgApi.get("/users", async (req, res, next) => {
+genrpgApi.get("/users", requireAdmin, async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT guid, email, display_name, admin FROM genrpg.users ORDER BY display_name`,
     );
     res.json({ users: result.rows.map(userSummary) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+genrpgApi.put("/users/:guid/admin", requireAdmin, async (req, res, next) => {
+  try {
+    const targetGuid = req.params.guid;
+    const { admin } = req.body;
+
+    // Prevent removing your own admin access
+    if (targetGuid === req.session.user.guid && admin === false) {
+      res.status(403).json({ error: "You cannot demote yourself" });
+      return;
+    }
+
+    const result = await pool.query(
+      `UPDATE genrpg.users SET admin = $1 WHERE guid = $2 RETURNING guid`,
+      [!!admin, targetGuid],
+    );
+
+    if (!result.rows.length) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+genrpgApi.delete("/users/:guid", requireAdmin, async (req, res, next) => {
+  try {
+    const targetGuid = req.params.guid;
+
+    // Prevent deleting yourself
+    if (targetGuid === req.session.user.guid) {
+      res.status(403).json({ error: "You cannot delete yourself" });
+      return;
+    }
+
+    const result = await pool.query(
+      `DELETE FROM genrpg.users WHERE guid = $1 RETURNING guid`,
+      [targetGuid],
+    );
+
+    if (!result.rows.length) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }
