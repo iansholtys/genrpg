@@ -285,7 +285,19 @@ genrpgApi.get("/me", (req, res) => {
 
 genrpgApi.get("/packages", async (req, res, next) => {
   try {
-    res.json(await loadPackages({ strict: false }));
+    const data = await loadPackages({ strict: false });
+    const client = await pool.connect();
+    try {
+      const result = await client.query(`SELECT package FROM genrpg.packages`);
+      const installedSet = new Set(result.rows.map((r) => r.package));
+      data.packages = data.packages.map((pkg) => ({
+        ...pkg,
+        installed: installedSet.has(pkg.machineName),
+      }));
+    } finally {
+      client.release();
+    }
+    res.json(data);
   } catch (error) {
     if (error instanceof PackageLoadError) {
       res.status(error.status).json({ error: error.message, details: error.details });
@@ -334,16 +346,45 @@ async function previewGitPackage(url) {
 genrpgApi.get("/packages/git/status", requireAdmin, async (req, res, next) => {
   try {
     const { packages, configurationIssues } = await loadPackages({ strict: false });
+
+    const client = await pool.connect();
+    let installedSet;
+    try {
+      const result = await client.query(`SELECT package FROM genrpg.packages`);
+      installedSet = new Set(result.rows.map((r) => r.package));
+    } finally {
+      client.release();
+    }
+
     const statuses = [];
 
     for (const pkg of packages) {
       if (pkg.machineName === "genrpg") continue;
 
       const pkgPath = path.join(__dirname, "..", pkg.path);
+      const installed = installedSet.has(pkg.machineName);
+
+      // Check if it's a git repository
+      let isGitRepo = false;
       try {
         await fs.access(path.join(pkgPath, ".git"));
+        isGitRepo = true;
       } catch {
-        continue; // Not a git repository
+        // Not a git repository
+      }
+
+      if (!isGitRepo) {
+        // Still include non-git packages so they can be installed
+        statuses.push({
+          name: pkg.name,
+          machineName: pkg.machineName,
+          localVersion: pkg.version,
+          remoteVersion: pkg.version,
+          url: "",
+          canUpdate: false,
+          installed,
+        });
+        continue;
       }
 
       try {
@@ -376,10 +417,21 @@ genrpgApi.get("/packages/git/status", requireAdmin, async (req, res, next) => {
           localVersion: pkg.version,
           remoteVersion,
           url,
-          canUpdate
+          canUpdate,
+          installed,
         });
       } catch (err) {
         console.error(`Failed to get git status for ${pkg.machineName}:`, err);
+        // Still include the package so it can be installed even if git status fails
+        statuses.push({
+          name: pkg.name,
+          machineName: pkg.machineName,
+          localVersion: pkg.version,
+          remoteVersion: pkg.version,
+          url: "",
+          canUpdate: false,
+          installed,
+        });
       }
     }
 
@@ -463,6 +515,52 @@ genrpgApi.post("/packages/git/pull", requireAdmin, async (req, res, next) => {
     });
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to pull package" });
+  }
+});
+
+genrpgApi.post("/packages/install", requireAdmin, async (req, res, next) => {
+  try {
+    const { machineName } = req.body;
+    if (!machineName || typeof machineName !== "string") {
+      return res.status(400).json({ error: "machineName is required" });
+    }
+
+    const { packages } = await loadPackages({ strict: false });
+    const pkg = packages.find((p) => p.machineName === machineName);
+    if (!pkg) {
+      return res.status(404).json({ error: `Package "${machineName}" not found on disk` });
+    }
+
+    // Check if already installed
+    const checkClient = await pool.connect();
+    try {
+      const result = await checkClient.query(
+        `SELECT package FROM genrpg.packages WHERE package = $1`,
+        [machineName],
+      );
+      if (result.rows.length > 0) {
+        return res.status(400).json({ error: `Package "${machineName}" is already installed` });
+      }
+    } finally {
+      checkClient.release();
+    }
+
+    // Apply schema versions (creates schema + runs SQL files)
+    await applySchemaVersions({ pool });
+
+    // Apply update steps
+    await applyPackageUpdatesForMachine(pool, machineName);
+
+    invalidatePackageCache();
+
+    res.json({ success: true });
+  } catch (error) {
+    if (error instanceof PackageLoadError) {
+      res.status(error.status).json({ error: error.message, details: error.details });
+      return;
+    }
+
+    next(error);
   }
 });
 

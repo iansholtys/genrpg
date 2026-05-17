@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,15 +8,12 @@
   <link rel="stylesheet" href="/static/css/table-vars.css">
   <link rel="stylesheet" href="/static/components/reusable/table/styles/table.css">
   <link rel="stylesheet" href="/static/css/styles.css">
-  <script
-    src="https://code.jquery.com/jquery-3.7.1.min.js"
-    integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
-    crossorigin="anonymous"
-    defer
-  ></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+    integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous" defer></script>
   <script src="/static/components/reusable/table/table.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
+
 <body class="app-shell">
   <header class="topbar">
     <div>
@@ -23,14 +21,8 @@
       <h1>Instances</h1>
     </div>
     <div class="user-panel">
-      <button
-        type="button"
-        id="exitInstanceButton"
-        class="exit-instance-button"
-        hidden
-        aria-label="Exit instance"
-        title="Exit instance"
-      >&times;</button>
+      <button type="button" id="exitInstanceButton" class="exit-instance-button" hidden aria-label="Exit instance"
+        title="Exit instance">&times;</button>
       <span id="userLabel">Signed in</span>
       <form action="/logout" method="post">
         <button type="submit" class="secondary-button">Log out</button>
@@ -38,14 +30,8 @@
     </div>
   </header>
 
-  <section
-    id="instanceLoading"
-    class="instance-loading"
-    hidden
-    aria-live="polite"
-    aria-busy="true"
-    aria-label="Loading instance"
-  >
+  <section id="instanceLoading" class="instance-loading" hidden aria-live="polite" aria-busy="true"
+    aria-label="Loading instance">
     <p class="eyebrow">GenRPG</p>
     <h2>Loading instance</h2>
     <p id="instanceLoadingName" class="instance-loading__name"></p>
@@ -104,12 +90,12 @@
           </label>
           <button type="submit" id="previewPackageButton">Preview Package</button>
         </form>
-        
+
         <div id="installedGitPackages" class="installed-packages-section">
           <hr>
-          <h3>Installed Packages</h3>
+          <h3>Available Packages</h3>
           <div id="gitPackagesList" class="git-packages-list" role="list">
-            <p class="empty-state">Loading installed packages...</p>
+            <p class="empty-state">Loading available packages...</p>
           </div>
         </div>
 
@@ -117,10 +103,22 @@
           <hr>
           <h3>Package Preview</h3>
           <dl>
-            <div><dt>Name</dt><dd id="previewName"></dd></div>
-            <div><dt>Machine Name</dt><dd id="previewMachineName"></dd></div>
-            <div><dt>Remote Version</dt><dd id="previewRemoteVersion"></dd></div>
-            <div><dt>Local Version</dt><dd id="previewLocalVersion"></dd></div>
+            <div>
+              <dt>Name</dt>
+              <dd id="previewName"></dd>
+            </div>
+            <div>
+              <dt>Machine Name</dt>
+              <dd id="previewMachineName"></dd>
+            </div>
+            <div>
+              <dt>Remote Version</dt>
+              <dd id="previewRemoteVersion"></dd>
+            </div>
+            <div>
+              <dt>Local Version</dt>
+              <dd id="previewLocalVersion"></dd>
+            </div>
           </dl>
           <div id="packagePreviewMessage" class="message" role="status"></div>
           <button type="button" id="pullPackageButton" class="primary-button">Pull Package</button>
@@ -129,4 +127,5 @@
     </div>
   </dialog>
 </body>
+
 </html>

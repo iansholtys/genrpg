@@ -39,6 +39,18 @@
     color: var(--muted);
     font-size: 0.9rem;
   }
+
+  .table-status-installed {
+    color: var(--accent-strong);
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .table-status-available {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-style: italic;
+  }
 }
 
 dl {

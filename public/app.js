@@ -186,19 +186,24 @@ $(function () {
   function renderPackages(packages) {
     packageByMachineName.clear();
 
-    if (!packages.length) {
-      elements.$packageList.html('<p class="empty-state">No packages available.</p>');
-      return;
-    }
-
     for (const pkg of packages) {
       packageByMachineName.set(pkg.machineName, pkg);
     }
 
-    const defaultSelected = packageByMachineName.has("genrpg") ? new Set(["genrpg"]) : new Set();
+    // Only show installed packages in the instance creation selector
+    const installedPackages = packages.filter((pkg) => pkg.installed);
+
+    if (!installedPackages.length) {
+      elements.$packageList.html('<p class="empty-state">No packages installed. Use Manage Packages to install.</p>');
+      return;
+    }
+
+    const defaultSelected = packageByMachineName.has("genrpg") && packageByMachineName.get("genrpg").installed
+      ? new Set(["genrpg"])
+      : new Set();
 
     elements.$packageList.html(
-      packages
+      installedPackages
         .map(
           (pkg) => `
         <label class="package-option">
@@ -307,11 +312,21 @@ $(function () {
         nounSingular: "package",
         nounPlural: "packages",
       },
-      searchPlaceholder: "Search installed packages…",
+      searchPlaceholder: "Search packages…",
       defaultSort: { field: "name" },
       columns: [
         { title: "Name", searchable: true },
         { title: "Repository", field: "url", searchable: true },
+        {
+          title: "Status",
+          field: "installed",
+          renderFunction: (_value, pkg) => {
+            if (pkg.installed) {
+              return $("<span>", { class: "table-status-installed", text: "Installed" });
+            }
+            return $("<span>", { class: "table-status-available", text: "Available" });
+          },
+        },
         { title: "Local Version" },
         { title: "Remote Version" },
         {
@@ -320,6 +335,14 @@ $(function () {
           headerClass: "actions-cell",
           cellClass: "actions-cell",
           renderFunction: (_value, pkg) => {
+            if (!pkg.installed) {
+              return $("<button>", {
+                type: "button",
+                class: "primary-button install-git-pkg-btn",
+                text: "Install",
+              }).attr("data-machine-name", pkg.machineName);
+            }
+
             if (pkg.canUpdate) {
               return $("<button>", {
                 type: "button",
@@ -335,8 +358,8 @@ $(function () {
       emptyState: {
         message: "No packages found",
         icon: "",
-        detailNoData: "No packages are installed yet.",
-        detailFiltered: "No matching installed packages.",
+        detailNoData: "No packages are available yet.",
+        detailFiltered: "No matching packages.",
       },
     });
 
@@ -626,7 +649,7 @@ $(function () {
 
   async function loadGitPackages() {
     if (!gitPackagesTable) {
-      elements.$gitPackagesList.html('<p class="empty-state">Loading installed packages...</p>');
+      elements.$gitPackagesList.html('<p class="empty-state">Loading packages...</p>');
     }
 
     try {
@@ -713,6 +736,28 @@ $(function () {
     } catch (error) {
       $btn.prop("disabled", false).text("Error");
       alert("Failed to update: " + error.message);
+    }
+  });
+
+  elements.$gitPackagesList.on("click", ".install-git-pkg-btn", async function () {
+    const $btn = $(this);
+    const machineName = $btn.data("machine-name");
+
+    $btn.prop("disabled", true).text("Installing...");
+
+    try {
+      await requestJson("/api/genrpg/packages/install", {
+        method: "POST",
+        body: JSON.stringify({ machineName }),
+      });
+      $btn.text("Installed!");
+      setTimeout(function () {
+        loadGitPackages();
+        load();
+      }, 1000);
+    } catch (error) {
+      $btn.prop("disabled", false).text("Install");
+      alert("Failed to install: " + error.message);
     }
   });
 

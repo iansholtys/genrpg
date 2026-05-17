@@ -317,6 +317,18 @@ textarea {
   color: var(--muted);
   font-size: 0.9rem;
 }
+#instances .table-status-installed,
+#gitPackagesList .table-status-installed {
+  color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+#instances .table-status-available,
+#gitPackagesList .table-status-available {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-style: italic;
+}
 
 dl {
   display: grid;
