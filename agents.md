@@ -19,13 +19,16 @@ GenRPG is designed to be highly extensible. Core functionality exists in the mai
 - **Metadata:** Each package defines a `*.package.yml` file which contains its metadata. `src/packages.js` and `src/updates.js` are responsible for managing these packages, extracting metadata, and comparing semantic versions to apply updates.
 - **Important:** When adding features that are meant to be modular, consider if they belong in a separate package repository rather than the core GenRPG repo.
 
-### 2. Database & Migrations
-We use **PostgreSQL**. The database schema is version-controlled using a custom migration system.
+### 2. Database & Updates
+Use **PostgreSQL**
 - **Where SQL files live:**
   - Core schema: `genrpg/db/<semver>/<order>_<name>.sql` (e.g., `genrpg/db/1.0.0/0001_initial.sql`)
   - Package schema: `packages/<package-name>/db/<semver>/<order>_<name>.sql`
-- **Migration Logic:** `src/db/versions.js` automatically discovers these directories, parses semantic versions, and applies the `.sql` scripts in order. It tracks applied migrations in a `schema_versions` table.
-- **Running Migrations:** Use `npm run db:apply`.
+- **Update Logic:** `src/db/versions.js` automatically discovers these directories, parses semantic versions, and applies the `.sql` scripts in order. It tracks applied updates in a `schema_versions` table. It also should handle the creation of the schema defined in the package's `.package.yml` file if the schema doesn't already exist.
+- **Running Updates:** Use `npm run db:apply`
+- **Fully qualify SQL queries:** Always qualify your SQL queries.
+  - Core schema: `genrpg.*` - Do not use the `public` schema for the core schema, rather use the `genrpg` schema.
+  - Package schema: `<short-package-name>.*` - Do not use the `public` schema for package schema, rather use the `<short-package-name>` schema which should be defined in the package's `.package.yml` file.
 
 ### 3. Styling (SCSS to CSS)
 We use compiled SCSS for styling to maintain a modern, rich aesthetic.
