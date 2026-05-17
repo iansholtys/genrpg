@@ -18,9 +18,13 @@ const { pool } = require("./db/pool");
 const { applySchemaVersions } = require("./db/versions");
 const {
   PackageLoadError,
+  REPO_ROOT,
   loadPackages,
+  loadPackagesWithAssets,
+  invalidatePackageCache,
   parsePackageCsv,
   validatePackageSelection,
+  resolveInstanceAssets,
 } = require("./packages");
 const { PackageUpdateError, applyPackageUpdates, checkPackageUpdates } = require("./updates");
 
@@ -260,6 +264,11 @@ app.use(
 app.get("/static/app.js", (req, res) => {
   res.sendFile(path.join(publicDir, "app.js"));
 });
+app.use(
+  "/static/pkg",
+  ensureAuthenticated,
+  express.static(REPO_ROOT, { index: false, fallthrough: false }),
+);
 app.use(ensureAuthenticated);
 
 const genrpgApi = express.Router();
@@ -434,7 +443,8 @@ genrpgApi.post("/packages/git/pull", requireAdmin, async (req, res, next) => {
     }
     
     await applyPackageUpdates(pool);
-    
+    invalidatePackageCache();
+
     res.json({ success: true });
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to pull package" });
@@ -451,6 +461,55 @@ genrpgApi.post("/update", requireAdmin, async (req, res, next) => {
     res.json(await checkPackageUpdates(pool));
   } catch (error) {
     if (error instanceof PackageUpdateError) {
+      res.status(error.status).json({ error: error.message, details: error.details });
+      return;
+    }
+
+    next(error);
+  }
+});
+
+async function loadAccessibleInstance(instanceGuid, user) {
+  const result = await pool.query(
+    `
+      SELECT
+        i.guid,
+        i.name,
+        i.description,
+        i.packages
+      FROM instances i
+      LEFT JOIN instance_user_permissions iup
+        ON iup.instance_guid = i.guid
+        AND iup.user_guid = $1
+      WHERE i.guid = $2
+        AND ($3::boolean OR iup.user_guid IS NOT NULL)
+    `,
+    [user.guid, instanceGuid, user.admin],
+  );
+
+  return result.rows[0] || null;
+}
+
+// Resolves instance package assets from the in-memory package cache (no per-request YAML I/O).
+genrpgApi.get("/instances/:guid/assets", async (req, res, next) => {
+  try {
+    const instance = await loadAccessibleInstance(req.params.guid, req.session.user);
+    if (!instance) {
+      res.status(404).json({ error: "Instance not found" });
+      return;
+    }
+
+    const packageNames = parsePackageCsv(instance.packages);
+    const { packages } = await loadPackagesWithAssets();
+    const assets = resolveInstanceAssets(packageNames, packages);
+
+    res.json({
+      css: assets.css,
+      js: assets.js,
+      packageNames: assets.packageNames,
+    });
+  } catch (error) {
+    if (error instanceof PackageLoadError) {
       res.status(error.status).json({ error: error.message, details: error.details });
       return;
     }

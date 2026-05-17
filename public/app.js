@@ -19,12 +19,17 @@ $(function () {
     $previewMachineName: $("#previewMachineName"),
     $previewRemoteVersion: $("#previewRemoteVersion"),
     $previewLocalVersion: $("#previewLocalVersion"),
+    $exitInstanceButton: $("#exitInstanceButton"),
   };
 
   let currentUser = null;
   let currentPreviewUrl = null;
   let instancesTable = null;
   let gitPackagesTable = null;
+  let activeInstance = null;
+  let enteringInstance = false;
+  let injectedStylesheets = [];
+  let injectedScripts = [];
   const packageNameByMachineName = new Map();
   const packageByMachineName = new Map();
 
@@ -239,6 +244,20 @@ $(function () {
           sortFunction: (a, b) =>
             new Date(a.update_datetime).getTime() - new Date(b.update_datetime).getTime(),
         },
+        {
+          title: "Actions",
+          sortable: false,
+          headerClass: "actions-cell",
+          cellClass: "actions-cell",
+          renderFunction: (_value, instance) =>
+            $("<button>", {
+              type: "button",
+              class: "primary-button enter-instance-btn",
+              text: "Run",
+            })
+              .attr("data-instance-guid", instance.guid)
+              .attr("data-instance-name", instance.name),
+        },
       ],
       emptyState: {
         message: "No instances found",
@@ -319,6 +338,105 @@ $(function () {
         "'": "&#039;",
       }[character];
     });
+  }
+
+  function loadStylesheet(href) {
+    return new Promise((resolve, reject) => {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      link.onload = () => resolve(link);
+      link.onerror = () => reject(new Error(`Failed to load stylesheet: ${href}`));
+      document.head.appendChild(link);
+      injectedStylesheets.push(link);
+    });
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = () => resolve(script);
+      script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+      document.body.appendChild(script);
+      injectedScripts.push(script);
+    });
+  }
+
+  async function loadInstanceAssets({ css, js }) {
+    await Promise.all(css.map((href) => loadStylesheet(href)));
+    for (const src of js) {
+      await loadScript(src);
+    }
+  }
+
+  function exitInstance() {
+    if (!activeInstance) {
+      return;
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("genrpg:instance-exited", {
+        detail: { instanceGuid: activeInstance.guid },
+      }),
+    );
+
+    for (const link of injectedStylesheets) {
+      link.remove();
+    }
+    for (const script of injectedScripts) {
+      script.remove();
+    }
+    injectedStylesheets = [];
+    injectedScripts = [];
+    activeInstance = null;
+    elements.$exitInstanceButton.prop("hidden", true);
+  }
+
+  async function enterInstance(instanceGuid, instanceName) {
+    if (enteringInstance) {
+      return;
+    }
+
+    enteringInstance = true;
+    elements.$instances.find(".enter-instance-btn").prop("disabled", true);
+
+    try {
+      setMessage("Loading instance…", "neutral");
+      const assets = await requestJson(`/api/genrpg/instances/${instanceGuid}/assets`);
+      await loadInstanceAssets(assets);
+
+      activeInstance = {
+        guid: instanceGuid,
+        name: instanceName,
+        packageNames: assets.packageNames || [],
+      };
+
+      window.dispatchEvent(
+        new CustomEvent("genrpg:instance-entered", {
+          detail: {
+            instanceGuid: activeInstance.guid,
+            packageNames: activeInstance.packageNames,
+          },
+        }),
+      );
+
+      elements.$exitInstanceButton.prop("hidden", false);
+      setMessage(`Entered instance "${instanceName}".`, "success");
+    } catch (error) {
+      for (const link of injectedStylesheets) {
+        link.remove();
+      }
+      for (const script of injectedScripts) {
+        script.remove();
+      }
+      injectedStylesheets = [];
+      injectedScripts = [];
+      setMessage(error.message, "error");
+    } finally {
+      enteringInstance = false;
+      elements.$instances.find(".enter-instance-btn").prop("disabled", false);
+    }
   }
 
   async function requestJson(url, options) {
@@ -437,6 +555,13 @@ $(function () {
   elements.$packageList.on("change", 'input[name="package"]', function () {
     applyPackageSelectionChange(this.value, this.checked);
   });
+
+  elements.$instances.on("click", ".enter-instance-btn", function () {
+    const $btn = $(this);
+    enterInstance($btn.data("instance-guid"), $btn.data("instance-name"));
+  });
+
+  elements.$exitInstanceButton.on("click", exitInstance);
 
   elements.$instanceForm.on("submit", async function (event) {
     event.preventDefault();

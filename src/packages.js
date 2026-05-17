@@ -5,6 +5,10 @@ const semver = require("semver");
 const yaml = require("yaml");
 
 const REPO_ROOT = path.join(__dirname, "..");
+const STATIC_PKG_PREFIX = "/static/pkg";
+
+let packageCache = null;
+let packagesWithAssetsCache = null;
 
 class PackageLoadError extends Error {
   constructor(message, details = []) {
@@ -45,6 +49,129 @@ function parseRequirement(entry, sourceLabel) {
   }
 
   return { machineName, range };
+}
+
+function normalizeAssetPath(entry, label, kind) {
+  if (typeof entry !== "string" || !entry.trim()) {
+    throw new PackageLoadError("Invalid package configuration", [
+      `${label}: each assets.${kind} entry must be a non-empty string`,
+    ]);
+  }
+
+  const normalized = entry.trim().replace(/\\/g, "/");
+  if (path.posix.isAbsolute(normalized) || normalized.startsWith("../") || normalized.includes("/../")) {
+    throw new PackageLoadError("Invalid package configuration", [
+      `${label}: assets.${kind} path "${entry}" must be relative to the package root`,
+    ]);
+  }
+
+  return normalized;
+}
+
+function parseAssetList(rawList, label, kind) {
+  if (rawList === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(rawList)) {
+    throw new PackageLoadError("Invalid package configuration", [
+      `${label}: assets.${kind} must be an array`,
+    ]);
+  }
+
+  return rawList.map((entry) => normalizeAssetPath(entry, label, kind));
+}
+
+function packageRootDir(packagePath) {
+  return path.join(REPO_ROOT, packagePath.split("/").join(path.sep));
+}
+
+function assetPublicUrl(packagePath, relativePath) {
+  const posixPath = path.posix.join(packagePath, relativePath.split(path.sep).join("/"));
+  return `${STATIC_PKG_PREFIX}/${posixPath}`;
+}
+
+function assertPathInsidePackage(packageDir, absolutePath, relativePath, label, kind) {
+  const relative = path.relative(packageDir, absolutePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new PackageLoadError("Invalid package configuration", [
+      `${label}: assets.${kind} path "${relativePath}" escapes the package directory`,
+    ]);
+  }
+}
+
+async function validateAndResolveAssets(pkg, assets, label) {
+  const packageDir = packageRootDir(pkg.path);
+  const css = [];
+  const cssUrls = [];
+  const js = [];
+  const jsUrls = [];
+
+  for (const relativePath of assets.css) {
+    const absolutePath = path.resolve(packageDir, relativePath);
+    assertPathInsidePackage(packageDir, absolutePath, relativePath, label, "css");
+
+    try {
+      await fs.access(absolutePath);
+    } catch {
+      throw new PackageLoadError("Invalid package configuration", [
+        `${label}: assets.css file not found: ${relativePath}`,
+      ]);
+    }
+
+    css.push(relativePath);
+    cssUrls.push(assetPublicUrl(pkg.path, relativePath));
+  }
+
+  for (const relativePath of assets.js) {
+    const absolutePath = path.resolve(packageDir, relativePath);
+    assertPathInsidePackage(packageDir, absolutePath, relativePath, label, "js");
+
+    try {
+      await fs.access(absolutePath);
+    } catch {
+      throw new PackageLoadError("Invalid package configuration", [
+        `${label}: assets.js file not found: ${relativePath}`,
+      ]);
+    }
+
+    js.push(relativePath);
+    jsUrls.push(assetPublicUrl(pkg.path, relativePath));
+  }
+
+  return { css, cssUrls, js, jsUrls };
+}
+
+function normalizeAssetsManifest(raw, label) {
+  if (raw === undefined || raw === null) {
+    return { css: [], js: [] };
+  }
+
+  if (!raw || typeof raw !== "object") {
+    throw new PackageLoadError("Invalid package configuration", [
+      `${label}: assets manifest must be a YAML object`,
+    ]);
+  }
+
+  return {
+    css: parseAssetList(raw.css, label, "css"),
+    js: parseAssetList(raw.js, label, "js"),
+  };
+}
+
+async function readPackageAssets(packageDir, machineName) {
+  const assetsPath = path.join(packageDir, `${machineName}.assets.yml`);
+  const label = `${machineName}.assets.yml`;
+
+  try {
+    await fs.access(assetsPath);
+  } catch {
+    return { css: [], js: [] };
+  }
+
+  const contents = await fs.readFile(assetsPath, "utf8");
+  const raw = yaml.parse(contents);
+  return normalizeAssetsManifest(raw, label);
 }
 
 function normalizeManifest(raw, { packagePath, directoryName, manifestFile }) {
@@ -193,8 +320,125 @@ async function discoverPackages() {
   return { packages };
 }
 
+async function enrichPackageWithAssets(pkg) {
+  const packageDir = packageRootDir(pkg.path);
+  const label = `${pkg.path}/${pkg.machineName}.assets.yml`;
+  const assets = await readPackageAssets(packageDir, pkg.machineName);
+  const resolved = await validateAndResolveAssets(pkg, assets, label);
+
+  return {
+    ...pkg,
+    assets: {
+      css: resolved.css,
+      js: resolved.js,
+    },
+    assetUrls: {
+      css: resolved.cssUrls,
+      js: resolved.jsUrls,
+    },
+  };
+}
+
+async function enrichAllPackagesWithAssets(packages) {
+  const enriched = [];
+  for (const pkg of packages) {
+    enriched.push(await enrichPackageWithAssets(pkg));
+  }
+  return enriched;
+}
+
+function sortPackagesTopologically(selectedMachineNames, packages) {
+  const byMachineName = new Map(packages.map((pkg) => [pkg.machineName, pkg]));
+  const selected = new Set(selectedMachineNames);
+  const inDegree = new Map();
+  const dependents = new Map();
+
+  for (const machineName of selected) {
+    inDegree.set(machineName, 0);
+    dependents.set(machineName, []);
+  }
+
+  for (const machineName of selected) {
+    const pkg = byMachineName.get(machineName);
+    if (!pkg) continue;
+
+    for (const requirement of pkg.requirements) {
+      if (!selected.has(requirement.machineName)) continue;
+
+      inDegree.set(machineName, (inDegree.get(machineName) || 0) + 1);
+      dependents.get(requirement.machineName).push(machineName);
+    }
+  }
+
+  const queue = [...selected].filter((machineName) => inDegree.get(machineName) === 0);
+  queue.sort();
+  const ordered = [];
+
+  while (queue.length) {
+    const machineName = queue.shift();
+    ordered.push(byMachineName.get(machineName));
+
+    for (const dependent of dependents.get(machineName) || []) {
+      const nextDegree = inDegree.get(dependent) - 1;
+      inDegree.set(dependent, nextDegree);
+      if (nextDegree === 0) {
+        queue.push(dependent);
+        queue.sort();
+      }
+    }
+  }
+
+  if (ordered.length !== selected.size) {
+    throw new PackageLoadError("Invalid package configuration", [
+      "Selected packages contain a circular dependency",
+    ]);
+  }
+
+  return ordered;
+}
+
+function resolveInstanceAssets(selectedMachineNames, packages) {
+  const ordered = sortPackagesTopologically(selectedMachineNames, packages);
+  const css = [];
+  const js = [];
+
+  for (const pkg of ordered) {
+    css.push(...pkg.assetUrls.css);
+    js.push(...pkg.assetUrls.js);
+  }
+
+  return { css, js, packageNames: ordered.map((pkg) => pkg.machineName) };
+}
+
+async function refreshPackageCache() {
+  packageCache = await discoverPackages();
+  packagesWithAssetsCache = null;
+  return packageCache;
+}
+
 async function loadPackages() {
-  return discoverPackages();
+  if (!packageCache) {
+    await refreshPackageCache();
+  }
+
+  return packageCache;
+}
+
+// Loads optional *.assets.yml manifests; used for Enter Instance, not routine package listing.
+async function loadPackagesWithAssets() {
+  if (!packagesWithAssetsCache) {
+    const { packages } = await loadPackages();
+    packagesWithAssetsCache = {
+      packages: await enrichAllPackagesWithAssets(packages),
+    };
+  }
+
+  return packagesWithAssetsCache;
+}
+
+function invalidatePackageCache() {
+  packageCache = null;
+  packagesWithAssetsCache = null;
 }
 
 function parsePackageCsv(value) {
@@ -243,8 +487,14 @@ function validatePackageSelection(selectedMachineNames, packages) {
 
 module.exports = {
   PackageLoadError,
+  REPO_ROOT,
+  STATIC_PKG_PREFIX,
   loadPackages,
+  loadPackagesWithAssets,
+  invalidatePackageCache,
+  refreshPackageCache,
   parsePackageCsv,
   formatPackageCsv,
   validatePackageSelection,
+  resolveInstanceAssets,
 };
