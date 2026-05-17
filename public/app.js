@@ -20,6 +20,7 @@ $(function () {
     $previewRemoteVersion: $("#previewRemoteVersion"),
     $previewLocalVersion: $("#previewLocalVersion"),
     $exitInstanceButton: $("#exitInstanceButton"),
+    $workspace: $("body > .workspace"),
   };
 
   let currentUser = null;
@@ -406,6 +407,7 @@ $(function () {
     injectedScripts = [];
     activeInstance = null;
     elements.$exitInstanceButton.prop("hidden", true);
+    elements.$workspace.prop("hidden", false);
   }
 
   async function enterInstance(instanceGuid, instanceName) {
@@ -437,6 +439,7 @@ $(function () {
       );
 
       elements.$exitInstanceButton.prop("hidden", false);
+      elements.$workspace.prop("hidden", true);
       setMessage(`Entered instance "${instanceName}".`, "success");
     } catch (error) {
       for (const link of injectedStylesheets) {
