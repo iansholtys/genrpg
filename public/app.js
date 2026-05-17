@@ -99,8 +99,17 @@ $(function () {
         {
           title: "Packages",
           field: "packageNames",
+          searchable: true,
           sortable: false,
           valueFunction: (instance) => formatInstancePackageLabels(instance.packageNames),
+          searchFunction: (instance, searchTerm) =>
+            (instance.packageNames || []).some((machineName) => {
+              const label = packageNameByMachineName.get(machineName) || machineName;
+              return (
+                label.toLowerCase().includes(searchTerm) ||
+                machineName.toLowerCase().includes(searchTerm)
+              );
+            }),
         },
         { title: "Permission" },
         {
