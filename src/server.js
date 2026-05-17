@@ -123,13 +123,13 @@ async function upsertUser({ issuer, subject, email, displayName }) {
   const userGuid = crypto.randomUUID();
   const result = await pool.query(
     `
-      INSERT INTO users (guid, oidc_issuer, oidc_subject, email, display_name, admin)
+      INSERT INTO genrpg.users (guid, oidc_issuer, oidc_subject, email, display_name, admin)
       VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (oidc_issuer, oidc_subject)
       DO UPDATE SET
         email = EXCLUDED.email,
         display_name = EXCLUDED.display_name,
-        admin = users.admin OR EXCLUDED.admin
+        admin = genrpg.users.admin OR EXCLUDED.admin
       RETURNING guid, email, display_name, admin
     `,
     [userGuid, issuer, subject, normalizedEmail, displayName, configuredAdmin],
@@ -155,6 +155,7 @@ app.use(
     store: new PgSession({
       pool,
       tableName: "session",
+      schemaName: "genrpg",
       createTableIfMissing: false,
     }),
     name: "genrpg.sid",
@@ -442,20 +443,11 @@ genrpgApi.post("/packages/git/pull", requireAdmin, async (req, res, next) => {
       await execAsync(`git clone "${url}" "${targetDir}"`);
     }
     
-    const client = await pool.connect();
-    try {
-      await client.query(
-        `INSERT INTO packages (package, version) VALUES ($1, 0) ON CONFLICT DO NOTHING`,
-        [preview.machineName]
-      );
-    } finally {
-      client.release();
-    }
-    
     invalidatePackageCache();
 
     let updateWarning = null;
     try {
+      await applySchemaVersions({ pool });
       await applyPackageUpdatesForMachine(pool, preview.machineName);
     } catch (error) {
       console.error(`Failed to apply DB updates for ${preview.machineName}:`, error);
@@ -500,8 +492,8 @@ async function loadAccessibleInstance(instanceGuid, user) {
         i.name,
         i.description,
         i.packages
-      FROM instances i
-      LEFT JOIN instance_user_permissions iup
+      FROM genrpg.instances i
+      LEFT JOIN genrpg.instance_user_permissions iup
         ON iup.instance_guid = i.guid
         AND iup.user_guid = $1
       WHERE i.guid = $2
@@ -557,8 +549,8 @@ genrpgApi.get("/instances", async (req, res, next) => {
             WHEN $2::boolean THEN 'Admin'
             ELSE iup.permission
           END AS permission
-        FROM instances i
-        LEFT JOIN instance_user_permissions iup
+        FROM genrpg.instances i
+        LEFT JOIN genrpg.instance_user_permissions iup
           ON iup.instance_guid = i.guid
           AND iup.user_guid = $1
         WHERE $2::boolean OR iup.user_guid IS NOT NULL
@@ -609,7 +601,7 @@ genrpgApi.post("/instances", async (req, res, next) => {
       await client.query("BEGIN");
       const instance = await client.query(
         `
-          INSERT INTO instances (guid, name, description, packages)
+          INSERT INTO genrpg.instances (guid, name, description, packages)
           VALUES ($1, $2, $3, $4)
           RETURNING guid, name, description, packages, create_datetime, update_datetime
         `,
@@ -619,7 +611,7 @@ genrpgApi.post("/instances", async (req, res, next) => {
       if (!req.session.user.admin) {
         await client.query(
           `
-            INSERT INTO instance_user_permissions (instance_guid, user_guid, permission)
+            INSERT INTO genrpg.instance_user_permissions (instance_guid, user_guid, permission)
             VALUES ($1, $2, 'Owner')
           `,
           [instanceGuid, req.session.user.guid],
