@@ -44,6 +44,7 @@
       <div class="section-heading">
         <h2>Packages</h2>
         <button type="button" id="managePackagesButton" hidden>Manage Packages</button>
+        <button type="button" id="manageRolesButton" hidden>Manage Roles</button>
       </div>
       <div id="packageList" class="package-list" role="group" aria-label="Enabled packages"></div>
     </section>
@@ -125,6 +126,42 @@
         </div>
       </div>
     </div>
+  </dialog>
+
+  <dialog id="manageRolesModal" class="manage-roles-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Manage Roles</h2>
+        <button type="button" id="closeManageRolesModal" class="close-button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="roleForm" class="role-form">
+          <input type="hidden" id="roleFormId" name="roleId" value="">
+          <label>
+            <span>Role Name</span>
+            <input type="text" name="roleName" id="roleNameInput" required maxlength="80" autocomplete="off" placeholder="e.g. Instance_Moderator">
+          </label>
+          <label>
+            <span>Description</span>
+            <input type="text" name="roleDescription" id="roleDescriptionInput" maxlength="200" autocomplete="off" placeholder="Brief description of this role">
+          </label>
+          <fieldset id="rolePermissionsFieldset" class="role-permissions-fieldset">
+            <legend>Permissions</legend>
+            <div id="rolePermissionsList" class="role-permissions-list"></div>
+          </fieldset>
+          <div class="role-form-actions">
+            <button type="submit" id="roleFormSubmitButton">Create Role</button>
+            <button type="button" id="roleFormCancelButton" class="secondary-button" hidden>Cancel</button>
+          </div>
+        </form>
+        <div id="roleFormMessage" class="message" role="status"></div>
+        <hr>
+        <h3>Existing Roles</h3>
+        <div id="rolesList"></div>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="manageUsersModal" class="manage-users-modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -182,4 +219,5 @@
   </dialog>
 </body>
 
-</html>
+</html>
+

@@ -283,6 +283,7 @@ textarea {
 
 .package-modal,
 .manage-users-modal,
+.manage-roles-modal,
 .delete-instance-modal {
   max-width: 52rem;
   width: 92vw;
@@ -295,6 +296,7 @@ textarea {
 }
 .package-modal::backdrop,
 .manage-users-modal::backdrop,
+.manage-roles-modal::backdrop,
 .delete-instance-modal::backdrop {
   background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(4px);
@@ -385,7 +387,6 @@ textarea {
   background: transparent;
   border: 1px solid var(--danger);
   color: var(--danger);
-  min-height: 2rem;
   padding: 0 0.75rem;
   font-size: 0.85rem;
 }
@@ -395,6 +396,83 @@ textarea {
 .danger-button-outline:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.accent-button-outline {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 0 0.75rem;
+  font-size: 0.85rem;
+}
+.accent-button-outline:hover:not(:disabled) {
+  background: rgba(101, 193, 140, 0.12);
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.accent-button-outline:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.role-form {
+  display: grid;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.role-form label {
+  display: grid;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+.role-form input[type=text] {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.role-permissions-fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0;
+}
+.role-permissions-fieldset legend {
+  font-weight: 500;
+  padding: 0 0.5rem;
+  color: var(--text);
+}
+
+.role-permissions-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+.role-permissions-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+  cursor: pointer;
+}
+.role-permissions-list input[type=checkbox] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+}
+
+.role-form-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+.role-form-actions button {
+  flex: 1;
 }
 
 .instance-tools {
