@@ -71,9 +71,10 @@ app.use(
   "/static/components",
   express.static(path.join(publicDir, "components"), { index: false, fallthrough: false }),
 );
-app.get("/static/app.js", (req, res) => {
-  res.sendFile(path.join(publicDir, "app.js"));
-});
+app.use(
+  "/static/js",
+  express.static(path.join(publicDir, "js"), { index: false, fallthrough: false }),
+);
 app.use(
   "/static/pkg",
   ensureAuthenticated,
