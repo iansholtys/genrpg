@@ -208,6 +208,10 @@ textarea {
   width: auto;
   margin: 0;
 }
+.package-option.is-locked {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
 
 .instance-tools {
   margin-bottom: 2rem;

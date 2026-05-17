@@ -26,6 +26,116 @@ $(function () {
   let instancesTable = null;
   let gitPackagesTable = null;
   const packageNameByMachineName = new Map();
+  const packageByMachineName = new Map();
+
+  function getTransitiveDependencies(machineName) {
+    const dependencies = new Set();
+    const queue = [];
+    const pkg = packageByMachineName.get(machineName);
+
+    if (!pkg) {
+      return dependencies;
+    }
+
+    for (const requirement of pkg.requirements) {
+      queue.push(requirement.machineName);
+    }
+
+    while (queue.length) {
+      const name = queue.shift();
+      if (dependencies.has(name)) {
+        continue;
+      }
+
+      dependencies.add(name);
+      const dependency = packageByMachineName.get(name);
+      if (!dependency) {
+        continue;
+      }
+
+      for (const requirement of dependency.requirements) {
+        queue.push(requirement.machineName);
+      }
+    }
+
+    return dependencies;
+  }
+
+  function getTransitiveDependents(machineName) {
+    const directDependents = new Map();
+
+    for (const pkg of packageByMachineName.values()) {
+      for (const requirement of pkg.requirements) {
+        if (!directDependents.has(requirement.machineName)) {
+          directDependents.set(requirement.machineName, []);
+        }
+        directDependents.get(requirement.machineName).push(pkg.machineName);
+      }
+    }
+
+    const dependents = new Set();
+    const queue = [machineName];
+
+    while (queue.length) {
+      const name = queue.shift();
+      for (const dependent of directDependents.get(name) || []) {
+        if (!dependents.has(dependent)) {
+          dependents.add(dependent);
+          queue.push(dependent);
+        }
+      }
+    }
+
+    return dependents;
+  }
+
+  function getLockedDependencies(selectedMachineNames) {
+    const locked = new Set();
+
+    for (const machineName of selectedMachineNames) {
+      for (const dependency of getTransitiveDependencies(machineName)) {
+        locked.add(dependency);
+      }
+    }
+
+    return locked;
+  }
+
+  function getPackageCheckbox(machineName) {
+    return elements.$packageList.find(
+      `input[name="package"][data-machine-name="${machineName}"]`,
+    );
+  }
+
+  function syncPackageCheckboxStates() {
+    const selected = getSelectedPackages();
+    const locked = getLockedDependencies(selected);
+
+    for (const pkg of packageByMachineName.values()) {
+      const $input = getPackageCheckbox(pkg.machineName);
+      const isLocked = locked.has(pkg.machineName);
+      $input.prop("disabled", isLocked);
+      $input.closest(".package-option").toggleClass("is-locked", isLocked);
+    }
+  }
+
+  function applyPackageSelectionChange(machineName, isChecked) {
+    const $checkbox = getPackageCheckbox(machineName);
+
+    if (isChecked) {
+      $checkbox.prop("checked", true);
+      for (const dependency of getTransitiveDependencies(machineName)) {
+        getPackageCheckbox(dependency).prop("checked", true);
+      }
+    } else {
+      $checkbox.prop("checked", false);
+      for (const dependent of getTransitiveDependents(machineName)) {
+        getPackageCheckbox(dependent).prop("checked", false);
+      }
+    }
+
+    syncPackageCheckboxStates();
+  }
 
   function formatInstancePackageLabels(packageNames) {
     return (packageNames || [])
@@ -49,10 +159,18 @@ $(function () {
   }
 
   function renderPackages(packages) {
+    packageByMachineName.clear();
+
     if (!packages.length) {
       elements.$packageList.html('<p class="empty-state">No packages available.</p>');
       return;
     }
+
+    for (const pkg of packages) {
+      packageByMachineName.set(pkg.machineName, pkg);
+    }
+
+    const defaultSelected = packageByMachineName.has("genrpg") ? new Set(["genrpg"]) : new Set();
 
     elements.$packageList.html(
       packages
@@ -64,7 +182,7 @@ $(function () {
             name="package"
             value="${escapeHtml(pkg.machineName)}"
             data-machine-name="${escapeHtml(pkg.machineName)}"
-            checked
+            ${defaultSelected.has(pkg.machineName) ? "checked" : ""}
           >
           <span>${escapeHtml(pkg.name)}</span>
         </label>
@@ -72,6 +190,8 @@ $(function () {
         )
         .join(""),
     );
+
+    syncPackageCheckboxStates();
   }
 
   function ensureInstancesTable() {
@@ -313,6 +433,10 @@ $(function () {
       );
     }
   }
+
+  elements.$packageList.on("change", 'input[name="package"]', function () {
+    applyPackageSelectionChange(this.value, this.checked);
+  });
 
   elements.$instanceForm.on("submit", async function (event) {
     event.preventDefault();

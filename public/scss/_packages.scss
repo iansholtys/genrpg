@@ -25,4 +25,9 @@
     width: auto;
     margin: 0;
   }
+
+  &.is-locked {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
 }
