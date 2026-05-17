@@ -25,6 +25,22 @@ $(function () {
     $instanceLoadingName: $("#instanceLoadingName"),
     $instanceLoadingProgress: $("#instanceLoadingProgress"),
     $instanceLoadingStatus: $("#instanceLoadingStatus"),
+    // Manage Users modal
+    $manageUsersModal: $("#manageUsersModal"),
+    $closeManageUsersModal: $("#closeManageUsersModal"),
+    $manageUsersInstanceName: $("#manageUsersInstanceName"),
+    $addUserRoleForm: $("#addUserRoleForm"),
+    $addUserSelect: $("#addUserSelect"),
+    $addRoleSelect: $("#addRoleSelect"),
+    $addUserMessage: $("#addUserMessage"),
+    $instanceUsersList: $("#instanceUsersList"),
+    // Delete Instance modal
+    $deleteInstanceModal: $("#deleteInstanceModal"),
+    $closeDeleteInstanceModal: $("#closeDeleteInstanceModal"),
+    $deleteInstanceName: $("#deleteInstanceName"),
+    $deleteInstanceConfirmInput: $("#deleteInstanceConfirmInput"),
+    $deleteInstanceMessage: $("#deleteInstanceMessage"),
+    $confirmDeleteInstanceButton: $("#confirmDeleteInstanceButton"),
   };
 
   let currentUser = null;
@@ -37,6 +53,12 @@ $(function () {
   let injectedScripts = [];
   const packageNameByMachineName = new Map();
   const packageByMachineName = new Map();
+  let manageUsersInstanceGuid = null;
+  let manageUsersInstanceName = null;
+  let instanceUsersTable = null;
+  let deleteInstanceGuid = null;
+  let deleteInstanceTargetName = null;
+  let allRoles = [];
 
   function getTransitiveDependencies(machineName) {
     const dependencies = new Set();
@@ -261,7 +283,7 @@ $(function () {
               );
             }),
         },
-        { title: "Permission" },
+        { title: "Role", field: "role" },
         {
           title: "Updated",
           field: "update_datetime",
@@ -274,14 +296,45 @@ $(function () {
           sortable: false,
           headerClass: "actions-cell",
           cellClass: "actions-cell",
-          renderFunction: (_value, instance) =>
-            $("<button>", {
-              type: "button",
-              class: "primary-button enter-instance-btn",
-              text: "Run",
-            })
-              .attr("data-instance-guid", instance.guid)
-              .attr("data-instance-name", instance.name),
+          renderFunction: (_value, instance) => {
+            const $container = $("<div>", { class: "instance-actions" });
+
+            $container.append(
+              $("<button>", {
+                type: "button",
+                class: "primary-button enter-instance-btn",
+                text: "Run",
+              })
+                .attr("data-instance-guid", instance.guid)
+                .attr("data-instance-name", instance.name),
+            );
+
+            if (instance.can_manage_users) {
+              $container.append(
+                $("<button>", {
+                  type: "button",
+                  class: "secondary-button manage-users-btn",
+                  text: "Users",
+                })
+                  .attr("data-instance-guid", instance.guid)
+                  .attr("data-instance-name", instance.name),
+              );
+            }
+
+            if (instance.can_delete) {
+              $container.append(
+                $("<button>", {
+                  type: "button",
+                  class: "danger-button-outline delete-instance-btn",
+                  text: "Delete",
+                })
+                  .attr("data-instance-guid", instance.guid)
+                  .attr("data-instance-name", instance.name),
+              );
+            }
+
+            return $container;
+          },
         },
       ],
       emptyState: {
@@ -679,6 +732,223 @@ $(function () {
   });
 
   elements.$exitInstanceButton.on("click", exitInstance);
+
+  // --- Manage Users Modal ---
+
+  function setAddUserMessage(message, tone = "neutral") {
+    elements.$addUserMessage.text(message).attr("data-tone", tone);
+  }
+
+  async function loadRoles() {
+    if (allRoles.length) return allRoles;
+    try {
+      const data = await requestJson("/api/genrpg/roles");
+      allRoles = data?.roles || [];
+      return allRoles;
+    } catch {
+      return [];
+    }
+  }
+
+  function buildInstanceUsersTable(users) {
+    instanceUsersTable = new Table({
+      id: "instance-users-table",
+      rowCount: {
+        show: true,
+        nounSingular: "user",
+        nounPlural: "users",
+      },
+      searchPlaceholder: "Search users…",
+      defaultSort: { field: "displayName" },
+      columns: [
+        { title: "Name", field: "displayName", searchable: true },
+        { title: "Email", field: "email", searchable: true },
+        { title: "Role", field: "roleName" },
+        {
+          title: "Actions",
+          sortable: false,
+          headerClass: "actions-cell",
+          cellClass: "actions-cell",
+          renderFunction: (_value, user) =>
+            $("<button>", {
+              type: "button",
+              class: "danger-button-outline remove-user-role-btn",
+              text: "Remove",
+            }).attr("data-user-guid", user.guid),
+        },
+      ],
+      emptyState: {
+        message: "No users assigned",
+        icon: "",
+        detailNoData: "No users have been assigned to this instance yet.",
+        detailFiltered: "No users match your search.",
+      },
+    });
+
+    elements.$instanceUsersList.empty().append(instanceUsersTable.init());
+    instanceUsersTable.setData(users);
+  }
+
+  async function loadInstanceUsers() {
+    if (!manageUsersInstanceGuid) return;
+    try {
+      const data = await requestJson(`/api/genrpg/instances/${manageUsersInstanceGuid}/users`);
+      buildInstanceUsersTable(data?.users || []);
+    } catch (err) {
+      elements.$instanceUsersList.html(
+        `<p class="empty-state">Failed to load users: ${escapeHtml(err.message)}</p>`,
+      );
+    }
+  }
+
+  async function openManageUsersModal(instanceGuid, instanceName) {
+    manageUsersInstanceGuid = instanceGuid;
+    manageUsersInstanceName = instanceName;
+    elements.$manageUsersInstanceName.text(instanceName);
+    setAddUserMessage("");
+    elements.$addUserRoleForm[0].reset();
+
+    // Populate role select
+    const roles = await loadRoles();
+    elements.$addRoleSelect.html('<option value="">Select a role…</option>');
+    for (const role of roles) {
+      elements.$addRoleSelect.append(
+        $("<option>", { value: role.id, text: role.name }),
+      );
+    }
+
+    // Populate user select
+    try {
+      const data = await requestJson("/api/genrpg/users");
+      elements.$addUserSelect.html('<option value="">Select a user…</option>');
+      for (const user of data?.users || []) {
+        const label = user.displayName
+          ? `${user.displayName} (${user.email || "no email"})`
+          : user.email || user.guid;
+        elements.$addUserSelect.append(
+          $("<option>", { value: user.guid, text: label }),
+        );
+      }
+    } catch {
+      elements.$addUserSelect.html('<option value="">Failed to load users</option>');
+    }
+
+    await loadInstanceUsers();
+    elements.$manageUsersModal[0].showModal();
+  }
+
+  elements.$instances.on("click", ".manage-users-btn", function () {
+    const $btn = $(this);
+    openManageUsersModal($btn.data("instance-guid"), $btn.data("instance-name"));
+  });
+
+  elements.$closeManageUsersModal.on("click", function () {
+    elements.$manageUsersModal[0].close();
+    manageUsersInstanceGuid = null;
+    manageUsersInstanceName = null;
+  });
+
+  elements.$addUserRoleForm.on("submit", async function (event) {
+    event.preventDefault();
+    if (!manageUsersInstanceGuid) return;
+
+    const formData = new FormData(this);
+    const userGuid = formData.get("userGuid");
+    const roleId = Number(formData.get("roleId"));
+
+    if (!userGuid || !roleId) {
+      setAddUserMessage("Select a user and a role.", "error");
+      return;
+    }
+
+    try {
+      await requestJson(`/api/genrpg/instances/${manageUsersInstanceGuid}/users/${userGuid}`, {
+        method: "PUT",
+        body: JSON.stringify({ roleId }),
+      });
+      setAddUserMessage("Role assigned.", "success");
+      this.reset();
+      await loadInstanceUsers();
+    } catch (error) {
+      setAddUserMessage(error.message, "error");
+    }
+  });
+
+  elements.$instanceUsersList.on("click", ".remove-user-role-btn", async function () {
+    if (!manageUsersInstanceGuid) return;
+    const $btn = $(this);
+    const userGuid = $btn.data("user-guid");
+
+    $btn.prop("disabled", true).text("Removing...");
+
+    try {
+      await requestJson(`/api/genrpg/instances/${manageUsersInstanceGuid}/users/${userGuid}`, {
+        method: "DELETE",
+      });
+      setAddUserMessage("User removed.", "success");
+      await loadInstanceUsers();
+    } catch (error) {
+      $btn.prop("disabled", false).text("Remove");
+      setAddUserMessage(error.message, "error");
+    }
+  });
+
+  // --- Delete Instance Modal ---
+
+  function setDeleteMessage(message, tone = "neutral") {
+    elements.$deleteInstanceMessage.text(message).attr("data-tone", tone);
+  }
+
+  function openDeleteInstanceModal(instanceGuid, instanceName) {
+    deleteInstanceGuid = instanceGuid;
+    deleteInstanceTargetName = instanceName;
+    elements.$deleteInstanceName.text(instanceName);
+    elements.$deleteInstanceConfirmInput.val("");
+    elements.$confirmDeleteInstanceButton.prop("disabled", true);
+    setDeleteMessage("");
+    elements.$deleteInstanceModal[0].showModal();
+  }
+
+  elements.$instances.on("click", ".delete-instance-btn", function () {
+    const $btn = $(this);
+    openDeleteInstanceModal($btn.data("instance-guid"), $btn.data("instance-name"));
+  });
+
+  elements.$closeDeleteInstanceModal.on("click", function () {
+    elements.$deleteInstanceModal[0].close();
+    deleteInstanceGuid = null;
+    deleteInstanceTargetName = null;
+  });
+
+  elements.$deleteInstanceConfirmInput.on("input", function () {
+    const matches = $(this).val() === deleteInstanceTargetName;
+    elements.$confirmDeleteInstanceButton.prop("disabled", !matches);
+  });
+
+  elements.$confirmDeleteInstanceButton.on("click", async function () {
+    if (!deleteInstanceGuid) return;
+
+    const $btn = $(this);
+    $btn.prop("disabled", true).text("Deleting...");
+
+    try {
+      await requestJson(`/api/genrpg/instances/${deleteInstanceGuid}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmName: deleteInstanceTargetName }),
+      });
+      elements.$deleteInstanceModal[0].close();
+      setMessage("Instance deleted.", "success");
+      deleteInstanceGuid = null;
+      deleteInstanceTargetName = null;
+      await load();
+    } catch (error) {
+      setDeleteMessage(error.message, "error");
+      $btn.text("Delete Instance");
+      // Re-enable only if name still matches
+      const matches = elements.$deleteInstanceConfirmInput.val() === deleteInstanceTargetName;
+      $btn.prop("disabled", !matches);
+    }
+  });
 
   elements.$instanceForm.on("submit", async function (event) {
     event.preventDefault();

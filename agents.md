@@ -53,5 +53,6 @@ Styling is written in SCSS for brevity and consistency before being compiled int
 2. **Follow SCSS Workflows:** If asked to update styles, locate the corresponding SCSS file(s), make changes, and run `npm run build:css`.
 3. **Database Changes:** The `db/*.sql` files define database changes (creating/modifying tables, etc.) needed for a fresh install of a Package. As storage requirements change, these files should be updated to stay current. For existing installs, a `*.updates.js` file must be provided which applies the same changes.
   1. For example, if a new version of a Package requires a new column on a table that Package creates, the corresponding `*.sql` file should be updated to include that column when doing the `CREATE TABLE`, and the `*.updates.js` file should get an update function with an `ALTER TABLE` command. Update functions may be more complicated if the schema changes enough that data must be migrated, e.g. splitting one table into several or changing a column type.
-4. **No Tailwind:** Do not introduce TailwindCSS unless explicitly requested.
-5. **Node/Express Idioms:** Stick to the existing vanilla JS and Express patterns found in `src/server.js` and other routes.
+4. **Table Timestamp Columns:** All database tables must include `create_datetime timestamptz NOT NULL DEFAULT now()` and `update_datetime timestamptz NOT NULL DEFAULT now()` columns, with an associated `BEFORE UPDATE` trigger using `genrpg.set_update_datetime()`.
+5. **No Tailwind:** Do not introduce TailwindCSS unless explicitly requested.
+6. **Node/Express Idioms:** Stick to the existing vanilla JS and Express patterns found in `src/server.js` and other routes.

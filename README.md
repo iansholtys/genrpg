@@ -20,7 +20,15 @@ Optional OIDC settings:
 - `OIDC_SCOPES`: defaults to `openid email profile`.
 - `ADMIN_EMAILS`: comma-separated emails promoted to GenRPG admins on login.
 
-Admins can see all instances. Non-admin users only see instances where they have an `Owner`, `Editor`, or `Viewer` row in `instance_user_permissions`.
+Admins inherently have `Instance_Owner`-level access to all instances. Non-admin users only see instances where they have a role assignment in `instance_user_roles`.
+
+GenRPG ships three built-in roles:
+
+| Role | Permissions |
+|------|------------|
+| `Instance_Owner` | Full control: edit, delete, run, manage packages, manage users |
+| `Instance_GM` | Same as Owner, but cannot assign or remove the `Instance_Owner` role |
+| `Instance_Player` | Can run/enter the instance |
 
 ## Reusable UI components
 
@@ -96,3 +104,22 @@ npm run db:apply
 ```
 
 The server also applies pending schema versions on startup before listening for requests.
+
+## Database Table Conventions
+
+All database tables (core and package) **must** include the following timestamp columns:
+
+```sql
+create_datetime timestamptz NOT NULL DEFAULT now(),
+update_datetime timestamptz NOT NULL DEFAULT now()
+```
+
+Each table must also have an associated trigger to automatically maintain `update_datetime`:
+
+```sql
+DROP TRIGGER IF EXISTS <table_name>_update_datetime ON <schema>.<table_name>;
+CREATE TRIGGER <table_name>_update_datetime
+  BEFORE UPDATE ON <schema>.<table_name>
+  FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();
+```
+

@@ -618,16 +618,49 @@ async function loadAccessibleInstance(instanceGuid, user) {
         i.description,
         i.packages
       FROM genrpg.instances i
-      LEFT JOIN genrpg.instance_user_permissions iup
-        ON iup.instance_guid = i.guid
-        AND iup.user_guid = $1
+      LEFT JOIN genrpg.instance_user_roles iur
+        ON iur.instance_guid = i.guid
+        AND iur.user_guid = $1
       WHERE i.guid = $2
-        AND ($3::boolean OR iup.user_guid IS NOT NULL)
+        AND ($3::boolean OR iur.user_guid IS NOT NULL)
     `,
     [user.guid, instanceGuid, user.admin],
   );
 
   return result.rows[0] || null;
+}
+
+async function getUserInstanceRole(instanceGuid, userGuid) {
+  const result = await pool.query(
+    `
+      SELECT r.name AS role_name
+      FROM genrpg.instance_user_roles iur
+      JOIN genrpg.roles r ON r.id = iur.role_id
+      WHERE iur.instance_guid = $1 AND iur.user_guid = $2
+    `,
+    [instanceGuid, userGuid],
+  );
+  return result.rows[0]?.role_name || null;
+}
+
+async function getUserInstancePermissions(instanceGuid, userGuid) {
+  const result = await pool.query(
+    `
+      SELECT DISTINCT p.name
+      FROM genrpg.instance_user_roles iur
+      JOIN genrpg.role_permissions rp ON rp.role_id = iur.role_id
+      JOIN genrpg.permissions p ON p.id = rp.permission_id
+      WHERE iur.instance_guid = $1 AND iur.user_guid = $2
+    `,
+    [instanceGuid, userGuid],
+  );
+  return new Set(result.rows.map((r) => r.name));
+}
+
+async function canUserManageInstance(instanceGuid, user, requiredPermission) {
+  if (user.admin) return true;
+  const permissions = await getUserInstancePermissions(instanceGuid, user.guid);
+  return permissions.has(requiredPermission);
 }
 
 // Resolves instance package assets from the in-memory package cache (no per-request YAML I/O).
@@ -672,13 +705,30 @@ genrpgApi.get("/instances", async (req, res, next) => {
           i.update_datetime,
           CASE
             WHEN $2::boolean THEN 'Admin'
-            ELSE iup.permission
-          END AS permission
+            ELSE r.name
+          END AS role,
+          CASE
+            WHEN $2::boolean THEN true
+            ELSE EXISTS (
+              SELECT 1 FROM genrpg.role_permissions rp
+              JOIN genrpg.permissions p ON p.id = rp.permission_id
+              WHERE rp.role_id = iur.role_id AND p.name = 'instance.manage_users'
+            )
+          END AS can_manage_users,
+          CASE
+            WHEN $2::boolean THEN true
+            ELSE EXISTS (
+              SELECT 1 FROM genrpg.role_permissions rp
+              JOIN genrpg.permissions p ON p.id = rp.permission_id
+              WHERE rp.role_id = iur.role_id AND p.name = 'instance.delete'
+            )
+          END AS can_delete
         FROM genrpg.instances i
-        LEFT JOIN genrpg.instance_user_permissions iup
-          ON iup.instance_guid = i.guid
-          AND iup.user_guid = $1
-        WHERE $2::boolean OR iup.user_guid IS NOT NULL
+        LEFT JOIN genrpg.instance_user_roles iur
+          ON iur.instance_guid = i.guid
+          AND iur.user_guid = $1
+        LEFT JOIN genrpg.roles r ON r.id = iur.role_id
+        WHERE $2::boolean OR iur.user_guid IS NOT NULL
         ORDER BY i.update_datetime DESC
       `,
       [user.guid, user.admin],
@@ -733,13 +783,17 @@ genrpgApi.post("/instances", async (req, res, next) => {
         [instanceGuid, name, description, packageSelection.packageCsv],
       );
 
-      if (!req.session.user.admin) {
+      // Assign Instance_Owner role to the creator
+      const ownerRole = await client.query(
+        `SELECT id FROM genrpg.roles WHERE name = 'Instance_Owner'`,
+      );
+      if (ownerRole.rows.length > 0) {
         await client.query(
           `
-            INSERT INTO genrpg.instance_user_permissions (instance_guid, user_guid, permission)
-            VALUES ($1, $2, 'Owner')
+            INSERT INTO genrpg.instance_user_roles (instance_guid, user_guid, role_id)
+            VALUES ($1, $2, $3)
           `,
-          [instanceGuid, req.session.user.guid],
+          [instanceGuid, req.session.user.guid, ownerRole.rows[0].id],
         );
       }
 
@@ -748,7 +802,9 @@ genrpgApi.post("/instances", async (req, res, next) => {
         instance: {
           ...instance.rows[0],
           packageNames: parsePackageCsv(instance.rows[0].packages),
-          permission: req.session.user.admin ? "Admin" : "Owner",
+          role: req.session.user.admin ? "Admin" : "Instance_Owner",
+          can_manage_users: true,
+          can_delete: true,
         },
       });
     } catch (error) {
@@ -763,6 +819,192 @@ genrpgApi.post("/instances", async (req, res, next) => {
       return;
     }
 
+    next(error);
+  }
+});
+
+genrpgApi.get("/users", async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT guid, email, display_name, admin FROM genrpg.users ORDER BY display_name`,
+    );
+    res.json({ users: result.rows.map(userSummary) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+genrpgApi.get("/roles", async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, description FROM genrpg.roles ORDER BY id`,
+    );
+    res.json({ roles: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+genrpgApi.get("/instances/:guid/users", async (req, res, next) => {
+  try {
+    const user = req.session.user;
+    const instanceGuid = req.params.guid;
+
+    // Must have access to the instance
+    const instance = await loadAccessibleInstance(instanceGuid, user);
+    if (!instance) {
+      res.status(404).json({ error: "Instance not found" });
+      return;
+    }
+
+    const result = await pool.query(
+      `
+        SELECT
+          u.guid,
+          u.email,
+          u.display_name,
+          r.id AS role_id,
+          r.name AS role_name
+        FROM genrpg.instance_user_roles iur
+        JOIN genrpg.users u ON u.guid = iur.user_guid
+        JOIN genrpg.roles r ON r.id = iur.role_id
+        WHERE iur.instance_guid = $1
+        ORDER BY r.id, u.display_name
+      `,
+      [instanceGuid],
+    );
+
+    res.json({
+      users: result.rows.map((row) => ({
+        guid: row.guid,
+        email: row.email,
+        displayName: row.display_name,
+        roleId: row.role_id,
+        roleName: row.role_name,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+genrpgApi.put("/instances/:guid/users/:userGuid", async (req, res, next) => {
+  try {
+    const user = req.session.user;
+    const { guid: instanceGuid, userGuid: targetUserGuid } = req.params;
+    const { roleId } = req.body;
+
+    if (!roleId) {
+      res.status(400).json({ error: "roleId is required" });
+      return;
+    }
+
+    // Check manage_users permission
+    const canManage = await canUserManageInstance(instanceGuid, user, "instance.manage_users");
+    if (!canManage) {
+      res.status(403).json({ error: "You do not have permission to manage users on this instance" });
+      return;
+    }
+
+    // Verify the role exists
+    const roleResult = await pool.query(
+      `SELECT id, name FROM genrpg.roles WHERE id = $1`,
+      [roleId],
+    );
+    if (!roleResult.rows.length) {
+      res.status(400).json({ error: "Invalid role" });
+      return;
+    }
+
+    const roleName = roleResult.rows[0].name;
+
+    // GMs cannot assign Instance_Owner
+    if (!user.admin) {
+      const callerRole = await getUserInstanceRole(instanceGuid, user.guid);
+      if (callerRole === "Instance_GM" && roleName === "Instance_Owner") {
+        res.status(403).json({ error: "GMs cannot assign the Instance_Owner role" });
+        return;
+      }
+    }
+
+    await pool.query(
+      `
+        INSERT INTO genrpg.instance_user_roles (instance_guid, user_guid, role_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (instance_guid, user_guid)
+        DO UPDATE SET role_id = EXCLUDED.role_id
+      `,
+      [instanceGuid, targetUserGuid, roleId],
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+genrpgApi.delete("/instances/:guid/users/:userGuid", async (req, res, next) => {
+  try {
+    const user = req.session.user;
+    const { guid: instanceGuid, userGuid: targetUserGuid } = req.params;
+
+    // Check manage_users permission
+    const canManage = await canUserManageInstance(instanceGuid, user, "instance.manage_users");
+    if (!canManage) {
+      res.status(403).json({ error: "You do not have permission to manage users on this instance" });
+      return;
+    }
+
+    // GMs cannot remove Instance_Owners
+    if (!user.admin) {
+      const callerRole = await getUserInstanceRole(instanceGuid, user.guid);
+      const targetRole = await getUserInstanceRole(instanceGuid, targetUserGuid);
+      if (callerRole === "Instance_GM" && targetRole === "Instance_Owner") {
+        res.status(403).json({ error: "GMs cannot remove Instance_Owner users" });
+        return;
+      }
+    }
+
+    await pool.query(
+      `DELETE FROM genrpg.instance_user_roles WHERE instance_guid = $1 AND user_guid = $2`,
+      [instanceGuid, targetUserGuid],
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+genrpgApi.delete("/instances/:guid", async (req, res, next) => {
+  try {
+    const user = req.session.user;
+    const instanceGuid = req.params.guid;
+    const { confirmName } = req.body;
+
+    // Check delete permission
+    const canDelete = await canUserManageInstance(instanceGuid, user, "instance.delete");
+    if (!canDelete) {
+      res.status(403).json({ error: "You do not have permission to delete this instance" });
+      return;
+    }
+
+    // Verify the instance exists and get name for confirmation
+    const instance = await loadAccessibleInstance(instanceGuid, user);
+    if (!instance) {
+      res.status(404).json({ error: "Instance not found" });
+      return;
+    }
+
+    // Require name confirmation
+    if (!confirmName || confirmName !== instance.name) {
+      res.status(400).json({ error: "Instance name confirmation does not match" });
+      return;
+    }
+
+    await pool.query(`DELETE FROM genrpg.instances WHERE guid = $1`, [instanceGuid]);
+    res.json({ success: true });
+  } catch (error) {
     next(error);
   }
 });
