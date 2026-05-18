@@ -5,10 +5,9 @@ const { isGlobalAdmin } = require("../auth");
 const {
   PackageLoadError,
   loadPackages,
-  loadPackagesWithAssets,
   parsePackageCsv,
   validatePackageSelection,
-  resolveInstanceAssets,
+  resolveInstanceAssetsForRequest,
 } = require("../packages");
 
 const instancesRouter = express.Router();
@@ -88,8 +87,8 @@ instancesRouter.get("/instances/:guid/assets", async (req, res, next) => {
     }
 
     const packageNames = parsePackageCsv(instance.packages);
-    const { packages } = await loadPackagesWithAssets();
-    const assets = resolveInstanceAssets(packageNames, packages);
+    const { packages } = await loadPackages({ strict: true });
+    const assets = await resolveInstanceAssetsForRequest(packageNames, packages);
 
     res.json({
       css: assets.css,

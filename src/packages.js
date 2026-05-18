@@ -6,6 +6,7 @@ const yaml = require("yaml");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const STATIC_PKG_PREFIX = "/static/pkg";
+const CORE_PACKAGE_MACHINE_NAME = "genrpg";
 
 let packageCache = null;
 let packagesWithAssetsCache = null;
@@ -399,17 +400,56 @@ function sortPackagesTopologically(selectedMachineNames, packages) {
   return ordered;
 }
 
+/** Instance asset loads always include core GenRPG plus declared package requirements. */
+function expandPackageSelectionForAssets(selectedMachineNames, packages) {
+  const byMachineName = new Map(packages.map((pkg) => [pkg.machineName, pkg]));
+  const expanded = new Set(selectedMachineNames);
+
+  expanded.add(CORE_PACKAGE_MACHINE_NAME);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const machineName of expanded) {
+      const pkg = byMachineName.get(machineName);
+      if (!pkg) {
+        continue;
+      }
+
+      for (const requirement of pkg.requirements) {
+        if (!expanded.has(requirement.machineName)) {
+          expanded.add(requirement.machineName);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return [...expanded];
+}
+
 function resolveInstanceAssets(selectedMachineNames, packages) {
-  const ordered = sortPackagesTopologically(selectedMachineNames, packages);
+  const expandedSelection = expandPackageSelectionForAssets(selectedMachineNames, packages);
+  const ordered = sortPackagesTopologically(expandedSelection, packages).filter(Boolean);
   const css = [];
   const js = [];
 
   for (const pkg of ordered) {
+    if (!pkg.assetUrls) {
+      continue;
+    }
     css.push(...pkg.assetUrls.css);
     js.push(...pkg.assetUrls.js);
   }
 
   return { css, js, packageNames: ordered.map((pkg) => pkg.machineName) };
+}
+
+async function resolveInstanceAssetsForRequest(selectedMachineNames, packages) {
+  const expandedSelection = expandPackageSelectionForAssets(selectedMachineNames, packages);
+  const selectedPackages = packages.filter((pkg) => expandedSelection.includes(pkg.machineName));
+  const packagesWithAssets = await enrichAllPackagesWithAssets(selectedPackages);
+  return resolveInstanceAssets(selectedMachineNames, packagesWithAssets);
 }
 
 async function refreshPackageCache() {
@@ -495,6 +535,7 @@ module.exports = {
   PackageLoadError,
   REPO_ROOT,
   STATIC_PKG_PREFIX,
+  CORE_PACKAGE_MACHINE_NAME,
   assertValidPackageConfiguration,
   loadPackages,
   loadPackagesWithAssets,
@@ -504,4 +545,6 @@ module.exports = {
   formatPackageCsv,
   validatePackageSelection,
   resolveInstanceAssets,
+  resolveInstanceAssetsForRequest,
+  expandPackageSelectionForAssets,
 };
