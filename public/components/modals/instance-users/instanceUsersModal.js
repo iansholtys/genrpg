@@ -10,8 +10,8 @@ class InstanceUsersModal extends Modal {
     super("instance-users-modal", "Manage Users", {
       maxWidth: "52rem",
       width: "92vw",
-      enterAnimation: "none",
-      exitAnimation: "none",
+      enterAnimation: { preset: "scale-down", duration: 200 },
+      exitAnimation: { preset: "scale-up", duration: 200 },
       classes: ["instance-users-modal"],
     });
     this.instanceGuid = null;
