@@ -1,107 +1,12 @@
 import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
-import { escapeHtml, setMessage } from "./utils.js";
-import { loadRoles } from "./roles.js";
-
-function setAddUserMessage(message, tone = "neutral") {
-  const elements = getElements();
-  setMessage(elements.$addUserMessage, message, tone);
-}
+import { setMessage } from "./utils.js";
+import { openManageUsersModal } from "../components/modals/instance-users/instanceUsersModal.js";
 
 function setGlobalUserMessage(message, tone = "neutral") {
   const elements = getElements();
   setMessage(elements.$globalUsersMessage, message, tone);
-}
-
-function buildInstanceUsersTable(users) {
-  const elements = getElements();
-  state.instanceUsersTable = new Table({
-    id: "instance-users-table",
-    rowCount: {
-      show: true,
-      nounSingular: "user",
-      nounPlural: "users",
-    },
-    searchPlaceholder: "Search users…",
-    defaultSort: { field: "displayName" },
-    columns: [
-      { title: "Name", field: "displayName", searchable: true },
-      { title: "Email", field: "email", searchable: true },
-      { title: "Role", field: "roleName" },
-      {
-        title: "Actions",
-        sortable: false,
-        headerClass: "actions-cell",
-        cellClass: "actions-cell",
-        renderFunction: (_value, user) =>
-          $("<button>", {
-            type: "button",
-            class: "danger-button-outline remove-user-role-btn",
-            text: "Remove",
-          }).attr("data-user-guid", user.guid),
-      },
-    ],
-    emptyState: {
-      message: "No users assigned",
-      icon: "",
-      detailNoData: "No users have been assigned to this instance yet.",
-      detailFiltered: "No users match your search.",
-    },
-  });
-
-  elements.$instanceUsersList.empty().append(state.instanceUsersTable.init());
-  state.instanceUsersTable.setData(users);
-}
-
-async function loadInstanceUsers() {
-  const elements = getElements();
-  if (!state.manageUsersInstanceGuid) return;
-  try {
-    const data = await requestJson(`/api/genrpg/instances/${state.manageUsersInstanceGuid}/users`);
-    buildInstanceUsersTable(data?.users || []);
-  } catch (err) {
-    elements.$instanceUsersList.html(
-      `<p class="empty-state">Failed to load users: ${escapeHtml(err.message)}</p>`,
-    );
-  }
-}
-
-async function openManageUsersModal(instanceGuid, instanceName) {
-  const elements = getElements();
-  state.manageUsersInstanceGuid = instanceGuid;
-  state.manageUsersInstanceName = instanceName;
-  elements.$manageUsersInstanceName.text(instanceName);
-  setAddUserMessage("");
-  elements.$addUserRoleForm[0].reset();
-
-  // Populate role select
-  const roles = await loadRoles();
-  elements.$addRoleSelect.html('<option value="">Select a role…</option>');
-  for (const role of roles) {
-    elements.$addRoleSelect.append(
-      $("<option>", { value: role.id, text: role.name }),
-    );
-  }
-
-  // Populate user select
-  try {
-    const data = await requestJson("/api/genrpg/users");
-    elements.$addUserSelect.html('<option value="">Select a user…</option>');
-    for (const user of data?.users || []) {
-      const label = user.displayName
-        ? `${user.displayName} (${user.email || "no email"})`
-        : user.email || user.guid;
-      elements.$addUserSelect.append(
-        $("<option>", { value: user.guid, text: label }),
-      );
-    }
-  } catch {
-    elements.$addUserSelect.html('<option value="">Failed to load users</option>');
-  }
-
-  await loadInstanceUsers();
-  elements.$manageUsersModal[0].showModal();
 }
 
 function buildGlobalUsersTable(users) {
@@ -178,57 +83,6 @@ export function setupUserEvents() {
   elements.$instances.on("click", ".manage-users-btn", function () {
     const $btn = $(this);
     openManageUsersModal($btn.data("instance-guid"), $btn.data("instance-name"));
-  });
-
-  elements.$closeManageUsersModal.on("click", function () {
-    elements.$manageUsersModal[0].close();
-    state.manageUsersInstanceGuid = null;
-    state.manageUsersInstanceName = null;
-  });
-
-  elements.$addUserRoleForm.on("submit", async function (event) {
-    event.preventDefault();
-    if (!state.manageUsersInstanceGuid) return;
-
-    const formData = new FormData(this);
-    const userGuid = formData.get("userGuid");
-    const roleId = Number(formData.get("roleId"));
-
-    if (!userGuid || !roleId) {
-      setAddUserMessage("Select a user and a role.", "error");
-      return;
-    }
-
-    try {
-      await requestJson(`/api/genrpg/instances/${state.manageUsersInstanceGuid}/users/${userGuid}`, {
-        method: "PUT",
-        body: JSON.stringify({ roleId }),
-      });
-      setAddUserMessage("Role assigned.", "success");
-      this.reset();
-      await loadInstanceUsers();
-    } catch (error) {
-      setAddUserMessage(error.message, "error");
-    }
-  });
-
-  elements.$instanceUsersList.on("click", ".remove-user-role-btn", async function () {
-    if (!state.manageUsersInstanceGuid) return;
-    const $btn = $(this);
-    const userGuid = $btn.data("user-guid");
-
-    $btn.prop("disabled", true).text("Removing...");
-
-    try {
-      await requestJson(`/api/genrpg/instances/${state.manageUsersInstanceGuid}/users/${userGuid}`, {
-        method: "DELETE",
-      });
-      setAddUserMessage("User removed.", "success");
-      await loadInstanceUsers();
-    } catch (error) {
-      $btn.prop("disabled", false).text("Remove");
-      setAddUserMessage(error.message, "error");
-    }
   });
 
   elements.$manageGlobalUsersButton.on("click", async function () {

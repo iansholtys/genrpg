@@ -7,10 +7,12 @@
   <title>GenRPG</title>
   <link rel="stylesheet" href="/static/css/table-vars.css">
   <link rel="stylesheet" href="/static/components/reusable/table/styles/table.css">
+  <link rel="stylesheet" href="/static/components/reusable/modal/styles/modal.css">
   <link rel="stylesheet" href="/static/css/styles.css">
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"
     integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous" defer></script>
   <script src="/static/components/reusable/table/table.js" defer></script>
+  <script src="/static/components/reusable/modal/modal.js" defer></script>
   <script type="module" src="/static/js/app.js" defer></script>
 </head>
 
@@ -163,35 +165,6 @@
     </div>
   </dialog>
 
-  <dialog id="manageUsersModal" class="manage-users-modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Manage Users — <span id="manageUsersInstanceName"></span></h2>
-        <button type="button" id="closeManageUsersModal" class="close-button" aria-label="Close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <form id="addUserRoleForm" class="add-user-role-form">
-          <label>
-            <span>User</span>
-            <select name="userGuid" id="addUserSelect" required>
-              <option value="">Select a user…</option>
-            </select>
-          </label>
-          <label>
-            <span>Role</span>
-            <select name="roleId" id="addRoleSelect" required>
-              <option value="">Select a role…</option>
-            </select>
-          </label>
-          <button type="submit">Assign Role</button>
-        </form>
-        <div id="addUserMessage" class="message" role="status"></div>
-        <hr>
-        <h3>Current Users</h3>
-        <div id="instanceUsersList"></div>
-      </div>
-    </div>
-  </dialog>
 
   <dialog id="deleteInstanceModal" class="delete-instance-modal">
     <div class="modal-content">
@@ -234,4 +207,4 @@
 </body>
 
 </html>
-
+

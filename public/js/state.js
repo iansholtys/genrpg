@@ -11,7 +11,6 @@ export const state = {
   packageByMachineName: new Map(),
   manageUsersInstanceGuid: null,
   manageUsersInstanceName: null,
-  instanceUsersTable: null,
   deleteInstanceGuid: null,
   deleteInstanceTargetName: null,
   allRoles: [],

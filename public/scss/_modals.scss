@@ -4,7 +4,6 @@
 // and delete instance modal.
 
 .package-modal,
-.manage-users-modal,
 .manage-roles-modal,
 .manage-global-users-modal,
 .delete-instance-modal {
@@ -213,5 +212,39 @@
 
   button {
     flex: 1;
+  }
+}
+
+body.app-shell .modal-backdrop {
+  --modal-backdrop: rgba(0, 0, 0, 0.65);
+}
+
+// Instance users modal (reusable Modal component)
+.modal-layer.instance-users-modal {
+  --modal-bg: var(--bg);
+  --modal-text: var(--text);
+  --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --modal-header-border: var(--line);
+  --modal-header-bg: var(--bg);
+  --modal-close: var(--text);
+  --modal-close-hover: var(--accent-strong);
+
+  .modal-content {
+    border: 1px solid var(--line);
+    border-radius: $radius;
+  }
+
+  .modal-body {
+    h3 {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+      letter-spacing: 0;
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 1.25rem 0;
+    }
   }
 }

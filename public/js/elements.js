@@ -28,15 +28,6 @@ export function getElements() {
       $instanceLoadingName: $("#instanceLoadingName"),
       $instanceLoadingProgress: $("#instanceLoadingProgress"),
       $instanceLoadingStatus: $("#instanceLoadingStatus"),
-      // Manage Users modal
-      $manageUsersModal: $("#manageUsersModal"),
-      $closeManageUsersModal: $("#closeManageUsersModal"),
-      $manageUsersInstanceName: $("#manageUsersInstanceName"),
-      $addUserRoleForm: $("#addUserRoleForm"),
-      $addUserSelect: $("#addUserSelect"),
-      $addRoleSelect: $("#addRoleSelect"),
-      $addUserMessage: $("#addUserMessage"),
-      $instanceUsersList: $("#instanceUsersList"),
       // Delete Instance modal
       $deleteInstanceModal: $("#deleteInstanceModal"),
       $closeDeleteInstanceModal: $("#closeDeleteInstanceModal"),
