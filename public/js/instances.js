@@ -1,133 +1,68 @@
 import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
-import { escapeHtml, setMessage } from "./utils.js";
-import { formatInstancePackageLabels } from "./packages.js";
-import { loadApp } from "./app.js";
-import { openDeleteInstanceModal } from "../components/modals/delete-instance/deleteInstanceModal.js";
+import { setMessage } from "./utils.js";
 import {
   openCreateInstanceModal,
-  openEditInstanceModal,
+  openManageInstanceModal,
 } from "../components/modals/manage-instance/manageInstanceModal.js";
 
-function ensureInstancesTable() {
-  const elements = getElements();
-  if (state.instancesTable) {
-    return state.instancesTable;
+function canManageInstance(instance) {
+  return instance.can_edit || instance.can_manage_users || instance.can_delete;
+}
+
+function buildInstanceTile(instance) {
+  const description = instance.description?.trim() || "No description";
+  const encoded = encodeURIComponent(JSON.stringify(instance));
+  const $tile = $("<div>", { class: "instance-tile" });
+
+  const $run = $("<button>", {
+    type: "button",
+    class: "instance-tile__main",
+    "aria-label": `Run ${instance.name}. ${description}`,
+  })
+    .attr("data-instance-guid", instance.guid)
+    .attr("data-instance-name", instance.name);
+
+  $run.append(
+    $("<span>", { class: "instance-tile__name", text: instance.name }),
+    $("<span>", { class: "instance-tile__description", text: description }),
+  );
+
+  $tile.append($run);
+
+  if (canManageInstance(instance)) {
+    $tile.append(
+      $("<button>", {
+        type: "button",
+        class: "instance-tile-manage secondary-button",
+        text: "Manage",
+        "aria-label": `Manage ${instance.name}`,
+      }).attr("data-instance", encoded),
+    );
   }
 
-  state.instancesTable = new Table({
-    id: "instances-table",
-    rowCount: {
-      show: true,
-      nounSingular: "instance",
-      nounPlural: "instances",
-    },
-    searchPlaceholder: "Search instances…",
-    defaultSort: { field: "name" },
-    columns: [
-      { title: "Name", searchable: true },
-      {
-        title: "Description",
-        searchable: true,
-        valueFunction: (instance) => instance.description || "",
-        renderFunction: (value) => escapeHtml(value || "No description"),
-      },
-      {
-        title: "Packages",
-        field: "packageNames",
-        searchable: true,
-        sortable: false,
-        valueFunction: (instance) => formatInstancePackageLabels(instance.packageNames),
-        searchFunction: (instance, searchTerm) =>
-          (instance.packageNames || []).some((machineName) => {
-            const label = state.packageNameByMachineName.get(machineName) || machineName;
-            return (
-              label.toLowerCase().includes(searchTerm) ||
-              machineName.toLowerCase().includes(searchTerm)
-            );
-          }),
-      },
-      { title: "Role", field: "role" },
-      {
-        title: "Actions",
-        sortable: false,
-        headerClass: "actions-cell",
-        cellClass: "actions-cell",
-        renderFunction: (_value, instance) => {
-          const $container = $("<div>", { class: "instance-actions" });
-
-          $container.append(
-            $("<button>", {
-              type: "button",
-              class: "primary-button enter-instance-btn",
-              text: "Run",
-            })
-              .attr("data-instance-guid", instance.guid)
-              .attr("data-instance-name", instance.name),
-          );
-
-          if (instance.can_edit) {
-            $container.append(
-              $("<button>", {
-                type: "button",
-                class: "accent-button-outline instance-action-btn edit-instance-btn",
-                text: "✏️",
-                title: "Edit instance",
-                "aria-label": "Edit instance",
-              }).attr(
-                "data-instance",
-                encodeURIComponent(JSON.stringify(instance)),
-              ),
-            );
-          }
-
-          if (instance.can_manage_users) {
-            $container.append(
-              $("<button>", {
-                type: "button",
-                class: "accent-button-outline instance-action-btn manage-users-btn",
-                text: "👥",
-                title: "Manage users",
-                "aria-label": "Manage users",
-              })
-                .attr("data-instance-guid", instance.guid)
-                .attr("data-instance-name", instance.name),
-            );
-          }
-
-          if (instance.can_delete) {
-            $container.append(
-              $("<button>", {
-                type: "button",
-                class: "danger-button-outline instance-action-btn delete-instance-btn",
-                text: "🗑️",
-                title: "Delete instance",
-                "aria-label": "Delete instance",
-              })
-                .attr("data-instance-guid", instance.guid)
-                .attr("data-instance-name", instance.name),
-            );
-          }
-
-          return $container;
-        },
-      },
-    ],
-    emptyState: {
-      message: "No instances found",
-      icon: "",
-      detailNoData: "You have not created any instances yet.",
-      detailFiltered: "No instances match your search.",
-    },
-  });
-
-  elements.$instances.empty().append(state.instancesTable.init());
-  return state.instancesTable;
+  return $tile;
 }
 
 export function renderInstances(instances) {
-  ensureInstancesTable().setData(instances);
+  const elements = getElements();
+  const $grid = $("<div>", { class: "instance-tile-grid" });
+
+  for (const instance of instances) {
+    $grid.append(buildInstanceTile(instance));
+  }
+
+  $grid.append(
+    $("<button>", {
+      type: "button",
+      class: "instance-tile instance-tile--create",
+      text: "Create Instance",
+      "aria-label": "Create Instance",
+    }),
+  );
+
+  elements.$instances.empty().append($grid);
 }
 
 function loadStylesheet(href) {
@@ -307,7 +242,7 @@ function exitInstance() {
 
 function clearEnteringState() {
   state.enteringInstance = false;
-  getElements().$instances.find(".enter-instance-btn").prop("disabled", false);
+  getElements().$instances.find(".instance-tile button").prop("disabled", false);
 }
 
 function rejectRoute(token, message) {
@@ -338,7 +273,7 @@ async function loadInstance(instanceGuid, instanceName, token) {
   }
 
   state.enteringInstance = true;
-  elements.$instances.find(".enter-instance-btn").prop("disabled", true);
+  elements.$instances.find(".instance-tile button").prop("disabled", true);
 
   try {
     const assets = await requestJson(`/api/genrpg/instances/${instanceGuid}/assets`);
@@ -490,24 +425,22 @@ export function setupInstanceEvents() {
     applyRoute();
   });
 
-  elements.$instances.on("click", ".enter-instance-btn", function () {
-    navigateToInstance($(this).data("instance-guid"));
+  elements.$instances.on("click", ".instance-tile--create", () => {
+    openCreateInstanceModal();
   });
 
-  elements.$exitInstanceButton.on("click", () => navigateToAlias(""));
-
-  elements.$instances.on("click", ".delete-instance-btn", function () {
-    const $btn = $(this);
-    openDeleteInstanceModal($btn.data("instance-guid"), $btn.data("instance-name"));
-  });
-
-  elements.$instances.on("click", ".edit-instance-btn", function () {
+  elements.$instances.on("click", ".instance-tile-manage", function (event) {
+    event.stopPropagation();
     const raw = $(this).attr("data-instance");
     if (!raw) {
       return;
     }
-    openEditInstanceModal(JSON.parse(decodeURIComponent(raw)));
+    openManageInstanceModal(JSON.parse(decodeURIComponent(raw)));
   });
 
-  elements.$createInstanceButton.on("click", () => openCreateInstanceModal());
+  elements.$instances.on("click", ".instance-tile__main", function () {
+    navigateToInstance($(this).data("instance-guid"));
+  });
+
+  elements.$exitInstanceButton.on("click", () => navigateToAlias(""));
 }

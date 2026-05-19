@@ -349,6 +349,21 @@ textarea {
   font-size: 1.1rem;
 }
 
+.administration {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+.administration[hidden] {
+  display: none;
+}
+
+.administration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .update-banner {
   position: fixed;
   right: 0;
@@ -369,10 +384,6 @@ textarea {
 .update-banner p {
   margin: 0;
   color: var(--text);
-}
-
-.package-tools {
-  margin-bottom: 2rem;
 }
 
 .package-list {
@@ -467,82 +478,247 @@ textarea {
   margin: 1.25rem 0;
 }
 
-.manage-instance-form {
+.manage-instance-modal .manage-instance-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.75rem;
+}
+.manage-instance-modal .manage-instance-tab {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.manage-instance-modal .manage-instance-tab.is-active, .manage-instance-modal .manage-instance-tab[aria-selected=true] {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--accent-strong);
+}
+.manage-instance-modal .manage-instance-tab-panel[hidden] {
+  display: none;
+}
+.manage-instance-modal .manage-instance-form {
   display: grid;
   gap: 1rem;
 }
-.manage-instance-form > label,
-.manage-instance-form fieldset {
+.manage-instance-modal .manage-instance-form > label,
+.manage-instance-modal .manage-instance-form fieldset {
   display: grid;
   gap: 0.35rem;
   margin: 0;
   border: 0;
   padding: 0;
 }
-.manage-instance-form legend {
+.manage-instance-modal .manage-instance-form legend {
   font-size: 0.95rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
   padding: 0;
 }
-.manage-instance-form .manage-instance-url-label .manage-instance-url-help {
+.manage-instance-modal .manage-instance-form .manage-instance-url-label .manage-instance-url-help {
   margin: 0;
   font-size: 0.85rem;
   line-height: 1.4;
   color: var(--muted);
 }
-.manage-instance-form .manage-instance-url-label .manage-instance-url-help[data-tone=error] {
+.manage-instance-modal .manage-instance-form .manage-instance-url-label .manage-instance-url-help[data-tone=error] {
   color: var(--danger);
 }
-.manage-instance-form .manage-instance-url-label .manage-instance-url-help[data-tone=muted] {
+.manage-instance-modal .manage-instance-form .manage-instance-url-label .manage-instance-url-help[data-tone=muted] {
   color: var(--muted);
   font-style: italic;
 }
-.manage-instance-form .manage-instance-packages-fieldset .package-list {
+.manage-instance-modal .manage-instance-form .manage-instance-packages-fieldset .package-list {
   margin: 0;
 }
-.manage-instance-form .message {
+.manage-instance-modal .manage-instance-form .message {
   margin: 0;
 }
-
-.message {
-  min-height: 1.5rem;
+.manage-instance-modal .add-user-role-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: 1rem;
+}
+.manage-instance-modal select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  padding: 0.75rem;
+  appearance: none;
+  cursor: pointer;
+}
+.manage-instance-modal #instanceUsersList .table-component .table-filter {
   margin-bottom: 0.75rem;
 }
-.message[data-tone=error] {
-  color: var(--danger);
-}
-.message[data-tone=success] {
-  color: var(--accent-strong);
-}
-
-#instances .table-component .table-filter,
-#gitPackagesList .table-component .table-filter,
-#instanceUsersList .table-component .table-filter {
-  margin-bottom: 0.75rem;
-}
-#instances .data-table .actions-cell,
-#gitPackagesList .data-table .actions-cell,
-#instanceUsersList .data-table .actions-cell {
+.manage-instance-modal #instanceUsersList .data-table .actions-cell {
   text-align: right;
   white-space: nowrap;
 }
-#instances .table-status-muted,
-#gitPackagesList .table-status-muted,
-#instanceUsersList .table-status-muted {
+.manage-instance-modal .delete-warning {
+  text-align: center;
+  padding: 1.5rem;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: rgba(255, 155, 141, 0.06);
+  margin-bottom: 1.5rem;
+}
+.manage-instance-modal .delete-warning__icon {
+  font-size: 2.5rem;
+  margin: 0 0 0.5rem;
+  line-height: 1;
+}
+.manage-instance-modal .delete-warning__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--danger);
+}
+.manage-instance-modal .delete-warning__text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.manage-instance-modal .delete-instance-highlight {
+  color: var(--danger);
+}
+
+.instances-home .message {
+  min-height: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+.instances-home .message[data-tone=error] {
+  color: var(--danger);
+}
+.instances-home .message[data-tone=success] {
+  color: var(--accent-strong);
+}
+
+.instance-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.instance-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(26, 31, 36, 0.88);
+  padding: 0;
+  overflow: hidden;
+}
+.instance-tile:hover, .instance-tile:focus-within {
+  border-color: var(--accent);
+}
+.instance-tile__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 200px;
+  margin: 0;
+  padding: 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.instance-tile__main:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.instance-tile__main:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.instance-tile__name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.instance-tile__description {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.instance-tile--create {
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 1rem;
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.instance-tile--create:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.instance-tile--create:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.instance-tile-manage {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+  opacity: 0;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.instance-tile:hover .instance-tile-manage, .instance-tile:focus-within .instance-tile-manage {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#gitPackagesList .table-component .table-filter {
+  margin-bottom: 0.75rem;
+}
+#gitPackagesList .data-table .actions-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+#gitPackagesList .table-status-muted {
   color: var(--muted);
   font-size: 0.9rem;
 }
-#instances .table-status-installed,
-#gitPackagesList .table-status-installed,
-#instanceUsersList .table-status-installed {
+#gitPackagesList .table-status-installed {
   color: var(--accent-strong);
   font-size: 0.9rem;
   font-weight: 500;
 }
-#instances .table-status-available,
-#gitPackagesList .table-status-available,
-#instanceUsersList .table-status-available {
+#gitPackagesList .table-status-available {
   color: var(--muted);
   font-size: 0.9rem;
   font-style: italic;
@@ -563,69 +739,6 @@ dt {
 dd {
   margin: 0.15rem 0 0;
   white-space: nowrap;
-}
-
-.instance-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  justify-content: flex-end;
-}
-
-.instance-action-btn {
-  min-width: 2.25rem;
-  padding: 0.4rem 0.55rem;
-  line-height: 1;
-  font-size: 1rem;
-}
-
-.add-user-role-form {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  align-items: end;
-  gap: 1rem;
-}
-
-select {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  padding: 0.75rem;
-  appearance: none;
-  cursor: pointer;
-}
-
-.delete-warning {
-  text-align: center;
-  padding: 1.5rem;
-  border: 1px solid var(--danger);
-  border-radius: 8px;
-  background: rgba(255, 155, 141, 0.06);
-  margin-bottom: 1.5rem;
-}
-.delete-warning__icon {
-  font-size: 2.5rem;
-  margin: 0 0 0.5rem;
-  line-height: 1;
-}
-.delete-warning__title {
-  margin: 0 0 0.5rem;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--danger);
-}
-.delete-warning__text {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.delete-instance-highlight {
-  color: var(--danger);
 }
 
 @media (max-width: 760px) {

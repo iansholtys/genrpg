@@ -42,22 +42,20 @@
   </section>
 
   <main class="workspace">
-    <section class="package-tools" aria-label="Packages" hidden>
+    <section class="instances-home" aria-label="Your instances">
+      <div id="message" class="message" role="status"></div>
+      <div id="instances"></div>
+    </section>
+
+    <section id="administrationSection" class="administration" hidden aria-label="Administration">
       <div class="section-heading">
-        <h2>Packages</h2>
+        <h2>Administration</h2>
+      </div>
+      <div class="administration-actions">
         <button type="button" id="managePackagesButton" hidden>Manage Packages</button>
         <button type="button" id="manageRolesButton" hidden>Manage Roles</button>
         <button type="button" id="manageGlobalUsersButton" hidden>Manage Users</button>
       </div>
-    </section>
-
-    <section>
-      <div class="section-heading">
-        <h2>Your instances</h2>
-        <button type="button" id="createInstanceButton" class="primary-button">Create Instance</button>
-      </div>
-      <div id="message" class="message" role="status"></div>
-      <div id="instances"></div>
     </section>
   </main>
 

@@ -21,12 +21,12 @@ export async function loadApp() {
     let label = user.email || user.displayName || "Signed in";
     if (user.admin) {
       label += " (admin)";
-      elements.$packageTools.prop("hidden", false);
+      elements.$administrationSection.prop("hidden", false);
       elements.$managePackagesButton.prop("hidden", false);
       elements.$manageRolesButton.prop("hidden", false);
       elements.$manageGlobalUsersButton.prop("hidden", false);
     } else {
-      elements.$packageTools.prop("hidden", true);
+      elements.$administrationSection.prop("hidden", true);
     }
     elements.$userLabel.text(label);
     
