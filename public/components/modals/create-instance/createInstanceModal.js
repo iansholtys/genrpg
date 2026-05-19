@@ -30,6 +30,7 @@ class CreateInstanceModal extends Modal {
     this.aliasCheckPending = false;
     this.aliasCheckGeneration = 0;
     this.aliasCheckTimer = null;
+    this.lastCheckedUrlSegment = "";
   }
 
   getContent() {
@@ -148,6 +149,7 @@ class CreateInstanceModal extends Modal {
   updateUrlHelpForEmpty() {
     this.aliasInUse = false;
     this.aliasCheckPending = false;
+    this.lastCheckedUrlSegment = "";
     this.setUrlHelp("Optional. Leave blank for an auto-generated URL.", "neutral");
     this.updateSubmitDisabled();
   }
@@ -155,14 +157,16 @@ class CreateInstanceModal extends Modal {
   updateUrlHelpForAvailable(segment) {
     this.aliasInUse = false;
     this.aliasCheckPending = false;
+    this.lastCheckedUrlSegment = segment;
     const base = this.getSiteBase();
     this.setUrlHelp(`Your instance will be at ${base}/instance/${segment}`, "neutral");
     this.updateSubmitDisabled();
   }
 
-  updateUrlHelpForInUse() {
+  updateUrlHelpForInUse(segment) {
     this.aliasInUse = true;
     this.aliasCheckPending = false;
+    this.lastCheckedUrlSegment = segment;
     this.setUrlHelp("This alias is already in use, please use another.", "error");
     this.updateSubmitDisabled();
   }
@@ -211,7 +215,7 @@ class CreateInstanceModal extends Modal {
       if (available) {
         this.updateUrlHelpForAvailable(segment);
       } else {
-        this.updateUrlHelpForInUse();
+        this.updateUrlHelpForInUse(segment);
       }
     } catch {
       if (generation !== this.aliasCheckGeneration) {
@@ -235,10 +239,14 @@ class CreateInstanceModal extends Modal {
   }
 
   onUrlBlur() {
-    const value = this.elements.$createInstanceUrlInput.val();
+    let value = this.elements.$createInstanceUrlInput.val();
     if (!isProperlySlugified(value)) {
-      const slug = slugifyInstanceUrlSegment(value);
-      this.elements.$createInstanceUrlInput.val(slug);
+      value = slugifyInstanceUrlSegment(value);
+      this.elements.$createInstanceUrlInput.val(value);
+    }
+    const segment = slugifyInstanceUrlSegment(value);
+    if (segment === this.lastCheckedUrlSegment) {
+      return;
     }
     this.scheduleAliasAvailabilityCheck();
   }
@@ -252,6 +260,7 @@ class CreateInstanceModal extends Modal {
     this.aliasCheckGeneration += 1;
     this.aliasInUse = false;
     this.aliasCheckPending = false;
+    this.lastCheckedUrlSegment = "";
     this.elements.$createInstanceForm[0].reset();
     renderInstancePackageSelection(this.elements.$createInstancePackageList);
     this.setFormMessage("");
