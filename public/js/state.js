@@ -9,7 +9,5 @@ export const state = {
   packageByMachineName: new Map(),
   manageUsersInstanceGuid: null,
   manageUsersInstanceName: null,
-  deleteInstanceGuid: null,
-  deleteInstanceTargetName: null,
   allRoles: [],
 };

@@ -285,21 +285,6 @@ textarea {
   cursor: not-allowed;
 }
 
-.delete-instance-modal {
-  max-width: 52rem;
-  width: 92vw;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--text);
-  padding: 0;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-}
-.delete-instance-modal::backdrop {
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(4px);
-}
-
 .modal-content {
   display: grid;
   gap: 0;
@@ -480,7 +465,8 @@ body.app-shell .modal-backdrop {
 .modal-layer.instance-users-modal,
 .modal-layer.manage-packages-modal,
 .modal-layer.manage-global-users-modal,
-.modal-layer.manage-roles-modal {
+.modal-layer.manage-roles-modal,
+.modal-layer.delete-instance-modal {
   --modal-bg: var(--bg);
   --modal-text: var(--text);
   --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -492,14 +478,16 @@ body.app-shell .modal-backdrop {
 .modal-layer.instance-users-modal .modal-content,
 .modal-layer.manage-packages-modal .modal-content,
 .modal-layer.manage-global-users-modal .modal-content,
-.modal-layer.manage-roles-modal .modal-content {
+.modal-layer.manage-roles-modal .modal-content,
+.modal-layer.delete-instance-modal .modal-content {
   border: 1px solid var(--line);
   border-radius: 8px;
 }
 .modal-layer.instance-users-modal .modal-body h3,
 .modal-layer.manage-packages-modal .modal-body h3,
 .modal-layer.manage-global-users-modal .modal-body h3,
-.modal-layer.manage-roles-modal .modal-body h3 {
+.modal-layer.manage-roles-modal .modal-body h3,
+.modal-layer.delete-instance-modal .modal-body h3 {
   margin: 0 0 0.75rem;
   font-size: 1rem;
   letter-spacing: 0;
@@ -507,7 +495,8 @@ body.app-shell .modal-backdrop {
 .modal-layer.instance-users-modal .modal-body hr,
 .modal-layer.manage-packages-modal .modal-body hr,
 .modal-layer.manage-global-users-modal .modal-body hr,
-.modal-layer.manage-roles-modal .modal-body hr {
+.modal-layer.manage-roles-modal .modal-body hr,
+.modal-layer.delete-instance-modal .modal-body hr {
   border: 0;
   border-top: 1px solid var(--line);
   margin: 1.25rem 0;

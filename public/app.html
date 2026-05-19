@@ -79,32 +79,6 @@
     <p>Database package updates are available.</p>
     <button type="button" id="applyUpdatesButton">Update</button>
   </aside>
-
-  <dialog id="deleteInstanceModal" class="delete-instance-modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Delete Instance</h2>
-        <button type="button" id="closeDeleteInstanceModal" class="close-button" aria-label="Close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="delete-warning">
-          <p class="delete-warning__icon">⚠️</p>
-          <p class="delete-warning__title">This action is irreversible</p>
-          <p class="delete-warning__text">
-            You are about to permanently delete the instance
-            <strong id="deleteInstanceName" class="delete-instance-highlight"></strong>.
-            All data associated with this instance will be lost.
-          </p>
-        </div>
-        <label>
-          <span>Type the instance name to confirm:</span>
-          <input type="text" id="deleteInstanceConfirmInput" autocomplete="off" placeholder="Instance name">
-        </label>
-        <div id="deleteInstanceMessage" class="message" role="status"></div>
-        <button type="button" id="confirmDeleteInstanceButton" class="danger-button" disabled>Delete Instance</button>
-      </div>
-    </div>
-  </dialog>
 </body>
 
 </html>

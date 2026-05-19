@@ -4,6 +4,7 @@ import { requestJson } from "./api.js";
 import { escapeHtml, formatDate, setMessage } from "./utils.js";
 import { getSelectedPackages, formatInstancePackageLabels } from "./packages.js";
 import { loadApp } from "./app.js";
+import { openDeleteInstanceModal } from "../components/modals/delete-instance/deleteInstanceModal.js";
 
 function ensureInstancesTable() {
   const elements = getElements();
@@ -283,22 +284,6 @@ async function enterInstance(instanceGuid, instanceName) {
   }
 }
 
-function setDeleteMessage(message, tone = "neutral") {
-  const elements = getElements();
-  setMessage(elements.$deleteInstanceMessage, message, tone);
-}
-
-function openDeleteInstanceModal(instanceGuid, instanceName) {
-  const elements = getElements();
-  state.deleteInstanceGuid = instanceGuid;
-  state.deleteInstanceTargetName = instanceName;
-  elements.$deleteInstanceName.text(instanceName);
-  elements.$deleteInstanceConfirmInput.val("");
-  elements.$confirmDeleteInstanceButton.prop("disabled", true);
-  setDeleteMessage("");
-  elements.$deleteInstanceModal[0].showModal();
-}
-
 export function setupInstanceEvents() {
   const elements = getElements();
 
@@ -312,42 +297,6 @@ export function setupInstanceEvents() {
   elements.$instances.on("click", ".delete-instance-btn", function () {
     const $btn = $(this);
     openDeleteInstanceModal($btn.data("instance-guid"), $btn.data("instance-name"));
-  });
-
-  elements.$closeDeleteInstanceModal.on("click", function () {
-    elements.$deleteInstanceModal[0].close();
-    state.deleteInstanceGuid = null;
-    state.deleteInstanceTargetName = null;
-  });
-
-  elements.$deleteInstanceConfirmInput.on("input", function () {
-    const matches = $(this).val() === state.deleteInstanceTargetName;
-    elements.$confirmDeleteInstanceButton.prop("disabled", !matches);
-  });
-
-  elements.$confirmDeleteInstanceButton.on("click", async function () {
-    if (!state.deleteInstanceGuid) return;
-
-    const $btn = $(this);
-    $btn.prop("disabled", true).text("Deleting...");
-
-    try {
-      await requestJson(`/api/genrpg/instances/${state.deleteInstanceGuid}`, {
-        method: "DELETE",
-        body: JSON.stringify({ confirmName: state.deleteInstanceTargetName }),
-      });
-      elements.$deleteInstanceModal[0].close();
-      setMessage(elements.$message, "Instance deleted.", "success");
-      state.deleteInstanceGuid = null;
-      state.deleteInstanceTargetName = null;
-      await loadApp();
-    } catch (error) {
-      setDeleteMessage(error.message, "error");
-      $btn.text("Delete Instance");
-      // Re-enable only if name still matches
-      const matches = elements.$deleteInstanceConfirmInput.val() === state.deleteInstanceTargetName;
-      $btn.prop("disabled", !matches);
-    }
   });
 
   elements.$instanceForm.on("submit", async function (event) {

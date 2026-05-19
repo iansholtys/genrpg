@@ -17,13 +17,6 @@ export function getElements() {
       $instanceLoadingName: $("#instanceLoadingName"),
       $instanceLoadingProgress: $("#instanceLoadingProgress"),
       $instanceLoadingStatus: $("#instanceLoadingStatus"),
-      // Delete Instance modal
-      $deleteInstanceModal: $("#deleteInstanceModal"),
-      $closeDeleteInstanceModal: $("#closeDeleteInstanceModal"),
-      $deleteInstanceName: $("#deleteInstanceName"),
-      $deleteInstanceConfirmInput: $("#deleteInstanceConfirmInput"),
-      $deleteInstanceMessage: $("#deleteInstanceMessage"),
-      $confirmDeleteInstanceButton: $("#confirmDeleteInstanceButton"),
       // Manage Roles
       $manageRolesButton: $("#manageRolesButton"),
       // Manage Global Users
