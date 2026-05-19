@@ -84,11 +84,12 @@ class DeleteInstanceModal extends Modal {
   open(instanceGuid, instanceName) {
     this.instanceGuid = instanceGuid;
     this.instanceName = instanceName;
+    this.show();
     this.elements.$deleteInstanceName.text(instanceName);
     this.elements.$deleteInstanceConfirmInput.val("");
     this.elements.$confirmDeleteInstanceButton.prop("disabled", true).text("Delete Instance");
     this.setDeleteMessage("");
-    this.show();
+    this.elements.$deleteInstanceConfirmInput.trigger("focus");
   }
 
   onHide() {
