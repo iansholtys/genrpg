@@ -21,3 +21,69 @@ textarea {
 textarea {
   resize: vertical;
 }
+
+.role-form {
+  display: grid;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+
+  label {
+    display: grid;
+    gap: 0.5rem;
+    font-weight: 500;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: $radius;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+  }
+}
+
+.role-permissions-fieldset {
+  border: 1px solid var(--line);
+  border-radius: $radius;
+  padding: 1rem;
+  margin: 0;
+
+  legend {
+    font-weight: 500;
+    padding: 0 0.5rem;
+    color: var(--text);
+  }
+}
+
+.role-permissions-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 12rem;
+  overflow-y: auto;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: normal;
+    cursor: pointer;
+  }
+
+  input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+  }
+}
+
+.role-form-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+
+  button {
+    flex: 1;
+  }
+}

@@ -30,3 +30,65 @@ button,
     background: var(--panel-strong);
   }
 }
+
+.danger-button {
+  border: 0;
+  border-radius: $radius;
+  background: var(--danger);
+  color: #1a1a1a;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+  font: inherit;
+  font-weight: 700;
+  width: 100%;
+  margin-top: 1rem;
+
+  &:hover:not(:disabled) {
+    background: #ff7b6a;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.danger-button-outline {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 0 0.75rem;
+  font-size: 0.85rem;
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 155, 141, 0.12);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.accent-button-outline {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 0 0.75rem;
+  font-size: 0.85rem;
+
+  &:hover:not(:disabled) {
+    background: rgba(101, 193, 140, 0.12);
+    color: var(--accent-strong);
+    border-color: var(--accent-strong);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}

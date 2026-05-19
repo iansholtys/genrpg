@@ -1,51 +1,56 @@
-@use "variables" as *;
+// GenRPG overrides for the reusable Modal (load modal.css before styles.css).
+.modal-backdrop {
+  --modal-backdrop: rgba(0, 0, 0, 0.65);
+  --modal-backdrop-duration: 0.3s;
+}
+
+.modal-layer {
+  --modal-bg: var(--bg);
+  --modal-text: var(--text);
+  --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --modal-header-border: var(--line);
+  --modal-header-bg: var(--bg);
+  --modal-close: var(--text);
+  --modal-close-hover: var(--accent-strong);
+  --modal-btn-primary-bg: var(--accent);
+  --modal-btn-primary-text: #08120d;
+  --modal-btn-secondary-bg: var(--panel);
+  --modal-btn-secondary-text: var(--text);
+  --modal-btn-secondary-border: var(--line);
+}
 
 .modal-content {
-  display: grid;
-  gap: 0;
+  border: 1px solid var(--line);
 }
 
 .modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 1rem;
-  border-bottom: 1px solid var(--line);
-  padding: 1.25rem 1.5rem;
 
-  h2 {
-    margin: 0;
-    font-size: 1.15rem;
-    letter-spacing: 0;
+  .close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    font-size: 1.35rem;
+    font-weight: normal;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease;
+
+    &:hover {
+      border-color: var(--accent);
+    }
   }
 }
 
-.close-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-  min-height: 0;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text);
-  font-size: 1.35rem;
-  line-height: 1;
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--accent);
-    color: var(--accent-strong);
-    background: transparent;
-  }
+.modal-title {
+  font-size: 1.15rem;
 }
 
 .modal-body {
-  padding: 1.5rem;
-  overflow-y: auto;
   max-height: 75vh;
 
   h3 {
@@ -58,175 +63,5 @@
     border: 0;
     border-top: 1px solid var(--line);
     margin: 1.25rem 0;
-  }
-}
-
-// Danger button (solid)
-.danger-button {
-  border: 0;
-  border-radius: $radius;
-  background: var(--danger);
-  color: #1a1a1a;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.75rem;
-  padding: 0 1.25rem;
-  font: inherit;
-  font-weight: 700;
-  width: 100%;
-  margin-top: 1rem;
-
-  &:hover:not(:disabled) {
-    background: #ff7b6a;
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-}
-
-// Danger button outline (for inline use in tables)
-.danger-button-outline {
-  background: transparent;
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  padding: 0 0.75rem;
-  font-size: 0.85rem;
-
-  &:hover:not(:disabled) {
-    background: rgba(255, 155, 141, 0.12);
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-}
-
-// Accent button outline (for inline use in tables — clearly clickable)
-.accent-button-outline {
-  background: transparent;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  padding: 0 0.75rem;
-  font-size: 0.85rem;
-
-  &:hover:not(:disabled) {
-    background: rgba(101, 193, 140, 0.12);
-    color: var(--accent-strong);
-    border-color: var(--accent-strong);
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-}
-
-// Role form
-.role-form {
-  display: grid;
-  gap: 1.25rem;
-  margin-bottom: 1.5rem;
-
-  label {
-    display: grid;
-    gap: 0.5rem;
-    font-weight: 500;
-  }
-
-  input[type="text"] {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--line);
-    border-radius: $radius;
-    background: var(--panel);
-    color: var(--text);
-    font: inherit;
-  }
-}
-
-.role-permissions-fieldset {
-  border: 1px solid var(--line);
-  border-radius: $radius;
-  padding: 1rem;
-  margin: 0;
-
-  legend {
-    font-weight: 500;
-    padding: 0 0.5rem;
-    color: var(--text);
-  }
-}
-
-.role-permissions-list {
-  display: grid;
-  gap: 0.75rem;
-  max-height: 12rem;
-  overflow-y: auto;
-
-  label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: normal;
-    cursor: pointer;
-  }
-
-  input[type="checkbox"] {
-    width: 1rem;
-    height: 1rem;
-    margin: 0;
-  }
-}
-
-.role-form-actions {
-  display: flex;
-  gap: 1rem;
-  margin-top: 0.5rem;
-
-  button {
-    flex: 1;
-  }
-}
-
-body.app-shell .modal-backdrop {
-  --modal-backdrop: rgba(0, 0, 0, 0.65);
-}
-
-// App modals (reusable Modal component)
-.modal-layer.instance-users-modal,
-.modal-layer.manage-packages-modal,
-.modal-layer.manage-global-users-modal,
-.modal-layer.manage-roles-modal,
-.modal-layer.delete-instance-modal {
-  --modal-bg: var(--bg);
-  --modal-text: var(--text);
-  --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --modal-header-border: var(--line);
-  --modal-header-bg: var(--bg);
-  --modal-close: var(--text);
-  --modal-close-hover: var(--accent-strong);
-
-  .modal-content {
-    border: 1px solid var(--line);
-    border-radius: $radius;
-  }
-
-  .modal-body {
-    h3 {
-      margin: 0 0 0.75rem;
-      font-size: 1rem;
-      letter-spacing: 0;
-    }
-
-    hr {
-      border: 0;
-      border-top: 1px solid var(--line);
-      margin: 1.25rem 0;
-    }
   }
 }
