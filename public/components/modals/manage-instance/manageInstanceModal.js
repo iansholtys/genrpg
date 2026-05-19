@@ -28,7 +28,6 @@ class ManageInstanceModal extends Modal {
 
     this.mode = "create";
     this.editingInstanceGuid = null;
-    this.initialUrlSegment = "";
     this.aliasInUse = false;
     this.aliasCheckPending = false;
     this.aliasCheckGeneration = 0;
@@ -289,51 +288,52 @@ class ManageInstanceModal extends Modal {
     this.aliasInUse = false;
     this.aliasCheckPending = false;
     this.lastCheckedUrlSegment = "";
-    this.initialUrlSegment = "";
-    this.editingInstanceGuid = null;
-    this.mode = "create";
+  }
 
-    if (!this.elements.$instanceForm?.length) {
-      return;
-    }
+  /**
+   * @param {object|null} [instance] Omit to create; pass instance row to edit.
+   */
+  show(instance = null) {
+    const isEdit = Boolean(instance);
+
+    this.createModalElement();
+    this.resetForm();
+    this.mode = isEdit ? "edit" : "create";
+    this.editingInstanceGuid = isEdit ? instance.guid : null;
 
     this.elements.$instanceForm[0].reset();
-    renderInstancePackageSelection(this.elements.$instancePackageList);
-    this.setPackagesFieldEnabled(true);
     this.setFormMessage("");
-    this.updateUrlHelpForEmpty();
-    this.setTitle("Create Instance");
-    this.elements.$instanceSubmitButton.prop("disabled", false).text("Create Instance");
-  }
 
-  openCreate() {
-    this.show();
-    this.resetForm();
-    this.elements.$instanceNameInput.trigger("focus");
-  }
+    if (isEdit) {
+      const urlSegment = instance.url_segment || "";
+      this.setTitle("Edit Instance");
+      this.elements.$instanceNameInput.val(instance.name || "");
+      this.elements.$instanceDescriptionInput.val(instance.description || "");
+      this.elements.$instanceUrlInput.val(urlSegment);
+      renderInstancePackageSelection(this.elements.$instancePackageList, {
+        selectedPackages: instance.packageNames || [],
+        readOnly: true,
+      });
+      this.setPackagesFieldEnabled(false);
+      this.elements.$instanceSubmitButton.prop("disabled", false).text("Save Changes");
+      this.scheduleAliasAvailabilityCheck();
+    } else {
+      this.setTitle("Create Instance");
+      renderInstancePackageSelection(this.elements.$instancePackageList);
+      this.setPackagesFieldEnabled(true);
+      this.elements.$instanceSubmitButton.prop("disabled", false).text("Create Instance");
+      this.updateUrlHelpForEmpty();
+    }
 
-  openEdit(instance) {
-    this.show();
-    this.resetForm();
-    this.mode = "edit";
-    this.editingInstanceGuid = instance.guid;
-    this.initialUrlSegment = instance.url_segment || "";
-    this.setTitle("Edit Instance");
-    this.elements.$instanceNameInput.val(instance.name || "");
-    this.elements.$instanceDescriptionInput.val(instance.description || "");
-    this.elements.$instanceUrlInput.val(this.initialUrlSegment);
-    renderInstancePackageSelection(this.elements.$instancePackageList, {
-      selectedPackages: instance.packageNames || [],
-      readOnly: true,
-    });
-    this.setPackagesFieldEnabled(false);
-    this.elements.$instanceSubmitButton.text("Save Changes");
-    this.scheduleAliasAvailabilityCheck();
+    this.bindEvents();
+    super.show();
     this.elements.$instanceNameInput.trigger("focus");
   }
 
   onHide() {
     this.resetForm();
+    this.mode = "create";
+    this.editingInstanceGuid = null;
   }
 
   async onSubmit(event) {
@@ -415,9 +415,9 @@ export function getManageInstanceModal() {
 }
 
 export function openCreateInstanceModal() {
-  getManageInstanceModal().openCreate();
+  getManageInstanceModal().show();
 }
 
 export function openEditInstanceModal(instance) {
-  getManageInstanceModal().openEdit(instance);
+  getManageInstanceModal().show(instance);
 }
