@@ -3,7 +3,11 @@ import { state } from "./state.js";
 import { requestJson } from "./api.js";
 import { setMessage } from "./utils.js";
 import { setupPackageEvents, renderPackages, showConfigurationIssues, checkForUpdates } from "./packages.js";
-import { setupInstanceEvents, renderInstances } from "./instances.js";
+import {
+  setupInstanceEvents,
+  renderInstances,
+  handleInitialInstanceNavigation,
+} from "./instances.js";
 import { setupRoleEvents } from "./roles.js";
 import { setupUserEvents } from "./users.js";
 
@@ -40,6 +44,7 @@ export async function loadApp() {
     setMessage(elements.$message, "");
     showConfigurationIssues(configurationIssues);
     await checkForUpdates();
+    await handleInitialInstanceNavigation();
   } catch (error) {
     setMessage(elements.$message, error.message, "error");
   }

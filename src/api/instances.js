@@ -9,6 +9,7 @@ const {
   validatePackageSelection,
   resolveInstanceAssetsForRequest,
 } = require("../packages");
+const { createDefaultInstanceAlias, deleteAliasesForInstance } = require("../aliases");
 
 const instancesRouter = express.Router();
 
@@ -213,6 +214,8 @@ instancesRouter.post("/instances", async (req, res, next) => {
         );
       }
 
+      await createDefaultInstanceAlias(client, instanceGuid);
+
       await client.query("COMMIT");
       res.status(201).json({
         instance: {
@@ -398,7 +401,19 @@ instancesRouter.delete("/instances/:guid", async (req, res, next) => {
       return;
     }
 
-    await pool.query(`DELETE FROM genrpg.instances WHERE guid = $1`, [instanceGuid]);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await deleteAliasesForInstance(client, instanceGuid);
+      await client.query(`DELETE FROM genrpg.instances WHERE guid = $1`, [instanceGuid]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
     res.json({ success: true });
   } catch (error) {
     next(error);

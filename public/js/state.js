@@ -3,6 +3,7 @@ export const state = {
   instancesTable: null,
   activeInstance: null,
   enteringInstance: false,
+  handlingPopstate: false,
   injectedStylesheets: [],
   injectedScripts: [],
   loadedInstanceScriptUrls: new Set(),

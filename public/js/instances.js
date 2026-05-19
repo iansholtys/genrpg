@@ -209,6 +209,27 @@ async function loadPackageAssets({ css, js }, reportProgress) {
   }
 }
 
+function getCurrentAlias() {
+  return window.location.pathname.replace(/^\/+|\/+$/g, "");
+}
+
+function setInstanceUrl(alias, { replace = false } = {}) {
+  const url = alias ? `/${alias}` : "/";
+  const historyState = { genrpgAlias: alias || null };
+  if (replace) {
+    history.replaceState(historyState, "", url);
+  } else {
+    history.pushState(historyState, "", url);
+  }
+}
+
+async function fetchAliasForInstance(instanceGuid) {
+  const { alias } = await requestJson(
+    `/api/genrpg/aliases/for-path?path=${encodeURIComponent(`instance:${instanceGuid}`)}`,
+  );
+  return alias || `instance/${instanceGuid}`;
+}
+
 async function loadInstanceAssets(packageAssetList, instanceGuid, onProgress) {
   const packages = packageAssetList || [];
   const total = packages.reduce(
@@ -237,9 +258,12 @@ async function loadInstanceAssets(packageAssetList, instanceGuid, onProgress) {
   }
 }
 
-function exitInstance() {
+function exitInstance({ syncUrl = false } = {}) {
   const elements = getElements();
   if (!state.activeInstance) {
+    if (syncUrl && getCurrentAlias()) {
+      setInstanceUrl("", { replace: true });
+    }
     return;
   }
 
@@ -263,16 +287,20 @@ function exitInstance() {
   hideInstanceLoading();
   elements.$exitInstanceButton.prop("hidden", true);
   elements.$workspace.prop("hidden", false);
+
+  if (syncUrl) {
+    setInstanceUrl("");
+  }
 }
 
-async function enterInstance(instanceGuid, instanceName) {
+async function enterInstance(instanceGuid, instanceName, { syncUrl = true } = {}) {
   const elements = getElements();
   if (state.enteringInstance) {
     return;
   }
 
   if (state.activeInstance) {
-    exitInstance();
+    exitInstance({ syncUrl: false });
   }
 
   state.enteringInstance = true;
@@ -281,6 +309,9 @@ async function enterInstance(instanceGuid, instanceName) {
   try {
     const assets = await requestJson(`/api/genrpg/instances/${instanceGuid}/assets`);
     if (!assets) {
+      if (syncUrl && getCurrentAlias()) {
+        setInstanceUrl("", { replace: true });
+      }
       return;
     }
 
@@ -314,6 +345,13 @@ async function enterInstance(instanceGuid, instanceName) {
     );
 
     elements.$exitInstanceButton.prop("hidden", false);
+
+    if (syncUrl) {
+      const alias = await fetchAliasForInstance(instanceGuid);
+      if (getCurrentAlias() !== alias) {
+        setInstanceUrl(alias);
+      }
+    }
   } catch (error) {
     hideInstanceLoading();
     elements.$workspace.prop("hidden", false);
@@ -324,21 +362,118 @@ async function enterInstance(instanceGuid, instanceName) {
     state.injectedStylesheets = [];
     state.injectedScripts = [];
     setMessage(elements.$message, error.message, "error");
+
+    if (syncUrl && getCurrentAlias()) {
+      setInstanceUrl("", { replace: true });
+    }
   } finally {
     state.enteringInstance = false;
     elements.$instances.find(".enter-instance-btn").prop("disabled", false);
   }
 }
 
+async function handlePopState() {
+  if (state.handlingPopstate || state.enteringInstance) {
+    return;
+  }
+
+  state.handlingPopstate = true;
+  const elements = getElements();
+
+  try {
+    const alias = getCurrentAlias();
+    if (!alias) {
+      if (state.activeInstance) {
+        exitInstance({ syncUrl: false });
+      }
+      return;
+    }
+
+    const { resolved } = await requestJson(
+      `/api/genrpg/aliases/resolve?alias=${encodeURIComponent(alias)}`,
+    );
+
+    if (resolved?.type === "instance") {
+      if (state.activeInstance?.guid === resolved.guid) {
+        return;
+      }
+      await enterInstance(resolved.guid, resolved.name, { syncUrl: false });
+      return;
+    }
+
+    if (state.activeInstance) {
+      exitInstance({ syncUrl: false });
+    }
+
+    if (alias.startsWith("instance/")) {
+      setMessage(
+        elements.$message,
+        "Instance not found or you do not have access.",
+        "error",
+      );
+    }
+    setInstanceUrl("", { replace: true });
+  } catch (error) {
+    setMessage(elements.$message, error.message, "error");
+  } finally {
+    state.handlingPopstate = false;
+  }
+}
+
+export async function handleInitialInstanceNavigation() {
+  const elements = getElements();
+  const boot = window.__GENRPG_BOOT__;
+  delete window.__GENRPG_BOOT__;
+
+  if (boot?.type === "instance") {
+    await enterInstance(boot.guid, boot.name, { syncUrl: false });
+    return;
+  }
+
+  const alias = getCurrentAlias();
+  if (!alias) {
+    return;
+  }
+
+  try {
+    const { resolved } = await requestJson(
+      `/api/genrpg/aliases/resolve?alias=${encodeURIComponent(alias)}`,
+    );
+
+    if (resolved?.type === "instance") {
+      await enterInstance(resolved.guid, resolved.name, { syncUrl: false });
+      return;
+    }
+
+    if (alias.startsWith("instance/")) {
+      setMessage(
+        elements.$message,
+        "Instance not found or you do not have access.",
+        "error",
+      );
+      setInstanceUrl("", { replace: true });
+    }
+  } catch (error) {
+    setMessage(elements.$message, error.message, "error");
+    if (getCurrentAlias()) {
+      setInstanceUrl("", { replace: true });
+    }
+  }
+}
+
 export function setupInstanceEvents() {
   const elements = getElements();
+
+  window.addEventListener("popstate", () => {
+    handlePopState();
+  });
 
   elements.$instances.on("click", ".enter-instance-btn", function () {
     const $btn = $(this);
     enterInstance($btn.data("instance-guid"), $btn.data("instance-name"));
   });
 
-  elements.$exitInstanceButton.on("click", exitInstance);
+  elements.$exitInstanceButton.on("click", () => exitInstance({ syncUrl: true }));
 
   elements.$instances.on("click", ".delete-instance-btn", function () {
     const $btn = $(this);

@@ -8,6 +8,7 @@ const { applySchemaVersions } = require("./db/versions");
 const { REPO_ROOT } = require("./packages");
 
 const { ensureAuthenticated } = require("./auth");
+const { resolveRequestPath, sendAppHtml } = require("./aliases");
 const authRouter = require("./routes/auth");
 const genrpgApi = require("./api");
 
@@ -87,13 +88,20 @@ app.use(ensureAuthenticated);
 // Protected API routes
 app.use("/api/genrpg", genrpgApi);
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "public", "app.html"));
-});
+async function sendAppForRequest(req, res, next) {
+  try {
+    const boot = await resolveRequestPath(req.path, req.session.user);
+    await sendAppHtml(res, boot);
+  } catch (error) {
+    next(error);
+  }
+}
 
-app.use((req, res) => {
+app.get("/", sendAppForRequest);
+
+app.use((req, res, next) => {
   if (req.accepts("html")) {
-    res.sendFile(path.join(__dirname, "..", "public", "app.html"));
+    sendAppForRequest(req, res, next);
     return;
   }
 
