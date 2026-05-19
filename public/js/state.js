@@ -1,8 +1,6 @@
 export const state = {
   currentUser: null,
-  currentPreviewUrl: null,
   instancesTable: null,
-  gitPackagesTable: null,
   activeInstance: null,
   enteringInstance: false,
   injectedStylesheets: [],

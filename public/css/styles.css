@@ -285,7 +285,6 @@ textarea {
   cursor: not-allowed;
 }
 
-.package-modal,
 .manage-roles-modal,
 .manage-global-users-modal,
 .delete-instance-modal {
@@ -298,7 +297,6 @@ textarea {
   padding: 0;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
-.package-modal::backdrop,
 .manage-roles-modal::backdrop,
 .manage-global-users-modal::backdrop,
 .delete-instance-modal::backdrop {
@@ -483,7 +481,8 @@ body.app-shell .modal-backdrop {
   --modal-backdrop: rgba(0, 0, 0, 0.65);
 }
 
-.modal-layer.instance-users-modal {
+.modal-layer.instance-users-modal,
+.modal-layer.manage-packages-modal {
   --modal-bg: var(--bg);
   --modal-text: var(--text);
   --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -492,16 +491,19 @@ body.app-shell .modal-backdrop {
   --modal-close: var(--text);
   --modal-close-hover: var(--accent-strong);
 }
-.modal-layer.instance-users-modal .modal-content {
+.modal-layer.instance-users-modal .modal-content,
+.modal-layer.manage-packages-modal .modal-content {
   border: 1px solid var(--line);
   border-radius: 8px;
 }
-.modal-layer.instance-users-modal .modal-body h3 {
+.modal-layer.instance-users-modal .modal-body h3,
+.modal-layer.manage-packages-modal .modal-body h3 {
   margin: 0 0 0.75rem;
   font-size: 1rem;
   letter-spacing: 0;
 }
-.modal-layer.instance-users-modal .modal-body hr {
+.modal-layer.instance-users-modal .modal-body hr,
+.modal-layer.manage-packages-modal .modal-body hr {
   border: 0;
   border-top: 1px solid var(--line);
   margin: 1.25rem 0;
