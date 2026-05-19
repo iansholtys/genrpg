@@ -190,11 +190,13 @@ class ManagePackagesModal extends Modal {
     }
   }
 
-  async open() {
-    this.show();
+  async show() {
+    this.createModalElement();
     this.currentPreviewUrl = null;
     this.elements.$packagePreviewResult.prop("hidden", true);
     this.elements.$packagePreviewForm[0].reset();
+    this.bindEvents();
+    super.show();
     await this.loadGitPackages();
   }
 
@@ -354,5 +356,5 @@ export function getManagePackagesModal() {
 }
 
 export async function openManagePackagesModal() {
-  await getManagePackagesModal().open();
+  await getManagePackagesModal().show();
 }

@@ -203,9 +203,11 @@ class ManageRolesModal extends Modal {
     this.buildRolesTable(roles);
   }
 
-  async open() {
-    this.show();
+  async show() {
+    this.createModalElement();
     this.resetRoleForm();
+    this.bindEvents();
+    super.show();
     const permissions = await this.loadPermissions();
     this.populatePermissionCheckboxes(permissions);
     await this.reloadRolesData();
@@ -299,5 +301,5 @@ export function getManageRolesModal() {
 }
 
 export async function openManageRolesModal() {
-  await getManageRolesModal().open();
+  await getManageRolesModal().show();
 }

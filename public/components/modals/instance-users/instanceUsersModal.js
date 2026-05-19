@@ -146,17 +146,18 @@ class InstanceUsersModal extends Modal {
     }
   }
 
-  async open(instanceGuid, instanceName) {
+  async show(instanceGuid, instanceName) {
     this.instanceGuid = instanceGuid;
     this.instanceName = instanceName;
     state.manageUsersInstanceGuid = instanceGuid;
     state.manageUsersInstanceName = instanceName;
 
+    this.createModalElement();
     this.setTitle(`Manage Users — ${instanceName}`);
-    this.show();
-
     this.setAddUserMessage("");
     this.elements.$addUserRoleForm[0].reset();
+    this.bindEvents();
+    super.show();
     await this.populateSelects();
     await this.loadInstanceUsers();
   }
@@ -226,5 +227,5 @@ export function getInstanceUsersModal() {
 }
 
 export async function openManageUsersModal(instanceGuid, instanceName) {
-  await getInstanceUsersModal().open(instanceGuid, instanceName);
+  await getInstanceUsersModal().show(instanceGuid, instanceName);
 }

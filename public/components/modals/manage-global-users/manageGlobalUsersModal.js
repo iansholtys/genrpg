@@ -108,9 +108,11 @@ class ManageGlobalUsersModal extends Modal {
     }
   }
 
-  async open() {
-    this.show();
+  async show() {
+    this.createModalElement();
     this.setGlobalUserMessage("");
+    this.bindEvents();
+    super.show();
     await this.loadGlobalUsers();
   }
 
@@ -175,5 +177,5 @@ export function getManageGlobalUsersModal() {
 }
 
 export async function openManageGlobalUsersModal() {
-  await getManageGlobalUsersModal().open();
+  await getManageGlobalUsersModal().show();
 }
