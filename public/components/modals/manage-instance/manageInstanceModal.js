@@ -292,6 +292,11 @@ class ManageInstanceModal extends Modal {
     this.initialUrlSegment = "";
     this.editingInstanceGuid = null;
     this.mode = "create";
+
+    if (!this.elements.$instanceForm?.length) {
+      return;
+    }
+
     this.elements.$instanceForm[0].reset();
     renderInstancePackageSelection(this.elements.$instancePackageList);
     this.setPackagesFieldEnabled(true);
@@ -302,13 +307,13 @@ class ManageInstanceModal extends Modal {
   }
 
   openCreate() {
-    this.resetForm();
-    this.setTitle("Create Instance");
     this.show();
+    this.resetForm();
     this.elements.$instanceNameInput.trigger("focus");
   }
 
   openEdit(instance) {
+    this.show();
     this.resetForm();
     this.mode = "edit";
     this.editingInstanceGuid = instance.guid;
@@ -324,7 +329,6 @@ class ManageInstanceModal extends Modal {
     this.setPackagesFieldEnabled(false);
     this.elements.$instanceSubmitButton.text("Save Changes");
     this.scheduleAliasAvailabilityCheck();
-    this.show();
     this.elements.$instanceNameInput.trigger("focus");
   }
 
