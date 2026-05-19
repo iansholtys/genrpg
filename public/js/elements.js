@@ -4,10 +4,10 @@ export function getElements() {
   if (!elements) {
     elements = {
       $instances: $("#instances"),
-      $packageList: $("#packageList"),
       $message: $("#message"),
       $userLabel: $("#userLabel"),
-      $instanceForm: $("#instanceForm"),
+      $createInstanceButton: $("#createInstanceButton"),
+      $packageTools: $(".package-tools"),
       $updateBanner: $("#updateBanner"),
       $applyUpdatesButton: $("#applyUpdatesButton"),
       $managePackagesButton: $("#managePackagesButton"),

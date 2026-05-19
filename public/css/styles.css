@@ -385,9 +385,11 @@ textarea {
 }
 
 .package-option {
+  --package-indent: 1.15rem;
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  padding-left: calc(var(--package-depth, 0) * var(--package-indent));
   color: var(--text);
   font-size: 0.95rem;
   cursor: pointer;
@@ -396,8 +398,11 @@ textarea {
   width: auto;
   margin: 0;
 }
+.package-option.is-locked, .package-option.is-required {
+  opacity: 0.85;
+  cursor: default;
+}
 .package-option.is-locked {
-  opacity: 0.7;
   cursor: not-allowed;
 }
 
@@ -462,15 +467,29 @@ textarea {
   margin: 1.25rem 0;
 }
 
-.instance-tools {
-  margin-bottom: 2rem;
-}
-
-.instance-form {
+.create-instance-form {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 2fr) auto;
-  align-items: end;
   gap: 1rem;
+}
+.create-instance-form label,
+.create-instance-form fieldset {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.create-instance-form legend {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  padding: 0;
+}
+.create-instance-form .create-instance-packages-fieldset .package-list {
+  margin: 0;
+}
+.create-instance-form .message {
+  margin: 0;
 }
 
 .message {
@@ -596,12 +615,8 @@ select {
     flex-direction: column;
   }
   .topbar,
-  .user-panel,
-  .instance-form {
+  .user-panel {
     display: grid;
-  }
-  .instance-form {
-    grid-template-columns: 1fr;
   }
   dl {
     grid-template-columns: 1fr;

@@ -2,9 +2,10 @@ import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
 import { escapeHtml, formatDate, setMessage } from "./utils.js";
-import { getSelectedPackages, formatInstancePackageLabels } from "./packages.js";
+import { formatInstancePackageLabels } from "./packages.js";
 import { loadApp } from "./app.js";
 import { openDeleteInstanceModal } from "../components/modals/delete-instance/deleteInstanceModal.js";
+import { openCreateInstanceModal } from "../components/modals/create-instance/createInstanceModal.js";
 
 function ensureInstancesTable() {
   const elements = getElements();
@@ -344,30 +345,5 @@ export function setupInstanceEvents() {
     openDeleteInstanceModal($btn.data("instance-guid"), $btn.data("instance-name"));
   });
 
-  elements.$instanceForm.on("submit", async function (event) {
-    event.preventDefault();
-    const formData = new FormData(this);
-    const selectedPackages = getSelectedPackages();
-
-    if (!selectedPackages.length) {
-      setMessage(elements.$message, "Select at least one package.", "error");
-      return;
-    }
-
-    try {
-      await requestJson("/api/genrpg/instances", {
-        method: "POST",
-        body: JSON.stringify({
-          name: formData.get("name"),
-          description: formData.get("description"),
-          packages: selectedPackages,
-        }),
-      });
-      this.reset();
-      setMessage(elements.$message, "Instance created.", "success");
-      await loadApp();
-    } catch (error) {
-      setMessage(elements.$message, error.message, "error");
-    }
-  });
+  elements.$createInstanceButton.on("click", () => openCreateInstanceModal());
 }

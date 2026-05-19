@@ -1,8 +1,10 @@
-import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
 import { escapeHtml, setMessage } from "./utils.js";
+import { getElements } from "./elements.js";
 import { openManagePackagesModal } from "../components/modals/manage-packages/managePackagesModal.js";
+
+const GENRPG_MACHINE_NAME = "genrpg";
 
 function getTransitiveDependencies(machineName) {
   const dependencies = new Set();
@@ -77,9 +79,83 @@ function getLockedDependencies(selectedMachineNames) {
   return locked;
 }
 
-export function getSelectedPackages() {
-  const elements = getElements();
-  return elements.$packageList
+export function orderPackagesByDependency(installedPackages) {
+  const installedSet = new Set(installedPackages.map((pkg) => pkg.machineName));
+  const byName = new Map(installedPackages.map((pkg) => [pkg.machineName, pkg]));
+  const depthMemo = new Map();
+
+  function getDepth(machineName) {
+    if (depthMemo.has(machineName)) {
+      return depthMemo.get(machineName);
+    }
+
+    const pkg = byName.get(machineName);
+    if (!pkg) {
+      return 0;
+    }
+
+    const installedRequirements = pkg.requirements
+      .map((requirement) => requirement.machineName)
+      .filter((name) => installedSet.has(name));
+
+    const depth =
+      installedRequirements.length === 0
+        ? 0
+        : 1 + Math.max(...installedRequirements.map((name) => getDepth(name)));
+
+    depthMemo.set(machineName, depth);
+    return depth;
+  }
+
+  function getParentMachineName(machineName) {
+    const pkg = byName.get(machineName);
+    const installedRequirements = pkg.requirements
+      .map((requirement) => requirement.machineName)
+      .filter((name) => installedSet.has(name));
+
+    if (installedRequirements.length === 0) {
+      return null;
+    }
+
+    return installedRequirements.sort((a, b) => {
+      const depthDifference = getDepth(b) - getDepth(a);
+      if (depthDifference !== 0) {
+        return depthDifference;
+      }
+      return a.localeCompare(b);
+    })[0];
+  }
+
+  const childrenByParent = new Map();
+
+  for (const pkg of installedPackages) {
+    const parent = getParentMachineName(pkg.machineName);
+    const parentKey = parent ?? "";
+    if (!childrenByParent.has(parentKey)) {
+      childrenByParent.set(parentKey, []);
+    }
+    childrenByParent.get(parentKey).push(pkg);
+  }
+
+  for (const children of childrenByParent.values()) {
+    children.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const ordered = [];
+
+  function walk(parentKey, depth) {
+    for (const pkg of childrenByParent.get(parentKey) || []) {
+      ordered.push({ pkg, depth });
+      walk(pkg.machineName, depth + 1);
+    }
+  }
+
+  walk("", 0);
+  return ordered;
+}
+
+export function getSelectedPackages($container) {
+  return $container
     .find('input[name="package"]:checked')
     .map(function () {
       return this.value;
@@ -87,41 +163,54 @@ export function getSelectedPackages() {
     .get();
 }
 
-function getPackageCheckbox(machineName) {
-  const elements = getElements();
-  return elements.$packageList.find(
-    `input[name="package"][data-machine-name="${machineName}"]`,
-  );
+function getPackageCheckbox($container, machineName) {
+  return $container.find(`input[name="package"][data-machine-name="${machineName}"]`);
 }
 
-function syncPackageCheckboxStates() {
-  const selected = getSelectedPackages();
+function syncPackageCheckboxStates($container) {
+  const selected = getSelectedPackages($container);
   const locked = getLockedDependencies(selected);
 
   for (const pkg of state.packageByMachineName.values()) {
-    const $input = getPackageCheckbox(pkg.machineName);
+    const $input = getPackageCheckbox($container, pkg.machineName);
+    if (!$input.length) {
+      continue;
+    }
+
+    if (pkg.machineName === GENRPG_MACHINE_NAME) {
+      $input.prop({ checked: true, disabled: true });
+      $input.closest(".package-option").addClass("is-required").removeClass("is-locked");
+      continue;
+    }
+
     const isLocked = locked.has(pkg.machineName);
     $input.prop("disabled", isLocked);
-    $input.closest(".package-option").toggleClass("is-locked", isLocked);
+    $input.closest(".package-option").toggleClass("is-locked", isLocked).removeClass("is-required");
   }
 }
 
-export function applyPackageSelectionChange(machineName, isChecked) {
-  const $checkbox = getPackageCheckbox(machineName);
+export function applyPackageSelectionChange(machineName, isChecked, $container) {
+  const $checkbox = getPackageCheckbox($container, machineName);
+
+  if (machineName === GENRPG_MACHINE_NAME) {
+    $checkbox.prop("checked", true);
+    syncPackageCheckboxStates($container);
+    return;
+  }
 
   if (isChecked) {
     $checkbox.prop("checked", true);
     for (const dependency of getTransitiveDependencies(machineName)) {
-      getPackageCheckbox(dependency).prop("checked", true);
+      getPackageCheckbox($container, dependency).prop("checked", true);
     }
   } else {
     $checkbox.prop("checked", false);
     for (const dependent of getTransitiveDependents(machineName)) {
-      getPackageCheckbox(dependent).prop("checked", false);
+      getPackageCheckbox($container, dependent).prop("checked", false);
     }
   }
 
-  syncPackageCheckboxStates();
+  syncPackageCheckboxStates($container);
 }
 
 export function formatInstancePackageLabels(packageNames) {
@@ -130,46 +219,61 @@ export function formatInstancePackageLabels(packageNames) {
     .join(", ") || "None";
 }
 
-export function renderPackages(packages) {
-  const elements = getElements();
-  state.packageByMachineName.clear();
-
-  for (const pkg of packages) {
-    state.packageByMachineName.set(pkg.machineName, pkg);
-  }
-
-  // Only show installed packages in the instance creation selector
-  const installedPackages = packages.filter((pkg) => pkg.installed);
+export function renderInstancePackageSelection($container) {
+  const installedPackages = [...state.packageByMachineName.values()].filter((pkg) => pkg.installed);
 
   if (!installedPackages.length) {
-    elements.$packageList.html('<p class="empty-state">No packages installed. Use Manage Packages to install.</p>');
+    $container.html('<p class="empty-state">No packages installed. Use Manage Packages to install.</p>');
     return;
   }
 
-  const defaultSelected = state.packageByMachineName.has("genrpg") && state.packageByMachineName.get("genrpg").installed
-    ? new Set(["genrpg"])
-    : new Set();
+  const defaultSelected =
+    state.packageByMachineName.has(GENRPG_MACHINE_NAME) &&
+    state.packageByMachineName.get(GENRPG_MACHINE_NAME).installed
+      ? new Set([GENRPG_MACHINE_NAME])
+      : new Set();
 
-  elements.$packageList.html(
-    installedPackages
-      .map(
-        (pkg) => `
-      <label class="package-option">
+  const orderedPackages = orderPackagesByDependency(installedPackages);
+
+  $container.html(
+    orderedPackages
+      .map(({ pkg, depth }) => {
+        const isGenrpg = pkg.machineName === GENRPG_MACHINE_NAME;
+        const isChecked = defaultSelected.has(pkg.machineName);
+        const checkedAttr = isChecked ? "checked" : "";
+        const disabledAttr = isGenrpg ? "disabled" : "";
+        const requiredClass = isGenrpg ? " is-required" : "";
+
+        return `
+      <label class="package-option${requiredClass}" style="--package-depth: ${depth}">
         <input
           type="checkbox"
           name="package"
           value="${escapeHtml(pkg.machineName)}"
           data-machine-name="${escapeHtml(pkg.machineName)}"
-          ${defaultSelected.has(pkg.machineName) ? "checked" : ""}
+          ${checkedAttr}
+          ${disabledAttr}
         >
         <span>${escapeHtml(pkg.name)}</span>
       </label>
-    `,
-      )
+    `;
+      })
       .join(""),
   );
 
-  syncPackageCheckboxStates();
+  syncPackageCheckboxStates($container);
+}
+
+export function setPackages(packages) {
+  state.packageByMachineName.clear();
+
+  for (const pkg of packages) {
+    state.packageByMachineName.set(pkg.machineName, pkg);
+  }
+}
+
+export function renderPackages(packages) {
+  setPackages(packages);
 }
 
 export function formatConfigurationIssues(issues) {
@@ -235,10 +339,6 @@ export async function applyUpdates() {
 
 export function setupPackageEvents() {
   const elements = getElements();
-
-  elements.$packageList.on("change", 'input[name="package"]', function () {
-    applyPackageSelectionChange(this.value, this.checked);
-  });
 
   elements.$applyUpdatesButton.on("click", applyUpdates);
 

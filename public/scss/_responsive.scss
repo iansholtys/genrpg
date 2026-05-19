@@ -6,13 +6,8 @@
   }
 
   .topbar,
-  .user-panel,
-  .instance-form {
+  .user-panel {
     display: grid;
-  }
-
-  .instance-form {
-    grid-template-columns: 1fr;
   }
 
   dl {

@@ -1,14 +1,32 @@
 @use "variables" as *;
 
-.instance-tools {
-  margin-bottom: 2rem;
-}
-
-.instance-form {
+.create-instance-form {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 2fr) auto;
-  align-items: end;
   gap: 1rem;
+
+  label,
+  fieldset {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    border: 0;
+    padding: 0;
+  }
+
+  legend {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    padding: 0;
+  }
+
+  .create-instance-packages-fieldset .package-list {
+    margin: 0;
+  }
+
+  .message {
+    margin: 0;
+  }
 }
 
 .message {

@@ -42,33 +42,19 @@
   </section>
 
   <main class="workspace">
-    <section class="package-tools" aria-label="Packages">
+    <section class="package-tools" aria-label="Packages" hidden>
       <div class="section-heading">
         <h2>Packages</h2>
         <button type="button" id="managePackagesButton" hidden>Manage Packages</button>
         <button type="button" id="manageRolesButton" hidden>Manage Roles</button>
         <button type="button" id="manageGlobalUsersButton" hidden>Manage Users</button>
       </div>
-      <div id="packageList" class="package-list" role="group" aria-label="Enabled packages"></div>
-    </section>
-
-    <section class="instance-tools" aria-label="Create instance">
-      <form id="instanceForm" class="instance-form">
-        <label>
-          <span>Name</span>
-          <input name="name" required maxlength="120" autocomplete="off">
-        </label>
-        <label>
-          <span>Description</span>
-          <textarea name="description" rows="3" maxlength="600"></textarea>
-        </label>
-        <button type="submit">Create Instance</button>
-      </form>
     </section>
 
     <section>
       <div class="section-heading">
         <h2>Your instances</h2>
+        <button type="button" id="createInstanceButton" class="primary-button">Create Instance</button>
       </div>
       <div id="message" class="message" role="status"></div>
       <div id="instances"></div>
