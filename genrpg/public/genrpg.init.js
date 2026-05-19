@@ -20,9 +20,9 @@
     }
   }
 
-  $(window).on("genrpg:instance-entered" + NS, function (event) {
+  $(window).on("genrpg:package-loaded" + NS, function (event) {
     init(event.originalEvent?.detail || {});
   });
 
-  $(window).on("genrpg:instance-exited" + NS, teardown);
+  $(window).on("genrpg:package-exited" + NS, teardown);
 })(jQuery);

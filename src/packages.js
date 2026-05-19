@@ -433,16 +433,26 @@ function resolveInstanceAssets(selectedMachineNames, packages) {
   const ordered = sortPackagesTopologically(expandedSelection, packages).filter(Boolean);
   const css = [];
   const js = [];
+  const packageAssets = [];
 
   for (const pkg of ordered) {
-    if (!pkg.assetUrls) {
-      continue;
-    }
-    css.push(...pkg.assetUrls.css);
-    js.push(...pkg.assetUrls.js);
+    const pkgCss = pkg.assetUrls?.css ?? [];
+    const pkgJs = pkg.assetUrls?.js ?? [];
+    css.push(...pkgCss);
+    js.push(...pkgJs);
+    packageAssets.push({
+      machineName: pkg.machineName,
+      css: pkgCss,
+      js: pkgJs,
+    });
   }
 
-  return { css, js, packageNames: ordered.map((pkg) => pkg.machineName) };
+  return {
+    css,
+    js,
+    packageNames: ordered.map((pkg) => pkg.machineName),
+    packages: packageAssets,
+  };
 }
 
 async function resolveInstanceAssetsForRequest(selectedMachineNames, packages) {

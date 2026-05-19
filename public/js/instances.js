@@ -173,21 +173,25 @@ function hideInstanceLoading() {
   elements.$instanceLoading.prop("hidden", true);
 }
 
-async function loadInstanceAssets({ css, js }, onProgress) {
+function dispatchPackageLoaded(packageName, instanceGuid) {
+  window.dispatchEvent(
+    new CustomEvent(`${packageName}:package-loaded`, {
+      detail: { instanceGuid, packageName },
+    }),
+  );
+}
+
+function dispatchPackageExited(packageName, instanceGuid) {
+  window.dispatchEvent(
+    new CustomEvent(`${packageName}:package-exited`, {
+      detail: { instanceGuid, packageName },
+    }),
+  );
+}
+
+async function loadPackageAssets({ css, js }, reportProgress) {
   const stylesheetUrls = css || [];
   const scriptUrls = js || [];
-  const total = stylesheetUrls.length + scriptUrls.length;
-
-  if (total === 0) {
-    onProgress?.(0, 0);
-    return;
-  }
-
-  let loaded = 0;
-  const reportProgress = () => {
-    loaded += 1;
-    onProgress?.(loaded, total);
-  };
 
   await Promise.all(
     stylesheetUrls.map((href) =>
@@ -204,15 +208,48 @@ async function loadInstanceAssets({ css, js }, onProgress) {
   }
 }
 
+async function loadInstanceAssets(packageAssetList, instanceGuid, onProgress) {
+  const packages = packageAssetList || [];
+  const total = packages.reduce(
+    (count, pkg) => count + (pkg.css?.length || 0) + (pkg.js?.length || 0),
+    0,
+  );
+
+  if (total === 0 && packages.length === 0) {
+    onProgress?.(0, 0);
+    return;
+  }
+
+  let loaded = 0;
+  const reportProgress = () => {
+    loaded += 1;
+    onProgress?.(loaded, total || 1);
+  };
+
+  if (total === 0) {
+    onProgress?.(0, 0);
+  }
+
+  for (const pkg of packages) {
+    await loadPackageAssets(pkg, reportProgress);
+    dispatchPackageLoaded(pkg.machineName, instanceGuid);
+  }
+}
+
 function exitInstance() {
   const elements = getElements();
   if (!state.activeInstance) {
     return;
   }
 
+  const { guid: instanceGuid, packageNames = [] } = state.activeInstance;
+  for (const packageName of [...packageNames].reverse()) {
+    dispatchPackageExited(packageName, instanceGuid);
+  }
+
   window.dispatchEvent(
     new CustomEvent("genrpg:instance-exited", {
-      detail: { instanceGuid: state.activeInstance.guid },
+      detail: { instanceGuid },
     }),
   );
 
@@ -246,15 +283,18 @@ async function enterInstance(instanceGuid, instanceName) {
       return;
     }
 
-    const stylesheetUrls = [...new Set(assets.css || [])];
-    const scriptUrls = [...new Set(assets.js || [])];
-    const totalFiles = stylesheetUrls.length + scriptUrls.length;
+    const packageAssetList = (assets.packages || []).map((pkg) => ({
+      machineName: pkg.machineName,
+      css: [...new Set(pkg.css || [])],
+      js: [...new Set(pkg.js || [])],
+    }));
+    const totalFiles = packageAssetList.reduce(
+      (count, pkg) => count + pkg.css.length + pkg.js.length,
+      0,
+    );
 
     showInstanceLoading(instanceName, totalFiles);
-    await loadInstanceAssets(
-      { css: stylesheetUrls, js: scriptUrls },
-      updateInstanceLoadingProgress,
-    );
+    await loadInstanceAssets(packageAssetList, instanceGuid, updateInstanceLoadingProgress);
     hideInstanceLoading();
 
     state.activeInstance = {

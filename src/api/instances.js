@@ -94,6 +94,7 @@ instancesRouter.get("/instances/:guid/assets", async (req, res, next) => {
       css: assets.css,
       js: assets.js,
       packageNames: assets.packageNames,
+      packages: assets.packages,
     });
   } catch (error) {
     if (error instanceof PackageLoadError) {
