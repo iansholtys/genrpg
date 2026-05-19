@@ -26,17 +26,6 @@ export function getElements() {
       $confirmDeleteInstanceButton: $("#confirmDeleteInstanceButton"),
       // Manage Roles
       $manageRolesButton: $("#manageRolesButton"),
-      $manageRolesModal: $("#manageRolesModal"),
-      $closeManageRolesModal: $("#closeManageRolesModal"),
-      $roleForm: $("#roleForm"),
-      $roleFormId: $("#roleFormId"),
-      $roleNameInput: $("#roleNameInput"),
-      $roleDescriptionInput: $("#roleDescriptionInput"),
-      $rolePermissionsList: $("#rolePermissionsList"),
-      $roleFormMessage: $("#roleFormMessage"),
-      $roleFormSubmitButton: $("#roleFormSubmitButton"),
-      $roleFormCancelButton: $("#roleFormCancelButton"),
-      $rolesList: $("#rolesList"),
       // Manage Global Users
       $manageGlobalUsersButton: $("#manageGlobalUsersButton"),
     };

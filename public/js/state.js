@@ -12,6 +12,4 @@ export const state = {
   deleteInstanceGuid: null,
   deleteInstanceTargetName: null,
   allRoles: [],
-  allPermissions: [],
-  rolesTable: null,
 };
