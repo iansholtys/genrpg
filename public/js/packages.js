@@ -2,7 +2,7 @@ import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
 import { escapeHtml, setMessage } from "./utils.js";
-import { openManagePackagesModal } from "../components/modals/packages/managePackagesModal.js";
+import { openManagePackagesModal } from "../components/modals/manage-packages/managePackagesModal.js";
 
 function getTransitiveDependencies(machineName) {
   const dependencies = new Set();
