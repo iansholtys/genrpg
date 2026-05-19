@@ -20,38 +20,50 @@ class InstanceUsersModal extends Modal {
   }
 
   getContent() {
-    return `
-      <form id="addUserRoleForm" class="add-user-role-form">
-        <label>
-          <span>User</span>
-          <select name="userGuid" id="addUserSelect" required>
-            <option value="">Select a user…</option>
-          </select>
-        </label>
-        <label>
-          <span>Role</span>
-          <select name="roleId" id="addRoleSelect" required>
-            <option value="">Select a role…</option>
-          </select>
-        </label>
-        <button type="submit">Assign Role</button>
-      </form>
-      <div id="addUserMessage" class="message" role="status"></div>
-      <hr>
-      <h3>Current Users</h3>
-      <div id="instanceUsersList"></div>
-    `;
+    this.elements.$addUserSelect = $("<select>", {
+      name: "userGuid",
+      id: "addUserSelect",
+      required: true,
+    }).append($("<option>", { value: "", text: "Select a user…" }));
+
+    this.elements.$addRoleSelect = $("<select>", {
+      name: "roleId",
+      id: "addRoleSelect",
+      required: true,
+    }).append($("<option>", { value: "", text: "Select a role…" }));
+
+    this.elements.$addUserRoleForm = $("<form>", {
+      id: "addUserRoleForm",
+      class: "add-user-role-form",
+    }).append(
+      $("<label>").append(
+        $("<span>", { text: "User" }),
+        this.elements.$addUserSelect,
+      ),
+      $("<label>").append(
+        $("<span>", { text: "Role" }),
+        this.elements.$addRoleSelect,
+      ),
+      $("<button>", { type: "submit", text: "Assign Role" }),
+    );
+
+    this.elements.$addUserMessage = $("<div>", {
+      id: "addUserMessage",
+      class: "message",
+      role: "status",
+    });
+
+    this.elements.$instanceUsersList = $("<div>", { id: "instanceUsersList" });
+
+    return this.elements.$addUserRoleForm
+      .add(this.elements.$addUserMessage)
+      .add($("<hr>"))
+      .add($("<h3>", { text: "Current Users" }))
+      .add(this.elements.$instanceUsersList);
   }
 
   bindEvents() {
     super.bindEvents();
-    const $root = this.elements.$root;
-    this.elements.$addUserRoleForm = $root.find("#addUserRoleForm");
-    this.elements.$addUserSelect = $root.find("#addUserSelect");
-    this.elements.$addRoleSelect = $root.find("#addRoleSelect");
-    this.elements.$addUserMessage = $root.find("#addUserMessage");
-    this.elements.$instanceUsersList = $root.find("#instanceUsersList");
-
     this.elements.$addUserRoleForm.on("submit", (event) => this.onFormSubmit(event));
     this.elements.$instanceUsersList.on("click", ".remove-user-role-btn", (event) =>
       this.onRemoveUser(event),
