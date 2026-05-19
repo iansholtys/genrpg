@@ -1,17 +1,31 @@
-(function ($) {
-  const NS = ".genrpg-item-template-management";
-  const ROOT_ID = "genrpg-item-template-management";
+/**
+ * Item template management — CRUD UI for instance item templates.
+ */
+class ItemTemplateManagement {
+  static defaultId = "genrpg-item-template-management";
 
-  let instanceGuid = null;
-  let editingGuid = null;
-  let table = null;
-  let $root = null;
-  let $form = null;
-  let $message = null;
-  let $submitButton = null;
-  let $cancelButton = null;
+  /**
+   * @param {Object} options
+   * @param {string} options.instanceGuid Instance the templates belong to.
+   * @param {string} [options.id] Root element id.
+   */
+  constructor(options = {}) {
+    if (!options.instanceGuid) {
+      throw new Error("ItemTemplateManagement requires instanceGuid");
+    }
 
-  function escapeHtml(value) {
+    this.instanceGuid = options.instanceGuid;
+    this.id = options.id || ItemTemplateManagement.defaultId;
+    this.eventNs = ".item-template-management-" + this.id;
+
+    this.editingGuid = null;
+    this.table = null;
+    this.isMounted = false;
+
+    this.elements = {};
+  }
+
+  static escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => {
       return {
         "&": "&amp;",
@@ -23,30 +37,18 @@
     });
   }
 
-  function formatWeight(value) {
+  static formatWeight(value) {
     if (value === null || value === undefined) {
       return "—";
     }
     return String(value);
   }
 
-  function setMessage(text, tone) {
-    if (!$message) {
-      return;
-    }
-    $message.text(text || "");
-    if (tone) {
-      $message.attr("data-tone", tone);
-    } else {
-      $message.removeAttr("data-tone");
-    }
+  apiBase() {
+    return `/api/genrpg/instances/${this.instanceGuid}/item-templates`;
   }
 
-  function apiBase() {
-    return `/api/genrpg/instances/${instanceGuid}/item-templates`;
-  }
-
-  async function requestJson(url, options) {
+  async requestJson(url, options) {
     const response = await fetch(url, {
       headers: { "Content-Type": "application/json" },
       ...options,
@@ -69,31 +71,45 @@
     return data;
   }
 
-  function resetForm() {
-    editingGuid = null;
-    if ($form) {
-      $form[0].reset();
+  setMessage(text, tone) {
+    const $message = this.elements.$message;
+    if (!$message) {
+      return;
     }
-    $submitButton.text("Save");
-    $cancelButton.prop("hidden", true);
-    setMessage("");
+    $message.text(text || "");
+    if (tone) {
+      $message.attr("data-tone", tone);
+    } else {
+      $message.removeAttr("data-tone");
+    }
   }
 
-  function fillForm(template) {
-    editingGuid = template.guid;
+  resetForm() {
+    this.editingGuid = null;
+    if (this.elements.$form) {
+      this.elements.$form[0].reset();
+    }
+    this.elements.$submitButton.text("Save");
+    this.elements.$cancelButton.prop("hidden", true);
+    this.setMessage("");
+  }
+
+  fillForm(template) {
+    this.editingGuid = template.guid;
+    const $form = this.elements.$form;
     $form.find('[name="name"]').val(template.name || "");
     $form.find('[name="description"]').val(template.description || "");
     $form.find('[name="weight"]').val(
       template.weight === null || template.weight === undefined ? "" : template.weight,
     );
-    $submitButton.text("Update");
-    $cancelButton.prop("hidden", false);
-    setMessage("");
+    this.elements.$submitButton.text("Update");
+    this.elements.$cancelButton.prop("hidden", false);
+    this.setMessage("");
     $form.find('[name="name"]').trigger("focus");
   }
 
-  function readFormPayload() {
-    const formData = new FormData($form[0]);
+  readFormPayload() {
+    const formData = new FormData(this.elements.$form[0]);
     const weightRaw = formData.get("weight");
     return {
       name: String(formData.get("name") || "").trim(),
@@ -102,20 +118,21 @@
     };
   }
 
-  async function loadTemplates() {
-    const data = await requestJson(apiBase());
+  async loadTemplates() {
+    const data = await this.requestJson(this.apiBase());
     if (!data) {
       return;
     }
-    table.setData(data.itemTemplates || []);
+    this.table.setData(data.itemTemplates || []);
   }
 
-  function ensureTable() {
-    if (table) {
-      return table;
+  ensureTable() {
+    if (this.table) {
+      return this.table;
     }
 
-    table = new Table({
+    const self = this;
+    this.table = new Table({
       id: "item-templates-table",
       rowCount: { show: true, nounSingular: "template", nounPlural: "templates" },
       searchPlaceholder: "Search templates…",
@@ -126,11 +143,12 @@
           title: "Description",
           searchable: true,
           valueFunction: (row) => row.description || "",
-          renderFunction: (value) => escapeHtml(value || ""),
+          renderFunction: (value) => ItemTemplateManagement.escapeHtml(value || ""),
         },
         {
           title: "Weight",
-          renderFunction: (value) => escapeHtml(formatWeight(value)),
+          renderFunction: (value) =>
+            ItemTemplateManagement.escapeHtml(ItemTemplateManagement.formatWeight(value)),
         },
         {
           title: "Actions",
@@ -168,25 +186,25 @@
       },
     });
 
-    $root.find(".item-template-management__table").empty().append(table.init());
-    return table;
+    this.elements.$tableHost.empty().append(this.table.init());
+    return this.table;
   }
 
-  function buildRoot() {
-    if ($("#" + ROOT_ID).length) {
-      return $("#" + ROOT_ID);
+  buildRoot() {
+    this.elements.$root = $("#" + this.id);
+    if (this.elements.$root.length) {
+      return this.elements.$root;
     }
 
-    $root = $("<section>", {
-      id: ROOT_ID,
+    const $root = $("<section>", {
+      id: this.id,
       class: "item-template-management",
       "aria-label": "Item template management",
     });
 
     $root.append($("<h2>", { class: "item-template-management__heading", text: "Item Templates" }));
 
-    $form = $("<form>", { class: "item-template-management__form" });
-    $form.append(
+    const $form = $("<form>", { class: "item-template-management__form" }).append(
       $("<label>").append(
         $("<span>", { text: "Name" }),
         $("<input>", {
@@ -212,8 +230,8 @@
     );
 
     const $formActions = $("<div>", { class: "item-template-management__form-actions" });
-    $submitButton = $("<button>", { type: "submit", text: "Save" });
-    $cancelButton = $("<button>", {
+    const $submitButton = $("<button>", { type: "submit", text: "Save" });
+    const $cancelButton = $("<button>", {
       type: "button",
       class: "secondary-button",
       text: "Cancel",
@@ -222,128 +240,146 @@
     $formActions.append($submitButton, $cancelButton);
     $form.append($formActions);
 
-    $message = $("<p>", {
+    const $message = $("<p>", {
       class: "item-template-management__message",
       role: "status",
     });
 
-    $root.append($form, $message, $("<div>", { class: "item-template-management__table" }));
-    $("body").append($root);
+    const $tableHost = $("<div>", { class: "item-template-management__table" });
+    $root.append($form, $message, $tableHost);
 
-    ensureTable();
-    bindEvents();
+    this.elements.$root = $root;
+    this.elements.$form = $form;
+    this.elements.$message = $message;
+    this.elements.$submitButton = $submitButton;
+    this.elements.$cancelButton = $cancelButton;
+    this.elements.$tableHost = $tableHost;
+
     return $root;
   }
 
-  function bindEvents() {
-    $form.on("submit" + NS, async function (event) {
+  bindEvents() {
+    const ns = this.eventNs;
+    const { $form, $root, $cancelButton, $submitButton } = this.elements;
+
+    $form.on("submit" + ns, async (event) => {
       event.preventDefault();
-      const payload = readFormPayload();
+      const payload = this.readFormPayload();
 
       if (!payload.name) {
-        setMessage("Name is required.", "error");
+        this.setMessage("Name is required.", "error");
         return;
       }
 
       $submitButton.prop("disabled", true);
 
       try {
-        if (editingGuid) {
-          await requestJson(`${apiBase()}/${editingGuid}`, {
+        if (this.editingGuid) {
+          await this.requestJson(`${this.apiBase()}/${this.editingGuid}`, {
             method: "PUT",
             body: JSON.stringify(payload),
           });
-          setMessage("Template updated.", "success");
+          this.setMessage("Template updated.", "success");
         } else {
-          await requestJson(apiBase(), {
+          await this.requestJson(this.apiBase(), {
             method: "POST",
             body: JSON.stringify(payload),
           });
-          setMessage("Template created.", "success");
+          this.setMessage("Template created.", "success");
         }
 
-        resetForm();
-        await loadTemplates();
+        this.resetForm();
+        await this.loadTemplates();
       } catch (error) {
-        setMessage(error.message, "error");
+        this.setMessage(error.message, "error");
       } finally {
         $submitButton.prop("disabled", false);
       }
     });
 
-    $cancelButton.on("click" + NS, resetForm);
+    $cancelButton.on("click" + ns, () => this.resetForm());
 
-    $root.on("click" + NS, ".edit-item-template-btn", async function () {
-      const templateGuid = $(this).attr("data-template-guid");
+    $root.on("click" + ns, ".edit-item-template-btn", async (event) => {
+      const templateGuid = $(event.currentTarget).attr("data-template-guid");
       try {
-        const data = await requestJson(`${apiBase()}/${templateGuid}`);
+        const data = await this.requestJson(`${this.apiBase()}/${templateGuid}`);
         if (data?.itemTemplate) {
-          fillForm(data.itemTemplate);
+          this.fillForm(data.itemTemplate);
         }
       } catch (error) {
-        setMessage(error.message, "error");
+        this.setMessage(error.message, "error");
       }
     });
 
-    $root.on("click" + NS, ".delete-item-template-btn", async function () {
-      const templateGuid = $(this).attr("data-template-guid");
+    $root.on("click" + ns, ".delete-item-template-btn", async (event) => {
+      const templateGuid = $(event.currentTarget).attr("data-template-guid");
       if (!window.confirm("Delete this item template?")) {
         return;
       }
 
       try {
-        await requestJson(`${apiBase()}/${templateGuid}`, { method: "DELETE" });
-        if (editingGuid === templateGuid) {
-          resetForm();
+        await this.requestJson(`${this.apiBase()}/${templateGuid}`, { method: "DELETE" });
+        if (this.editingGuid === templateGuid) {
+          this.resetForm();
         }
-        setMessage("Template deleted.", "success");
-        await loadTemplates();
+        this.setMessage("Template deleted.", "success");
+        await this.loadTemplates();
       } catch (error) {
-        setMessage(error.message, "error");
+        this.setMessage(error.message, "error");
       }
     });
   }
 
-  function unbindEvents() {
-    if ($form) {
-      $form.off(NS);
+  unbindEvents() {
+    const ns = this.eventNs;
+    if (this.elements.$form) {
+      this.elements.$form.off(ns);
     }
-    if ($cancelButton) {
-      $cancelButton.off(NS);
+    if (this.elements.$cancelButton) {
+      this.elements.$cancelButton.off(ns);
     }
-    if ($root) {
-      $root.off(NS);
+    if (this.elements.$root) {
+      this.elements.$root.off(ns);
     }
   }
 
-  function mount(detail) {
-    instanceGuid = detail.instanceGuid;
-    buildRoot();
-    resetForm();
-    loadTemplates().catch((error) => {
-      setMessage(error.message, "error");
+  /**
+   * Build DOM, append to body, and load data.
+   * @returns {this}
+   */
+  mount() {
+    if (this.isMounted) {
+      return this;
+    }
+
+    this.buildRoot();
+    $("body").append(this.elements.$root);
+    this.ensureTable();
+    this.bindEvents();
+    this.resetForm();
+    this.isMounted = true;
+
+    this.loadTemplates().catch((error) => {
+      this.setMessage(error.message, "error");
     });
+
+    return this;
   }
 
-  function teardown() {
-    unbindEvents();
-    if ($root) {
-      $root.remove();
+  /**
+   * Remove DOM and listeners.
+   */
+  destroy() {
+    if (!this.isMounted) {
+      return;
     }
-    $root = null;
-    $form = null;
-    $message = null;
-    $submitButton = null;
-    $cancelButton = null;
-    table = null;
-    instanceGuid = null;
-    editingGuid = null;
+
+    this.unbindEvents();
+    this.elements.$root?.remove();
+
+    this.editingGuid = null;
+    this.table = null;
+    this.isMounted = false;
+    this.elements = {};
   }
-
-  $(window).on("genrpg:instance-entered" + NS, function (event) {
-    const detail = event.originalEvent?.detail || {};
-    mount(detail);
-  });
-
-  $(window).on("genrpg:instance-exited" + NS, teardown);
-})(jQuery);
+}
