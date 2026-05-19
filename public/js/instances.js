@@ -1,11 +1,14 @@
 import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
-import { escapeHtml, formatDate, setMessage } from "./utils.js";
+import { escapeHtml, setMessage } from "./utils.js";
 import { formatInstancePackageLabels } from "./packages.js";
 import { loadApp } from "./app.js";
 import { openDeleteInstanceModal } from "../components/modals/delete-instance/deleteInstanceModal.js";
-import { openCreateInstanceModal } from "../components/modals/create-instance/createInstanceModal.js";
+import {
+  openCreateInstanceModal,
+  openEditInstanceModal,
+} from "../components/modals/manage-instance/manageInstanceModal.js";
 
 function ensureInstancesTable() {
   const elements = getElements();
@@ -47,13 +50,6 @@ function ensureInstancesTable() {
       },
       { title: "Role", field: "role" },
       {
-        title: "Updated",
-        field: "update_datetime",
-        renderFunction: (value) => formatDate(value),
-        sortFunction: (a, b) =>
-          new Date(a.update_datetime).getTime() - new Date(b.update_datetime).getTime(),
-      },
-      {
         title: "Actions",
         sortable: false,
         headerClass: "actions-cell",
@@ -71,12 +67,29 @@ function ensureInstancesTable() {
               .attr("data-instance-name", instance.name),
           );
 
+          if (instance.can_edit) {
+            $container.append(
+              $("<button>", {
+                type: "button",
+                class: "accent-button-outline instance-action-btn edit-instance-btn",
+                text: "✏️",
+                title: "Edit instance",
+                "aria-label": "Edit instance",
+              }).attr(
+                "data-instance",
+                encodeURIComponent(JSON.stringify(instance)),
+              ),
+            );
+          }
+
           if (instance.can_manage_users) {
             $container.append(
               $("<button>", {
                 type: "button",
-                class: "accent-button-outline manage-users-btn",
-                text: "Users",
+                class: "accent-button-outline instance-action-btn manage-users-btn",
+                text: "👥",
+                title: "Manage users",
+                "aria-label": "Manage users",
               })
                 .attr("data-instance-guid", instance.guid)
                 .attr("data-instance-name", instance.name),
@@ -87,8 +100,10 @@ function ensureInstancesTable() {
             $container.append(
               $("<button>", {
                 type: "button",
-                class: "danger-button-outline delete-instance-btn",
-                text: "Delete",
+                class: "danger-button-outline instance-action-btn delete-instance-btn",
+                text: "🗑️",
+                title: "Delete instance",
+                "aria-label": "Delete instance",
               })
                 .attr("data-instance-guid", instance.guid)
                 .attr("data-instance-name", instance.name),
@@ -484,6 +499,14 @@ export function setupInstanceEvents() {
   elements.$instances.on("click", ".delete-instance-btn", function () {
     const $btn = $(this);
     openDeleteInstanceModal($btn.data("instance-guid"), $btn.data("instance-name"));
+  });
+
+  elements.$instances.on("click", ".edit-instance-btn", function () {
+    const raw = $(this).attr("data-instance");
+    if (!raw) {
+      return;
+    }
+    openEditInstanceModal(JSON.parse(decodeURIComponent(raw)));
   });
 
   elements.$createInstanceButton.on("click", () => openCreateInstanceModal());

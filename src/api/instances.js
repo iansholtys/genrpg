@@ -13,6 +13,8 @@ const {
   createDefaultInstanceAlias,
   createCustomInstanceAlias,
   deleteAliasesForInstance,
+  lookupCustomInstanceUrlSegment,
+  syncCustomInstanceAlias,
   slugifyInstanceUrlSegment,
 } = require("../aliases");
 
@@ -144,7 +146,26 @@ instancesRouter.get("/instances", async (req, res, next) => {
               JOIN genrpg.permissions p ON p.id = rp.permission_id
               WHERE rp.role_id = iur.role_id AND p.name = 'instance.delete'
             )
-          END AS can_delete
+          END AS can_delete,
+          CASE
+            WHEN $2::boolean THEN true
+            ELSE EXISTS (
+              SELECT 1 FROM genrpg.role_permissions rp
+              JOIN genrpg.permissions p ON p.id = rp.permission_id
+              WHERE rp.role_id = iur.role_id AND p.name = 'instance.edit'
+            )
+          END AS can_edit,
+          (
+            SELECT NULLIF(
+              regexp_replace(ua.alias, '^instance/', ''),
+              i.guid::text
+            )
+            FROM genrpg.url_aliases ua
+            WHERE ua.path = 'instance:' || i.guid::text
+              AND ua.alias <> 'instance/' || i.guid::text
+            ORDER BY length(ua.alias) ASC, ua.alias ASC
+            LIMIT 1
+          ) AS url_segment
         FROM genrpg.instances i
         LEFT JOIN genrpg.instance_user_roles iur
           ON iur.instance_guid = i.guid
@@ -253,6 +274,81 @@ instancesRouter.post("/instances", async (req, res, next) => {
       return;
     }
 
+    next(error);
+  }
+});
+
+instancesRouter.put("/instances/:guid", async (req, res, next) => {
+  try {
+    const user = req.session.user;
+    const instanceGuid = req.params.guid;
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+    const description =
+      typeof req.body.description === "string" ? req.body.description.trim() : "";
+    const rawUrl = typeof req.body.url === "string" ? req.body.url.trim() : "";
+    const urlSegment = rawUrl ? slugifyInstanceUrlSegment(rawUrl) : "";
+
+    if (!name) {
+      res.status(400).json({ error: "Instance name is required" });
+      return;
+    }
+
+    if (rawUrl && !urlSegment) {
+      res.status(400).json({ error: "Instance URL is invalid" });
+      return;
+    }
+
+    const canEdit = await canUserManageInstance(instanceGuid, user, "instance.edit");
+    if (!canEdit) {
+      res.status(403).json({ error: "You do not have permission to edit this instance" });
+      return;
+    }
+
+    const instance = await loadAccessibleInstance(instanceGuid, user);
+    if (!instance) {
+      res.status(404).json({ error: "Instance not found" });
+      return;
+    }
+
+    const currentUrlSegment = await lookupCustomInstanceUrlSegment(instanceGuid);
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const updated = await client.query(
+        `
+          UPDATE genrpg.instances
+          SET name = $2, description = $3
+          WHERE guid = $1
+          RETURNING guid, name, description, packages, create_datetime, update_datetime
+        `,
+        [instanceGuid, name, description],
+      );
+
+      if (urlSegment !== currentUrlSegment) {
+        await syncCustomInstanceAlias(client, instanceGuid, urlSegment);
+      }
+
+      await client.query("COMMIT");
+
+      const row = updated.rows[0];
+      const resolvedUrlSegment = await lookupCustomInstanceUrlSegment(instanceGuid);
+
+      res.json({
+        instance: {
+          ...row,
+          packageNames: parsePackageCsv(row.packages),
+          url_segment: resolvedUrlSegment || null,
+        },
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
     next(error);
   }
 });

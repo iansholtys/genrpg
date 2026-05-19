@@ -176,6 +176,19 @@ async function lookupAlias(alias) {
   return result.rows[0] || null;
 }
 
+async function isAliasAvailable(alias, { excludeInstanceGuid } = {}) {
+  const row = await lookupAlias(alias);
+  if (!row) {
+    return true;
+  }
+
+  if (excludeInstanceGuid) {
+    return row.path === defaultInstancePath(excludeInstanceGuid);
+  }
+
+  return false;
+}
+
 async function lookupCanonicalAliasForPath(pathValue) {
   const result = await pool.query(
     `
@@ -285,6 +298,47 @@ async function deleteAliasesForInstance(client, instanceGuid) {
   ]);
 }
 
+async function lookupCustomInstanceUrlSegment(instanceGuid) {
+  const pathValue = defaultInstancePath(instanceGuid);
+  const defaultAlias = defaultInstanceAlias(instanceGuid);
+  const result = await pool.query(
+    `
+      SELECT alias
+      FROM genrpg.url_aliases
+      WHERE path = $1 AND alias <> $2
+      ORDER BY length(alias) ASC, alias ASC
+      LIMIT 1
+    `,
+    [pathValue, defaultAlias],
+  );
+
+  const alias = result.rows[0]?.alias;
+  if (!alias || !alias.startsWith("instance/")) {
+    return "";
+  }
+
+  return alias.slice("instance/".length);
+}
+
+async function deleteCustomInstanceAlias(client, instanceGuid) {
+  await client.query(
+    `
+      DELETE FROM genrpg.url_aliases
+      WHERE path = $1 AND alias <> $2
+    `,
+    [defaultInstancePath(instanceGuid), defaultInstanceAlias(instanceGuid)],
+  );
+}
+
+async function syncCustomInstanceAlias(client, instanceGuid, slugSegment) {
+  const segment = slugifyInstanceUrlSegment(slugSegment);
+  await deleteCustomInstanceAlias(client, instanceGuid);
+  if (!segment) {
+    return null;
+  }
+  return createCustomInstanceAlias(client, instanceGuid, segment);
+}
+
 let appHtmlCache;
 
 async function getAppHtmlTemplate() {
@@ -315,6 +369,7 @@ module.exports = {
   defaultInstanceAlias,
   defaultInstancePath,
   lookupAlias,
+  isAliasAvailable,
   lookupCanonicalAliasForPath,
   resolveAlias,
   resolvePath,
@@ -322,5 +377,8 @@ module.exports = {
   createDefaultInstanceAlias,
   createCustomInstanceAlias,
   deleteAliasesForInstance,
+  lookupCustomInstanceUrlSegment,
+  deleteCustomInstanceAlias,
+  syncCustomInstanceAlias,
   sendAppHtml,
 };

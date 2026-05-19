@@ -2,6 +2,7 @@ const express = require("express");
 const {
   normalizeAlias,
   lookupAlias,
+  isAliasAvailable,
   lookupCanonicalAliasForPath,
   resolveAlias,
   resolvePath,
@@ -17,8 +18,14 @@ aliasesRouter.get("/aliases/availability", async (req, res, next) => {
       return;
     }
 
-    const row = await lookupAlias(alias);
-    res.json({ available: !row });
+    const excludeInstanceGuid =
+      typeof req.query.excludeInstanceGuid === "string"
+        ? req.query.excludeInstanceGuid.trim()
+        : "";
+    const available = await isAliasAvailable(alias, {
+      excludeInstanceGuid: excludeInstanceGuid || undefined,
+    });
+    res.json({ available });
   } catch (error) {
     next(error);
   }

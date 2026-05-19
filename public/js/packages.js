@@ -219,7 +219,7 @@ export function formatInstancePackageLabels(packageNames) {
     .join(", ") || "None";
 }
 
-export function renderInstancePackageSelection($container) {
+export function renderInstancePackageSelection($container, { selectedPackages = null, readOnly = false } = {}) {
   const installedPackages = [...state.packageByMachineName.values()].filter((pkg) => pkg.installed);
 
   if (!installedPackages.length) {
@@ -232,6 +232,8 @@ export function renderInstancePackageSelection($container) {
     state.packageByMachineName.get(GENRPG_MACHINE_NAME).installed
       ? new Set([GENRPG_MACHINE_NAME])
       : new Set();
+  const selected =
+    selectedPackages != null ? new Set(selectedPackages) : defaultSelected;
 
   const orderedPackages = orderPackagesByDependency(installedPackages);
 
@@ -239,9 +241,9 @@ export function renderInstancePackageSelection($container) {
     orderedPackages
       .map(({ pkg, depth }) => {
         const isGenrpg = pkg.machineName === GENRPG_MACHINE_NAME;
-        const isChecked = defaultSelected.has(pkg.machineName);
+        const isChecked = selected.has(pkg.machineName);
         const checkedAttr = isChecked ? "checked" : "";
-        const disabledAttr = isGenrpg ? "disabled" : "";
+        const disabledAttr = readOnly || isGenrpg ? "disabled" : "";
         const requiredClass = isGenrpg ? " is-required" : "";
 
         return `
@@ -261,7 +263,9 @@ export function renderInstancePackageSelection($container) {
       .join(""),
   );
 
-  syncPackageCheckboxStates($container);
+  if (!readOnly) {
+    syncPackageCheckboxStates($container);
+  }
 }
 
 export function setPackages(packages) {

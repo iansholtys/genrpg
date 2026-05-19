@@ -1,6 +1,6 @@
 @use "variables" as *;
 
-.create-instance-form {
+.manage-instance-form {
   display: grid;
   gap: 1rem;
 
@@ -20,8 +20,8 @@
     padding: 0;
   }
 
-  .create-instance-url-label {
-    .create-instance-url-help {
+  .manage-instance-url-label {
+    .manage-instance-url-help {
       margin: 0;
       font-size: 0.85rem;
       line-height: 1.4;
@@ -38,7 +38,7 @@
     }
   }
 
-  .create-instance-packages-fieldset .package-list {
+  .manage-instance-packages-fieldset .package-list {
     margin: 0;
   }
 
@@ -111,8 +111,15 @@ dd {
 .instance-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
   justify-content: flex-end;
+}
+
+.instance-action-btn {
+  min-width: 2.25rem;
+  padding: 0.4rem 0.55rem;
+  line-height: 1;
+  font-size: 1rem;
 }
 
 // Add user role form in the manage users modal
@@ -168,4 +175,3 @@ select {
 .delete-instance-highlight {
   color: var(--danger);
 }
-
