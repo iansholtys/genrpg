@@ -5,6 +5,7 @@ export const state = {
   enteringInstance: false,
   injectedStylesheets: [],
   injectedScripts: [],
+  loadedInstanceScriptUrls: new Set(),
   packageNameByMachineName: new Map(),
   packageByMachineName: new Map(),
   manageUsersInstanceGuid: null,

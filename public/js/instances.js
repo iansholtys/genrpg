@@ -127,10 +127,17 @@ function loadStylesheet(href) {
 }
 
 function loadScript(src) {
+  if (state.loadedInstanceScriptUrls.has(src)) {
+    return Promise.resolve(null);
+  }
+
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = src;
-    script.onload = () => resolve(script);
+    script.onload = () => {
+      state.loadedInstanceScriptUrls.add(src);
+      resolve(script);
+    };
     script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
     document.body.appendChild(script);
     state.injectedScripts.push(script);
@@ -212,9 +219,6 @@ function exitInstance() {
   for (const link of state.injectedStylesheets) {
     link.remove();
   }
-  for (const script of state.injectedScripts) {
-    script.remove();
-  }
   state.injectedStylesheets = [];
   state.injectedScripts = [];
   state.activeInstance = null;
@@ -229,6 +233,10 @@ async function enterInstance(instanceGuid, instanceName) {
     return;
   }
 
+  if (state.activeInstance) {
+    exitInstance();
+  }
+
   state.enteringInstance = true;
   elements.$instances.find(".enter-instance-btn").prop("disabled", true);
 
@@ -238,8 +246,8 @@ async function enterInstance(instanceGuid, instanceName) {
       return;
     }
 
-    const stylesheetUrls = assets.css || [];
-    const scriptUrls = assets.js || [];
+    const stylesheetUrls = [...new Set(assets.css || [])];
+    const scriptUrls = [...new Set(assets.js || [])];
     const totalFiles = stylesheetUrls.length + scriptUrls.length;
 
     showInstanceLoading(instanceName, totalFiles);
@@ -271,9 +279,6 @@ async function enterInstance(instanceGuid, instanceName) {
 
     for (const link of state.injectedStylesheets) {
       link.remove();
-    }
-    for (const script of state.injectedScripts) {
-      script.remove();
     }
     state.injectedStylesheets = [];
     state.injectedScripts = [];

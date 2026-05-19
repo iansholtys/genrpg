@@ -191,11 +191,6 @@ class ItemTemplateManagement {
   }
 
   buildRoot() {
-    this.elements.$root = $("#" + this.id);
-    if (this.elements.$root.length) {
-      return this.elements.$root;
-    }
-
     const $root = $("<section>", {
       id: this.id,
       class: "item-template-management",
