@@ -102,8 +102,8 @@ class CreateInstanceModal extends Modal {
   }
 
   open() {
-    this.resetForm();
     this.show();
+    this.resetForm();
     this.elements.$createInstanceNameInput.trigger("focus");
   }
 
