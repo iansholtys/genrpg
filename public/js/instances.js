@@ -258,12 +258,13 @@ async function loadInstanceAssets(packageAssetList, instanceGuid, onProgress) {
   }
 }
 
-function exitInstance({ syncUrl = false } = {}) {
+function isStaleRoute(token) {
+  return token !== state.routeToken;
+}
+
+function exitInstance() {
   const elements = getElements();
   if (!state.activeInstance) {
-    if (syncUrl && getCurrentAlias()) {
-      setInstanceUrl("", { replace: true });
-    }
     return;
   }
 
@@ -287,20 +288,38 @@ function exitInstance({ syncUrl = false } = {}) {
   hideInstanceLoading();
   elements.$exitInstanceButton.prop("hidden", true);
   elements.$workspace.prop("hidden", false);
-
-  if (syncUrl) {
-    setInstanceUrl("");
-  }
 }
 
-async function enterInstance(instanceGuid, instanceName, { syncUrl = true } = {}) {
+function clearEnteringState() {
+  state.enteringInstance = false;
+  getElements().$instances.find(".enter-instance-btn").prop("disabled", false);
+}
+
+function rejectRoute(token, message) {
   const elements = getElements();
-  if (state.enteringInstance) {
+  if (isStaleRoute(token)) {
     return;
   }
 
-  if (state.activeInstance) {
-    exitInstance({ syncUrl: false });
+  exitInstance();
+  clearEnteringState();
+  if (message) {
+    setMessage(elements.$message, message, "error");
+  }
+  if (getCurrentAlias()) {
+    setInstanceUrl("", { replace: true });
+  }
+}
+
+async function loadInstance(instanceGuid, instanceName, token) {
+  const elements = getElements();
+
+  if (state.activeInstance?.guid !== instanceGuid) {
+    exitInstance();
+  }
+
+  if (isStaleRoute(token)) {
+    return;
   }
 
   state.enteringInstance = true;
@@ -308,10 +327,12 @@ async function enterInstance(instanceGuid, instanceName, { syncUrl = true } = {}
 
   try {
     const assets = await requestJson(`/api/genrpg/instances/${instanceGuid}/assets`);
+    if (isStaleRoute(token)) {
+      return;
+    }
+
     if (!assets) {
-      if (syncUrl && getCurrentAlias()) {
-        setInstanceUrl("", { replace: true });
-      }
+      rejectRoute(token, "Instance not found or you do not have access.");
       return;
     }
 
@@ -327,6 +348,13 @@ async function enterInstance(instanceGuid, instanceName, { syncUrl = true } = {}
 
     showInstanceLoading(instanceName, totalFiles);
     await loadInstanceAssets(packageAssetList, instanceGuid, updateInstanceLoadingProgress);
+
+    if (isStaleRoute(token)) {
+      hideInstanceLoading();
+      elements.$workspace.prop("hidden", false);
+      return;
+    }
+
     hideInstanceLoading();
 
     state.activeInstance = {
@@ -345,14 +373,13 @@ async function enterInstance(instanceGuid, instanceName, { syncUrl = true } = {}
     );
 
     elements.$exitInstanceButton.prop("hidden", false);
-
-    if (syncUrl) {
-      const alias = await fetchAliasForInstance(instanceGuid);
-      if (getCurrentAlias() !== alias) {
-        setInstanceUrl(alias);
-      }
-    }
   } catch (error) {
+    if (isStaleRoute(token)) {
+      hideInstanceLoading();
+      elements.$workspace.prop("hidden", false);
+      return;
+    }
+
     hideInstanceLoading();
     elements.$workspace.prop("hidden", false);
 
@@ -361,119 +388,98 @@ async function enterInstance(instanceGuid, instanceName, { syncUrl = true } = {}
     }
     state.injectedStylesheets = [];
     state.injectedScripts = [];
-    setMessage(elements.$message, error.message, "error");
-
-    if (syncUrl && getCurrentAlias()) {
-      setInstanceUrl("", { replace: true });
-    }
+    rejectRoute(token, error.message);
   } finally {
-    state.enteringInstance = false;
-    elements.$instances.find(".enter-instance-btn").prop("disabled", false);
+    if (!isStaleRoute(token)) {
+      clearEnteringState();
+    }
   }
 }
 
-async function handlePopState() {
-  if (state.handlingPopstate || state.enteringInstance) {
+async function resolveAliasTarget(alias) {
+  const { resolved } = await requestJson(
+    `/api/genrpg/aliases/resolve?alias=${encodeURIComponent(alias)}`,
+  );
+  return resolved;
+}
+
+async function applyRoute({ boot = null } = {}) {
+  const token = ++state.routeToken;
+  const elements = getElements();
+  const alias = getCurrentAlias();
+
+  if (!alias) {
+    exitInstance();
+    clearEnteringState();
     return;
   }
 
-  state.handlingPopstate = true;
-  const elements = getElements();
+  let target = boot?.type === "instance" ? boot : null;
 
-  try {
-    const alias = getCurrentAlias();
-    if (!alias) {
-      if (state.activeInstance) {
-        exitInstance({ syncUrl: false });
-      }
-      return;
-    }
-
-    const { resolved } = await requestJson(
-      `/api/genrpg/aliases/resolve?alias=${encodeURIComponent(alias)}`,
-    );
-
-    if (resolved?.type === "instance") {
-      if (state.activeInstance?.guid === resolved.guid) {
+  if (!target) {
+    try {
+      target = await resolveAliasTarget(alias);
+    } catch (error) {
+      if (isStaleRoute(token)) {
         return;
       }
-      await enterInstance(resolved.guid, resolved.name, { syncUrl: false });
+      setMessage(elements.$message, error.message, "error");
+      rejectRoute(token);
       return;
     }
-
-    if (state.activeInstance) {
-      exitInstance({ syncUrl: false });
-    }
-
-    if (alias.startsWith("instance/")) {
-      setMessage(
-        elements.$message,
-        "Instance not found or you do not have access.",
-        "error",
-      );
-    }
-    setInstanceUrl("", { replace: true });
-  } catch (error) {
-    setMessage(elements.$message, error.message, "error");
-  } finally {
-    state.handlingPopstate = false;
   }
+
+  if (isStaleRoute(token)) {
+    return;
+  }
+
+  if (!target || target.type !== "instance") {
+    const message = alias.startsWith("instance/")
+      ? "Instance not found or you do not have access."
+      : null;
+    rejectRoute(token, message);
+    return;
+  }
+
+  if (state.activeInstance?.guid === target.guid && !state.enteringInstance) {
+    return;
+  }
+
+  await loadInstance(target.guid, target.name, token);
 }
 
-export async function handleInitialInstanceNavigation() {
-  const elements = getElements();
+function navigateToAlias(alias, { replace = false } = {}) {
+  setInstanceUrl(alias, { replace });
+  return applyRoute();
+}
+
+async function navigateToInstance(instanceGuid) {
+  const alias = await fetchAliasForInstance(instanceGuid);
+  if (getCurrentAlias() === alias && state.activeInstance?.guid === instanceGuid) {
+    return applyRoute();
+  }
+  setInstanceUrl(alias);
+  return applyRoute();
+}
+
+export async function applyInitialRoute() {
   const boot = window.__GENRPG_BOOT__;
   delete window.__GENRPG_BOOT__;
-
-  if (boot?.type === "instance") {
-    await enterInstance(boot.guid, boot.name, { syncUrl: false });
-    return;
-  }
-
-  const alias = getCurrentAlias();
-  if (!alias) {
-    return;
-  }
-
-  try {
-    const { resolved } = await requestJson(
-      `/api/genrpg/aliases/resolve?alias=${encodeURIComponent(alias)}`,
-    );
-
-    if (resolved?.type === "instance") {
-      await enterInstance(resolved.guid, resolved.name, { syncUrl: false });
-      return;
-    }
-
-    if (alias.startsWith("instance/")) {
-      setMessage(
-        elements.$message,
-        "Instance not found or you do not have access.",
-        "error",
-      );
-      setInstanceUrl("", { replace: true });
-    }
-  } catch (error) {
-    setMessage(elements.$message, error.message, "error");
-    if (getCurrentAlias()) {
-      setInstanceUrl("", { replace: true });
-    }
-  }
+  await applyRoute({ boot: boot?.type === "instance" ? boot : null });
 }
 
 export function setupInstanceEvents() {
   const elements = getElements();
 
   window.addEventListener("popstate", () => {
-    handlePopState();
+    applyRoute();
   });
 
   elements.$instances.on("click", ".enter-instance-btn", function () {
-    const $btn = $(this);
-    enterInstance($btn.data("instance-guid"), $btn.data("instance-name"));
+    navigateToInstance($(this).data("instance-guid"));
   });
 
-  elements.$exitInstanceButton.on("click", () => exitInstance({ syncUrl: true }));
+  elements.$exitInstanceButton.on("click", () => navigateToAlias(""));
 
   elements.$instances.on("click", ".delete-instance-btn", function () {
     const $btn = $(this);

@@ -3,7 +3,7 @@ export const state = {
   instancesTable: null,
   activeInstance: null,
   enteringInstance: false,
-  handlingPopstate: false,
+  routeToken: 0,
   injectedStylesheets: [],
   injectedScripts: [],
   loadedInstanceScriptUrls: new Set(),
