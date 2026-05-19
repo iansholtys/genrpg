@@ -44,7 +44,8 @@ class ManageInstanceModal extends Modal {
 
     this.elements.$instanceNameInput = $("<input>", {
       type: "text",
-      name: "name",
+      name: "instanceName",
+      id: "instanceNameInput",
       required: true,
       maxlength: 120,
       autocomplete: "off",
@@ -86,7 +87,7 @@ class ManageInstanceModal extends Modal {
       class: "manage-instance-form",
     }).append(
       $("<label>").append(
-        $("<span>", { text: "Name" }),
+        $("<span>", { text: "Instance name" }),
         this.elements.$instanceNameInput,
       ),
       $("<label>", { class: "manage-instance-url-label" }).append(
@@ -351,7 +352,7 @@ class ManageInstanceModal extends Modal {
     if (this.isEditMode()) {
       $btn.text("Saving…");
       const body = {
-        name: formData.get("name"),
+        name: formData.get("instanceName"),
         description: formData.get("description"),
         url: urlSegment,
       };
@@ -380,7 +381,7 @@ class ManageInstanceModal extends Modal {
 
     $btn.text("Creating…");
     const body = {
-      name: formData.get("name"),
+      name: formData.get("instanceName"),
       description: formData.get("description"),
       packages: selectedPackages,
     };
