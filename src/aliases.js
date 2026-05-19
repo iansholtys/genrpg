@@ -42,6 +42,78 @@ function defaultInstancePath(instanceGuid) {
   return `instance:${instanceGuid}`;
 }
 
+function slugifyInstanceUrlSegment(value) {
+  if (!value || typeof value !== "string") {
+    return "";
+  }
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]+/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function isProperlySlugified(value) {
+  if (value == null || typeof value !== "string") {
+    return true;
+  }
+  return value === slugifyInstanceUrlSegment(value);
+}
+
+function instanceAliasFromSegment(segment) {
+  return `instance/${segment}`;
+}
+
+const MAX_CUSTOM_ALIAS_ATTEMPTS = 100;
+
+async function createCustomInstanceAlias(client, instanceGuid, slugSegment) {
+  const baseSegment = slugifyInstanceUrlSegment(slugSegment);
+  if (!baseSegment) {
+    return null;
+  }
+
+  const pathValue = defaultInstancePath(instanceGuid);
+  let suffix = 0;
+
+  for (let attempt = 0; attempt < MAX_CUSTOM_ALIAS_ATTEMPTS; attempt += 1) {
+    const segment = suffix === 0 ? baseSegment : `${baseSegment}-${suffix}`;
+    const alias = instanceAliasFromSegment(segment);
+    const validation = validateAlias(alias);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+
+    const existing = await lookupAlias(alias);
+    if (existing) {
+      if (existing.path === pathValue) {
+        return validation.alias;
+      }
+      suffix += 1;
+      continue;
+    }
+
+    const result = await client.query(
+      `
+        INSERT INTO genrpg.url_aliases (guid, alias, path)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (alias) DO NOTHING
+        RETURNING alias
+      `,
+      [crypto.randomUUID(), validation.alias, pathValue],
+    );
+
+    if (result.rowCount > 0) {
+      return validation.alias;
+    }
+
+    suffix += 1;
+  }
+
+  throw new Error("Unable to allocate a unique instance URL alias");
+}
+
 async function loadAccessibleInstance(instanceGuid, user) {
   const isAdmin = await isGlobalAdmin(user.guid);
   const result = await pool.query(
@@ -237,6 +309,9 @@ module.exports = {
   normalizeAlias,
   normalizeRequestPath,
   validateAlias,
+  slugifyInstanceUrlSegment,
+  isProperlySlugified,
+  instanceAliasFromSegment,
   defaultInstanceAlias,
   defaultInstancePath,
   lookupAlias,
@@ -245,6 +320,7 @@ module.exports = {
   resolvePath,
   resolveRequestPath,
   createDefaultInstanceAlias,
+  createCustomInstanceAlias,
   deleteAliasesForInstance,
   sendAppHtml,
 };

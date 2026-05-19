@@ -7,8 +7,14 @@ import {
   getSelectedPackages,
   renderInstancePackageSelection,
 } from "../../../js/packages.js";
+import {
+  slugifyInstanceUrlSegment,
+  isProperlySlugified,
+  instanceAliasFromSegment,
+} from "../../../js/slug.js";
 
 const Modal = window.Modal;
+const ALIAS_CHECK_DEBOUNCE_MS = 300;
 
 class CreateInstanceModal extends Modal {
   constructor() {
@@ -19,6 +25,11 @@ class CreateInstanceModal extends Modal {
       exitAnimation: { preset: "scale-up", duration: 200 },
       classes: ["create-instance-modal"],
     });
+
+    this.aliasInUse = false;
+    this.aliasCheckPending = false;
+    this.aliasCheckGeneration = 0;
+    this.aliasCheckTimer = null;
   }
 
   getContent() {
@@ -34,6 +45,18 @@ class CreateInstanceModal extends Modal {
       required: true,
       maxlength: 120,
       autocomplete: "off",
+    });
+
+    this.elements.$createInstanceUrlInput = $("<input>", {
+      type: "text",
+      name: "url",
+      maxlength: 120,
+      autocomplete: "off",
+    });
+
+    this.elements.$createInstanceUrlHelp = $("<p>", {
+      class: "create-instance-url-help",
+      "aria-live": "polite",
     });
 
     this.elements.$createInstanceDescriptionInput = $("<textarea>", {
@@ -63,6 +86,11 @@ class CreateInstanceModal extends Modal {
         $("<span>", { text: "Name" }),
         this.elements.$createInstanceNameInput,
       ),
+      $("<label>", { class: "create-instance-url-label" }).append(
+        $("<span>", { text: "URL" }),
+        this.elements.$createInstanceUrlInput,
+        this.elements.$createInstanceUrlHelp,
+      ),
       $("<label>").append(
         $("<span>", { text: "Description" }),
         this.elements.$createInstanceDescriptionInput,
@@ -81,13 +109,138 @@ class CreateInstanceModal extends Modal {
   bindEvents() {
     super.bindEvents();
     this.elements.$createInstanceForm.on("submit", (event) => this.onSubmit(event));
+    this.elements.$createInstanceNameInput.on("input", () => this.onNameInput());
+    this.elements.$createInstanceUrlInput.on("input", () => this.onUrlInput());
+    this.elements.$createInstanceUrlInput.on("blur", () => this.onUrlBlur());
     this.elements.$createInstancePackageList.on("change", 'input[name="package"]', (event) => {
       const input = event.currentTarget;
-      if (input.dataset.machineName === 'genrpg') {
+      if (input.dataset.machineName === "genrpg") {
         return;
       }
       applyPackageSelectionChange(input.value, input.checked, this.elements.$createInstancePackageList);
     });
+  }
+
+  getSiteBase() {
+    return window.location.origin;
+  }
+
+  getUrlSegment() {
+    return slugifyInstanceUrlSegment(this.elements.$createInstanceUrlInput.val());
+  }
+
+  cancelAliasCheckTimer() {
+    if (this.aliasCheckTimer) {
+      clearTimeout(this.aliasCheckTimer);
+      this.aliasCheckTimer = null;
+    }
+  }
+
+  updateSubmitDisabled() {
+    const disabled = this.aliasInUse || this.aliasCheckPending;
+    this.elements.$createInstanceSubmitButton.prop("disabled", disabled);
+  }
+
+  setUrlHelp(message, tone = "neutral") {
+    this.elements.$createInstanceUrlHelp.text(message).attr("data-tone", tone);
+  }
+
+  updateUrlHelpForEmpty() {
+    this.aliasInUse = false;
+    this.aliasCheckPending = false;
+    this.setUrlHelp("Optional. Leave blank for an auto-generated URL.", "neutral");
+    this.updateSubmitDisabled();
+  }
+
+  updateUrlHelpForAvailable(segment) {
+    this.aliasInUse = false;
+    this.aliasCheckPending = false;
+    const base = this.getSiteBase();
+    this.setUrlHelp(`Your instance will be at ${base}/instance/${segment}`, "neutral");
+    this.updateSubmitDisabled();
+  }
+
+  updateUrlHelpForInUse() {
+    this.aliasInUse = true;
+    this.aliasCheckPending = false;
+    this.setUrlHelp("This alias is already in use, please use another.", "error");
+    this.updateSubmitDisabled();
+  }
+
+  updateUrlHelpChecking() {
+    this.aliasCheckPending = true;
+    this.setUrlHelp("Checking…", "muted");
+    this.updateSubmitDisabled();
+  }
+
+  scheduleAliasAvailabilityCheck() {
+    this.cancelAliasCheckTimer();
+    const segment = this.getUrlSegment();
+
+    if (!segment) {
+      this.updateUrlHelpForEmpty();
+      return;
+    }
+
+    this.updateUrlHelpChecking();
+    const generation = this.aliasCheckGeneration + 1;
+    this.aliasCheckGeneration = generation;
+
+    this.aliasCheckTimer = setTimeout(() => {
+      this.aliasCheckTimer = null;
+      this.checkAliasAvailability(segment, generation);
+    }, ALIAS_CHECK_DEBOUNCE_MS);
+  }
+
+  async checkAliasAvailability(segment, generation) {
+    const alias = instanceAliasFromSegment(segment);
+
+    try {
+      const { available } = await requestJson(
+        `/api/genrpg/aliases/availability?alias=${encodeURIComponent(alias)}`,
+      );
+
+      if (generation !== this.aliasCheckGeneration) {
+        return;
+      }
+
+      if (this.getUrlSegment() !== segment) {
+        return;
+      }
+
+      if (available) {
+        this.updateUrlHelpForAvailable(segment);
+      } else {
+        this.updateUrlHelpForInUse();
+      }
+    } catch {
+      if (generation !== this.aliasCheckGeneration) {
+        return;
+      }
+      this.aliasInUse = false;
+      this.aliasCheckPending = false;
+      this.setUrlHelp("Could not verify URL availability.", "error");
+      this.updateSubmitDisabled();
+    }
+  }
+
+  onNameInput() {
+    const slug = slugifyInstanceUrlSegment(this.elements.$createInstanceNameInput.val());
+    this.elements.$createInstanceUrlInput.val(slug);
+    this.scheduleAliasAvailabilityCheck();
+  }
+
+  onUrlInput() {
+    this.scheduleAliasAvailabilityCheck();
+  }
+
+  onUrlBlur() {
+    const value = this.elements.$createInstanceUrlInput.val();
+    if (!isProperlySlugified(value)) {
+      const slug = slugifyInstanceUrlSegment(value);
+      this.elements.$createInstanceUrlInput.val(slug);
+    }
+    this.scheduleAliasAvailabilityCheck();
   }
 
   setFormMessage(message, tone = "neutral") {
@@ -95,9 +248,14 @@ class CreateInstanceModal extends Modal {
   }
 
   resetForm() {
+    this.cancelAliasCheckTimer();
+    this.aliasCheckGeneration += 1;
+    this.aliasInUse = false;
+    this.aliasCheckPending = false;
     this.elements.$createInstanceForm[0].reset();
     renderInstancePackageSelection(this.elements.$createInstancePackageList);
     this.setFormMessage("");
+    this.updateUrlHelpForEmpty();
     this.elements.$createInstanceSubmitButton.prop("disabled", false).text("Create Instance");
   }
 
@@ -121,17 +279,27 @@ class CreateInstanceModal extends Modal {
       return;
     }
 
+    if (this.aliasInUse || this.aliasCheckPending) {
+      return;
+    }
+
+    const urlSegment = this.getUrlSegment();
     const $btn = this.elements.$createInstanceSubmitButton;
     $btn.prop("disabled", true).text("Creating…");
+
+    const body = {
+      name: formData.get("name"),
+      description: formData.get("description"),
+      packages: selectedPackages,
+    };
+    if (urlSegment) {
+      body.url = urlSegment;
+    }
 
     try {
       await requestJson("/api/genrpg/instances", {
         method: "POST",
-        body: JSON.stringify({
-          name: formData.get("name"),
-          description: formData.get("description"),
-          packages: selectedPackages,
-        }),
+        body: JSON.stringify(body),
       });
       this.hide();
       setMessage(getElements().$message, "Instance created.", "success");
@@ -139,6 +307,7 @@ class CreateInstanceModal extends Modal {
     } catch (error) {
       this.setFormMessage(error.message, "error");
       $btn.prop("disabled", false).text("Create Instance");
+      this.updateSubmitDisabled();
     }
   }
 }

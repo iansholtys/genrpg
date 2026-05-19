@@ -9,6 +9,21 @@ const {
 
 const aliasesRouter = express.Router();
 
+aliasesRouter.get("/aliases/availability", async (req, res, next) => {
+  try {
+    const alias = normalizeAlias(req.query.alias);
+    if (!alias) {
+      res.status(400).json({ error: "alias is required" });
+      return;
+    }
+
+    const row = await lookupAlias(alias);
+    res.json({ available: !row });
+  } catch (error) {
+    next(error);
+  }
+});
+
 aliasesRouter.get("/aliases/resolve", async (req, res, next) => {
   try {
     const alias = normalizeAlias(req.query.alias);

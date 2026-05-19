@@ -9,7 +9,12 @@ const {
   validatePackageSelection,
   resolveInstanceAssetsForRequest,
 } = require("../packages");
-const { createDefaultInstanceAlias, deleteAliasesForInstance } = require("../aliases");
+const {
+  createDefaultInstanceAlias,
+  createCustomInstanceAlias,
+  deleteAliasesForInstance,
+  slugifyInstanceUrlSegment,
+} = require("../aliases");
 
 const instancesRouter = express.Router();
 
@@ -168,9 +173,16 @@ instancesRouter.post("/instances", async (req, res, next) => {
     const description =
       typeof req.body.description === "string" ? req.body.description.trim() : "";
     const selectedPackages = Array.isArray(req.body.packages) ? req.body.packages : null;
+    const rawUrl = typeof req.body.url === "string" ? req.body.url.trim() : "";
+    const urlSegment = rawUrl ? slugifyInstanceUrlSegment(rawUrl) : "";
 
     if (!name) {
       res.status(400).json({ error: "Instance name is required" });
+      return;
+    }
+
+    if (rawUrl && !urlSegment) {
+      res.status(400).json({ error: "Instance URL is invalid" });
       return;
     }
 
@@ -215,6 +227,9 @@ instancesRouter.post("/instances", async (req, res, next) => {
       }
 
       await createDefaultInstanceAlias(client, instanceGuid);
+      if (urlSegment) {
+        await createCustomInstanceAlias(client, instanceGuid, urlSegment);
+      }
 
       await client.query("COMMIT");
       res.status(201).json({

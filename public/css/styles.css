@@ -485,6 +485,19 @@ textarea {
   margin-bottom: 0.5rem;
   padding: 0;
 }
+.create-instance-form .create-instance-url-label .create-instance-url-help {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.create-instance-form .create-instance-url-label .create-instance-url-help[data-tone=error] {
+  color: var(--danger);
+}
+.create-instance-form .create-instance-url-label .create-instance-url-help[data-tone=muted] {
+  color: var(--muted);
+  font-style: italic;
+}
 .create-instance-form .create-instance-packages-fieldset .package-list {
   margin: 0;
 }

@@ -20,6 +20,24 @@
     padding: 0;
   }
 
+  .create-instance-url-label {
+    .create-instance-url-help {
+      margin: 0;
+      font-size: 0.85rem;
+      line-height: 1.4;
+      color: var(--muted);
+
+      &[data-tone="error"] {
+        color: var(--danger);
+      }
+
+      &[data-tone="muted"] {
+        color: var(--muted);
+        font-style: italic;
+      }
+    }
+  }
+
   .create-instance-packages-fieldset .package-list {
     margin: 0;
   }
