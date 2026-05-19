@@ -14,5 +14,4 @@ export const state = {
   allRoles: [],
   allPermissions: [],
   rolesTable: null,
-  globalUsersTable: null,
 };

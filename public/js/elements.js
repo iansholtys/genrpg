@@ -39,10 +39,6 @@ export function getElements() {
       $rolesList: $("#rolesList"),
       // Manage Global Users
       $manageGlobalUsersButton: $("#manageGlobalUsersButton"),
-      $manageGlobalUsersModal: $("#manageGlobalUsersModal"),
-      $closeManageGlobalUsersModal: $("#closeManageGlobalUsersModal"),
-      $globalUsersMessage: $("#globalUsersMessage"),
-      $globalUsersList: $("#globalUsersList"),
     };
   }
   return elements;

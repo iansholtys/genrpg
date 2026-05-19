@@ -1,10 +1,8 @@
 @use "variables" as *;
 
-// Shared dialog / modal styles used by the package modal, manage users modal,
-// and delete instance modal.
+// Shared dialog / modal styles used by manage roles and delete instance modals.
 
 .manage-roles-modal,
-.manage-global-users-modal,
 .delete-instance-modal {
   max-width: 52rem;
   width: 92vw;
@@ -220,7 +218,8 @@ body.app-shell .modal-backdrop {
 
 // App modals (reusable Modal component)
 .modal-layer.instance-users-modal,
-.modal-layer.manage-packages-modal {
+.modal-layer.manage-packages-modal,
+.modal-layer.manage-global-users-modal {
   --modal-bg: var(--bg);
   --modal-text: var(--text);
   --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
