@@ -1,5 +1,7 @@
 css:
+  - public/components/app-layout/app-layout.css
   - public/components/item-template-management/item-template-management.css
 js:
+  - public/components/app-layout/app-layout.js
   - public/components/item-template-management/item-template-management.js
   - public/genrpg.init.js

@@ -131,7 +131,6 @@ class ItemTemplateManagement {
       return this.table;
     }
 
-    const self = this;
     this.table = new Table({
       id: "item-templates-table",
       rowCount: { show: true, nounSingular: "template", nounPlural: "templates" },
@@ -339,16 +338,15 @@ class ItemTemplateManagement {
   }
 
   /**
-   * Build DOM, append to body, and load data.
-   * @returns {this}
+   * Build DOM, wire events, and load data.
+   * @returns {JQuery}
    */
-  mount() {
+  init() {
     if (this.isMounted) {
-      return this;
+      return this.elements.$root;
     }
 
     this.buildRoot();
-    $("body").append(this.elements.$root);
     this.ensureTable();
     this.bindEvents();
     this.resetForm();
@@ -358,7 +356,7 @@ class ItemTemplateManagement {
       this.setMessage(error.message, "error");
     });
 
-    return this;
+    return this.elements.$root;
   }
 
   /**
