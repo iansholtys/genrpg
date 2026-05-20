@@ -282,7 +282,7 @@ function clearEnteringState() {
   getElements().$instances.find(".instance-tile button").prop("disabled", false);
 }
 
-function rejectRoute(token, message) {
+async function rejectRoute(token, message) {
   const elements = getElements();
   if (isStaleRoute(token)) {
     return;
@@ -290,11 +290,13 @@ function rejectRoute(token, message) {
 
   exitInstance();
   clearEnteringState();
-  if (message) {
-    setMessage(elements.$message, message, "error");
-  }
   if (getCurrentAlias()) {
     setInstanceUrl("", { replace: true });
+  }
+  const { ensureLandingPageLoaded } = await import("./landing.js");
+  await ensureLandingPageLoaded();
+  if (message) {
+    setMessage(elements.$message, message, "error");
   }
 }
 
@@ -311,6 +313,7 @@ async function loadInstance(instanceGuid, instanceName, token) {
 
   state.enteringInstance = true;
   elements.$instances.find(".instance-tile button").prop("disabled", true);
+  showInstanceLoading(instanceName, 0);
 
   try {
     const assets = await requestJson(`/api/genrpg/instances/${instanceGuid}/assets`);
@@ -319,7 +322,7 @@ async function loadInstance(instanceGuid, instanceName, token) {
     }
 
     if (!assets) {
-      rejectRoute(token, "Instance not found or you do not have access.");
+      await rejectRoute(token, "Instance not found or you do not have access.");
       return;
     }
 
@@ -333,7 +336,15 @@ async function loadInstance(instanceGuid, instanceName, token) {
       0,
     );
 
-    showInstanceLoading(instanceName, totalFiles);
+    if (instanceLoadingUi) {
+      const progressMax = totalFiles || 1;
+      instanceLoadingUi.$progress.attr({ value: 0, max: progressMax });
+      instanceLoadingUi.$status.text(
+        totalFiles === 0 ? "Starting instance…" : `Loading 0 of ${totalFiles} files…`,
+      );
+    } else {
+      showInstanceLoading(instanceName, totalFiles);
+    }
     await loadInstanceAssets(packageAssetList, instanceGuid, updateInstanceLoadingProgress);
 
     if (isStaleRoute(token)) {
@@ -375,7 +386,7 @@ async function loadInstance(instanceGuid, instanceName, token) {
     }
     state.injectedStylesheets = [];
     state.injectedScripts = [];
-    rejectRoute(token, error.message);
+    await rejectRoute(token, error.message);
   } finally {
     if (!isStaleRoute(token)) {
       clearEnteringState();
@@ -398,6 +409,8 @@ async function applyRoute({ boot = null } = {}) {
   if (!alias) {
     exitInstance();
     clearEnteringState();
+    const { ensureLandingPageLoaded } = await import("./landing.js");
+    await ensureLandingPageLoaded();
     return;
   }
 
@@ -411,7 +424,7 @@ async function applyRoute({ boot = null } = {}) {
         return;
       }
       setMessage(elements.$message, error.message, "error");
-      rejectRoute(token);
+      await rejectRoute(token);
       return;
     }
   }
@@ -424,7 +437,7 @@ async function applyRoute({ boot = null } = {}) {
     const message = alias.startsWith("instance/")
       ? "Instance not found or you do not have access."
       : null;
-    rejectRoute(token, message);
+    await rejectRoute(token, message);
     return;
   }
 
