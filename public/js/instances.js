@@ -95,33 +95,74 @@ function loadScript(src) {
   });
 }
 
+/** @type {{ modal: Modal, $progress: JQuery, $status: JQuery } | null} */
+let instanceLoadingUi = null;
+
 function showInstanceLoading(instanceName, totalFiles) {
   const elements = getElements();
   const progressMax = totalFiles || 1;
+  const statusText =
+    totalFiles === 0 ? "Starting instance…" : `Loading 0 of ${totalFiles} files…`;
+
+  const $name = $("<p>", { class: "instance-loading__name", text: instanceName });
+  const $progress = $("<progress>", {
+    class: "instance-loading__progress",
+    value: 0,
+    max: progressMax,
+  });
+  const $status = $("<p>", { class: "instance-loading__status", text: statusText });
+
+  const $panel = $("<section>", {
+    class: "instance-loading",
+    "aria-live": "polite",
+    "aria-busy": "true",
+    "aria-label": "Loading instance",
+  }).append(
+    $("<p>", { class: "eyebrow", text: "GenRPG" }),
+    $("<h2>", { text: "Loading instance" }),
+    $name,
+    $progress,
+    $status,
+  );
 
   elements.$workspace.prop("hidden", true);
-  elements.$instanceLoadingName.text(instanceName);
-  elements.$instanceLoadingProgress.attr({ value: 0, max: progressMax });
-  elements.$instanceLoadingStatus.text(
-    totalFiles === 0 ? "Starting instance…" : `Loading 0 of ${totalFiles} files…`,
-  );
-  elements.$instanceLoading.prop("hidden", false);
+
+  const modal = new Modal("instance-loading-modal", "", {
+    closeOnEscape: false,
+    closeOnOutsideClick: false,
+    classes: ["instance-loading-modal"],
+    maxWidth: "28rem",
+    width: "92vw",
+    enterAnimation: "none",
+    exitAnimation: "none",
+  });
+  modal.createModalElement();
+  modal.setContent($panel);
+  modal.bindEvents();
+  modal.show();
+
+  instanceLoadingUi = { modal, $progress, $status };
 }
 
 function updateInstanceLoadingProgress(loaded, total) {
-  const elements = getElements();
+  if (!instanceLoadingUi) {
+    return;
+  }
+
   const progressMax = total || 1;
   const progressValue = total === 0 ? progressMax : loaded;
 
-  elements.$instanceLoadingProgress.attr({ value: progressValue, max: progressMax });
-  elements.$instanceLoadingStatus.text(
+  instanceLoadingUi.$progress.attr({ value: progressValue, max: progressMax });
+  instanceLoadingUi.$status.text(
     total === 0 ? "Starting instance…" : `Loading ${loaded} of ${total} files…`,
   );
 }
 
 function hideInstanceLoading() {
-  const elements = getElements();
-  elements.$instanceLoading.prop("hidden", true);
+  if (instanceLoadingUi?.modal) {
+    instanceLoadingUi.modal.hide();
+  }
+  instanceLoadingUi = null;
   $("#app-layout").prop("hidden", false);
 }
 

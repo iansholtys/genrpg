@@ -12,10 +12,6 @@ export function getElements() {
       $managePackagesButton: $("#managePackagesButton"),
       $exitInstanceButton: $("#exitInstanceButton"),
       $workspace: $("body > .workspace"),
-      $instanceLoading: $("#instanceLoading"),
-      $instanceLoadingName: $("#instanceLoadingName"),
-      $instanceLoadingProgress: $("#instanceLoadingProgress"),
-      $instanceLoadingStatus: $("#instanceLoadingStatus"),
       // Manage Roles
       $manageRolesButton: $("#manageRolesButton"),
       // Manage Global Users
