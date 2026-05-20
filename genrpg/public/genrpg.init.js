@@ -9,7 +9,8 @@
     }
 
     window.appLayout = appLayout = new AppLayout();
-    $("body").append(appLayout.build());
+    const $appLayout = appLayout.build().prop("hidden", true);
+    $("body").append($appLayout);
 
     appLayout
       .getSection("header")

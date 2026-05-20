@@ -122,6 +122,7 @@ function updateInstanceLoadingProgress(loaded, total) {
 function hideInstanceLoading() {
   const elements = getElements();
   elements.$instanceLoading.prop("hidden", true);
+  $("#app-layout").prop("hidden", false);
 }
 
 function dispatchPackageLoaded(packageName, instanceGuid) {
