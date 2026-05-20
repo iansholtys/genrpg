@@ -133,8 +133,8 @@ function showInstanceLoading(instanceName, totalFiles) {
     classes: ["instance-loading-modal"],
     maxWidth: "28rem",
     width: "92vw",
-    enterAnimation: "none",
-    exitAnimation: "none",
+    enterAnimation: { preset: "scale-down", duration: 200 },
+    exitAnimation: { preset: "scale-up", duration: 200 },
   });
   modal.createModalElement();
   modal.setContent($panel);
