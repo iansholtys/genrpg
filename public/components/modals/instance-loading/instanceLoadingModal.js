@@ -11,8 +11,8 @@ export class InstanceLoadingModal extends Modal {
       classes: ["instance-loading-modal"],
       maxWidth: "28rem",
       width: "92vw",
-      enterAnimation: { preset: "scale-down", duration: 500 },
-      exitAnimation: { preset: "scale-down", duration: 500 },
+      enterAnimation: { preset: "scale-down", scale: 1.1 },
+      exitAnimation: { preset: "scale-down", scale: 1.1 },
     });
     this.$panel = $panel;
   }
