@@ -6,6 +6,7 @@ import {
   openCreateInstanceModal,
   openManageInstanceModal,
 } from "../components/modals/manage-instance/manageInstanceModal.js";
+import { InstanceLoadingModal } from "../components/modals/instance-loading/instanceLoadingModal.js";
 
 function canManageInstance(instance) {
   return instance.can_edit || instance.can_manage_users || instance.can_delete;
@@ -95,7 +96,7 @@ function loadScript(src) {
   });
 }
 
-/** @type {{ modal: Modal, $progress: JQuery, $status: JQuery } | null} */
+/** @type {{ modal: InstanceLoadingModal, $progress: JQuery, $status: JQuery } | null} */
 let instanceLoadingUi = null;
 
 function showInstanceLoading(instanceName, totalFiles) {
@@ -127,18 +128,7 @@ function showInstanceLoading(instanceName, totalFiles) {
 
   elements.$workspace.prop("hidden", true);
 
-  const modal = new Modal("instance-loading-modal", "", {
-    closeOnEscape: false,
-    closeOnOutsideClick: false,
-    classes: ["instance-loading-modal"],
-    maxWidth: "28rem",
-    width: "92vw",
-    enterAnimation: { preset: "scale-down", duration: 200 },
-    exitAnimation: { preset: "scale-up", duration: 200 },
-  });
-  modal.createModalElement();
-  modal.setContent($panel);
-  modal.bindEvents();
+  const modal = new InstanceLoadingModal($panel);
   modal.show();
 
   instanceLoadingUi = { modal, $progress, $status };
@@ -159,10 +149,15 @@ function updateInstanceLoadingProgress(loaded, total) {
 }
 
 function hideInstanceLoading() {
-  if (instanceLoadingUi?.modal) {
-    instanceLoadingUi.modal.hide();
-  }
+  const modal = instanceLoadingUi?.modal;
   instanceLoadingUi = null;
+
+  if (modal?.isVisible) {
+    modal.hide();
+  } else if (modal) {
+    modal.destroy();
+  }
+
   $("#app-layout").prop("hidden", false);
 }
 
