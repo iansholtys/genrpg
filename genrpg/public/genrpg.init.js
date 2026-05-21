@@ -41,7 +41,12 @@
         },
         {
           text: "Exit",
-          onClick: () => window.dispatchEvent(new CustomEvent("genrpg:exit-instance")),
+          // Defer so Menu's closeOnItemClick runs before teardown destroys the menu DOM.
+          onClick: () => {
+            queueMicrotask(() => {
+              window.dispatchEvent(new CustomEvent("genrpg:exit-instance"));
+            });
+          },
         },
         {
           text: "Log Out",
