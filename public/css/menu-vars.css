@@ -1,0 +1,26 @@
+.menu-component {
+  --menu-bg: var(--panel);
+  --menu-border: var(--line);
+  --menu-radius: 8px;
+  --menu-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --menu-text: var(--text);
+  --menu-text-muted: var(--muted);
+  --menu-item-padding: 0.5rem 1rem;
+  --menu-item-font-size: 0.9rem;
+  --menu-item-hover-bg: var(--panel-strong);
+  --menu-item-active-bg: #35404a;
+  --menu-list-min-width: 10rem;
+  --menu-trigger-size: 2rem;
+  --menu-trigger-font-size: 1.25rem;
+  --menu-trigger-label-font-size: 0.875rem;
+  --menu-trigger-label-padding: 0.375rem 0.75rem;
+  --menu-trigger-bg: transparent;
+  --menu-trigger-border: var(--line);
+  --menu-trigger-hover-bg: var(--panel-strong);
+  --menu-z-index: 110;
+  --menu-offset: 5px;
+}
+
+.app-layout__header {
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+}

@@ -7,11 +7,14 @@
   <title>GenRPG</title>
   <link rel="stylesheet" href="/static/css/table-vars.css">
   <link rel="stylesheet" href="/static/components/reusable/table/styles/table.css">
+  <link rel="stylesheet" href="/static/css/menu-vars.css">
+  <link rel="stylesheet" href="/static/components/reusable/menu/styles/menu.css">
   <link rel="stylesheet" href="/static/components/reusable/modal/styles/modal.css">
   <link rel="stylesheet" href="/static/css/styles.css">
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"
     integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous" defer></script>
   <script src="/static/components/reusable/table/table.js" defer></script>
+  <script src="/static/components/reusable/menu/menu.js" defer></script>
   <script src="/static/components/reusable/modal/modal.js" defer></script>
   <script type="module" src="/static/js/app.js" defer></script>
 </head>
@@ -23,8 +26,6 @@
       <h1>Instances</h1>
     </div>
     <div class="user-panel">
-      <button type="button" id="exitInstanceButton" class="exit-instance-button" hidden aria-label="Exit instance"
-        title="Exit instance">&times;</button>
       <span id="userLabel">Signed in</span>
       <form action="/logout" method="post">
         <button type="submit" class="secondary-button">Log out</button>

@@ -273,7 +273,6 @@ function exitInstance() {
   state.injectedScripts = [];
   state.activeInstance = null;
   hideInstanceLoading();
-  elements.$exitInstanceButton.prop("hidden", true);
   elements.$workspace.prop("hidden", false);
 }
 
@@ -370,7 +369,6 @@ async function loadInstance(instanceGuid, instanceName, token) {
       }),
     );
 
-    elements.$exitInstanceButton.prop("hidden", false);
   } catch (error) {
     if (isStaleRoute(token)) {
       hideInstanceLoading();
@@ -471,6 +469,10 @@ export async function applyInitialRoute() {
 export function setupInstanceEvents() {
   const elements = getElements();
 
+  window.addEventListener("genrpg:exit-instance", () => {
+    navigateToAlias("");
+  });
+
   window.addEventListener("popstate", () => {
     applyRoute();
   });
@@ -492,5 +494,4 @@ export function setupInstanceEvents() {
     navigateToInstance($(this).data("instance-guid"));
   });
 
-  elements.$exitInstanceButton.on("click", () => navigateToAlias(""));
 }
