@@ -22,7 +22,7 @@
 
     instanceMenu = new Menu({
       id: "instance-header-menu",
-      preset: "bottom-right",
+      preset: "top-right",
       behavior: { closeDelay: 300 },
       items: [
         {
