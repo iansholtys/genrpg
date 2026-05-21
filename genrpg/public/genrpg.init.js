@@ -26,10 +26,6 @@
       behavior: { closeDelay: 300 },
       items: [
         {
-          text: "Exit",
-          onClick: () => window.dispatchEvent(new CustomEvent("genrpg:exit-instance")),
-        },
-        {
           text: "Settings",
           onClick: () => {
             if (!settingsModal) {
@@ -42,6 +38,14 @@
             }
             settingsModal.show();
           },
+        },
+        {
+          text: "Exit",
+          onClick: () => window.dispatchEvent(new CustomEvent("genrpg:exit-instance")),
+        },
+        {
+          text: "Log Out",
+          onClick: () => $("#logoutForm").trigger("submit"),
         },
       ],
     });
