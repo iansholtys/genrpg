@@ -6,6 +6,8 @@ const { pool } = require("../db/pool");
 const {
   CharacterPreCreateEvent,
   CharacterPostCreateEvent,
+  CharacterPreUpdateEvent,
+  CharacterPostUpdateEvent,
   CharacterPreGetEvent,
   CharacterPostGetEvent,
   getEventDispatcher,
@@ -409,6 +411,38 @@ function buildInsertQuery(schema, table, values) {
   };
 }
 
+function buildUpdateQuery(schema, table, values, whereColumn, whereValue) {
+  const columns = Object.keys(values);
+  if (!columns.length) {
+    return null;
+  }
+
+  const setSql = columns.map((column, index) => `${quoteColumn(column)} = $${index + 1}`).join(", ");
+  const params = columns.map((column) => values[column]);
+  params.push(whereValue);
+
+  return {
+    sql: `
+      UPDATE ${quoteIdentifier(schema)}.${quoteIdentifier(table)}
+      SET ${setSql}
+      WHERE ${quoteColumn(whereColumn)} = $${columns.length + 1}
+    `,
+    params,
+  };
+}
+
+async function characterExistsInInstance(instanceGuid, characterGuid) {
+  const result = await pool.query(
+    `
+      SELECT guid
+      FROM genrpg.characters
+      WHERE guid = $1 AND instance_guid = $2
+    `,
+    [characterGuid, instanceGuid],
+  );
+  return result.rows.length > 0;
+}
+
 async function createCharacter(instanceGuid, userGuid, instancePackages, payload) {
   const characterGuid = crypto.randomUUID();
   const schemaRows = await loadCharacterSchemas(instancePackages);
@@ -458,6 +492,64 @@ async function createCharacter(instanceGuid, userGuid, instancePackages, payload
   }
 
   return characterGuid;
+}
+
+async function updateCharacter(instanceGuid, characterGuid, instancePackages, payload) {
+  const schemaRows = await loadCharacterSchemas(instancePackages);
+  const schemas = schemaRows.map((row) => row.schema);
+  const columnsBySchema = await loadCharacterColumns(schemas);
+  const packagesPayload = payload?.packages && typeof payload.packages === "object"
+    ? payload.packages
+    : {};
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const coreValues = collectSubmittedValues(
+      packagesPayload.genrpg,
+      getWritableColumns(columnsBySchema, "genrpg"),
+    );
+    if (Object.keys(coreValues).length) {
+      const coreUpdate = buildUpdateQuery("genrpg", "characters", coreValues, "guid", characterGuid);
+      await client.query(coreUpdate.sql, coreUpdate.params);
+    }
+
+    for (const schema of schemas.filter((entry) => entry !== "genrpg")) {
+      const packageValues = collectSubmittedValues(
+        packagesPayload[schema],
+        getWritableColumns(columnsBySchema, schema),
+      );
+      if (!Object.keys(packageValues).length) continue;
+
+      const columns = columnsBySchema.get(schema) || [];
+      const guidColumn = columns.find((column) => column.name === "guid");
+      const packageUpdate = buildUpdateQuery(
+        schema,
+        "characters",
+        packageValues,
+        "character_guid",
+        characterGuid,
+      );
+      const updateResult = await client.query(packageUpdate.sql, packageUpdate.params);
+
+      if (updateResult.rowCount === 0) {
+        const insertValues = { character_guid: characterGuid, ...packageValues };
+        if (guidColumn?.required && !guidColumn.hasDefault) {
+          insertValues.guid = crypto.randomUUID();
+        }
+        const packageInsert = buildInsertQuery(schema, "characters", insertValues);
+        await client.query(packageInsert.sql, packageInsert.params);
+      }
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 charactersRouter.get("/instances/:instanceGuid/characters/form", async (req, res, next) => {
@@ -565,6 +657,54 @@ charactersRouter.post("/instances/:instanceGuid/characters", async (req, res, ne
 
     characters = await dispatchCharacterGetEvents(characters, createContext);
     res.status(201).json({ character: characters[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+charactersRouter.patch("/instances/:instanceGuid/characters/:characterGuid", async (req, res, next) => {
+  try {
+    const { instanceGuid, characterGuid } = req.params;
+    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.edit");
+    if (!instance) return;
+
+    if (!(await characterExistsInInstance(instanceGuid, characterGuid))) {
+      res.status(404).json({ error: "Character not found" });
+      return;
+    }
+
+    const packageNames = await resolveInstancePackageNames(instance.packages);
+    const dispatcher = await getEventDispatcher();
+    const updateContext = {
+      instanceGuid,
+      packageNames,
+      user: req.session.user,
+      pool,
+    };
+
+    const pre = new CharacterPreUpdateEvent({
+      ...updateContext,
+      characterGuid,
+      payload: req.body,
+    });
+    await dispatcher.dispatch(pre, packageNames);
+    if (pre.errors.length) {
+      res.status(400).json({ error: pre.errors[0], errors: pre.errors });
+      return;
+    }
+
+    await updateCharacter(instanceGuid, characterGuid, packageNames, pre.payload);
+    let characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
+
+    const post = new CharacterPostUpdateEvent({
+      ...updateContext,
+      characters,
+    });
+    await dispatcher.dispatch(post, packageNames);
+    characters = post.characters;
+
+    characters = await dispatchCharacterGetEvents(characters, updateContext);
+    res.json({ character: characters[0] });
   } catch (error) {
     next(error);
   }

@@ -3,6 +3,8 @@ const {
   CharacterPostGetEvent,
   CharacterPreCreateEvent,
   CharacterPostCreateEvent,
+  CharacterPreUpdateEvent,
+  CharacterPostUpdateEvent,
 } = require("../../genrpg/events/characterEvents");
 const {
   getEventDispatcher,
@@ -15,6 +17,8 @@ module.exports = {
   CharacterPostGetEvent,
   CharacterPreCreateEvent,
   CharacterPostCreateEvent,
+  CharacterPreUpdateEvent,
+  CharacterPostUpdateEvent,
   getEventDispatcher,
   refreshPackageSubscribers,
   invalidatePackageSubscribers,

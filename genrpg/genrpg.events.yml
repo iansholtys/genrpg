@@ -7,5 +7,9 @@ events:
     module: events/characterEvents.js
   - name: CharacterPostCreateEvent
     module: events/characterEvents.js
+  - name: CharacterPreUpdateEvent
+    module: events/characterEvents.js
+  - name: CharacterPostUpdateEvent
+    module: events/characterEvents.js
 
 subscribers: []
