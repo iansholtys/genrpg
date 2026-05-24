@@ -3,6 +3,7 @@ import { requestJson } from "./api.js";
 import { setMessage } from "./utils.js";
 import { setupPackageEvents } from "./packages.js";
 import { setupInstanceEvents, applyInitialRoute } from "./instances.js";
+import { setupCharacterEvents } from "./characters.js";
 import { setupRoleEvents } from "./roles.js";
 import { setupUserEvents } from "./users.js";
 import {
@@ -35,6 +36,7 @@ $(function () {
   // Set up all event listeners
   setupPackageEvents();
   setupInstanceEvents();
+  setupCharacterEvents();
   setupRoleEvents();
   setupUserEvents();
 
