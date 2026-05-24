@@ -22,11 +22,11 @@ export function isLandingUrl() {
 
 export function applyCurrentUser(user) {
   const elements = getElements();
+  window.user = user ?? null;
   state.currentUser = user;
 
-  let label = user.email || user.displayName || "Signed in";
-  if (user.admin) {
-    label += " (admin)";
+  let label = user?.email || user?.displayName || "Signed in";
+  if (user?.admin) {
     elements.$administrationSection.prop("hidden", false);
     elements.$managePackagesButton.prop("hidden", false);
     elements.$manageRolesButton.prop("hidden", false);

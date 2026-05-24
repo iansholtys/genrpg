@@ -6,6 +6,14 @@
   let instanceMenu = null;
   let settingsModal = null;
 
+  function accountMenuLabel() {
+    const { user } = window;
+    if (user) {
+      return user.email || user.displayName || "Signed in";
+    }
+    return "Signed in";
+  }
+
   function init(detail) {
     if (!detail?.instanceGuid) {
       return;
@@ -49,12 +57,18 @@
           },
         },
         {
-          text: "Log Out",
-          onClick: () => $("#logoutForm").trigger("submit"),
+          type: "group",
+          behavior: { dividers: true },
+          items: [
+            { text: accountMenuLabel() },
+            {
+              text: "Log Out",
+              onClick: () => $("#logoutForm").trigger("submit"),
+            },
+          ],
         },
       ],
     });
-
 
     appLayout.getSection("header").append(instanceMenu.init());
 
