@@ -213,13 +213,19 @@ dd {
 
 .character-card__subtitle,
 .character-card__meta,
+.character-card__summary,
 .empty-state {
   color: var(--muted);
 }
 
 .character-card__subtitle,
-.character-card__meta {
+.character-card__meta,
+.character-card__summary {
   margin: 0.25rem 0 0;
+}
+
+.character-card__summary {
+  font-style: italic;
 }
 
 .character-form {

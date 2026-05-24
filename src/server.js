@@ -5,6 +5,7 @@ const PgSession = require("connect-pg-simple")(session);
 
 const { pool } = require("./db/pool");
 const { applySchemaVersions } = require("./db/versions");
+const { refreshPackageSubscribers } = require("./events/packageEvents");
 const { REPO_ROOT } = require("./packages");
 
 const { ensureAuthenticated } = require("./auth");
@@ -135,6 +136,8 @@ async function main() {
   if (applied.length) {
     console.log(`Applied database schema versions: ${applied.join(", ")}`);
   }
+
+  await refreshPackageSubscribers({ force: true });
 
   app.listen(PORT, () => {
     console.log(`GenRPG listening on port ${PORT}`);
