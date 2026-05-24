@@ -137,7 +137,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -721,6 +722,86 @@ dd {
   white-space: nowrap;
 }
 
+.instance-workspace {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.instance-workspace__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.instance-workspace__header h2 {
+  margin: 0;
+}
+
+.characters-panel {
+  display: grid;
+  gap: 1rem;
+}
+.characters-panel h2 {
+  margin: 0;
+}
+
+.character-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.character-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(26, 31, 36, 0.88);
+  padding: 1rem;
+}
+.character-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.character-card__subtitle,
+.character-card__meta,
+.empty-state {
+  color: var(--muted);
+}
+
+.character-card__subtitle,
+.character-card__meta {
+  margin: 0.25rem 0 0;
+}
+
+.character-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.character-form__fieldset {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.character-form__fieldset legend {
+  padding: 0 0.5rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.character-form__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .instance-workspace__header {
+    display: grid;
+  }
+}
 @media (max-width: 760px) {
   .topbar,
   .user-panel {
