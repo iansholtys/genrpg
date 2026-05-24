@@ -4,6 +4,7 @@ const rolesRouter = require("./roles");
 const packagesRouter = require("./packages");
 const instancesRouter = require("./instances");
 const itemTemplatesRouter = require("./itemTemplates");
+const charactersRouter = require("./characters");
 const aliasesRouter = require("./aliases");
 
 const genrpgApi = express.Router();
@@ -13,6 +14,7 @@ genrpgApi.use(rolesRouter);
 genrpgApi.use(packagesRouter);
 genrpgApi.use(instancesRouter);
 genrpgApi.use(itemTemplatesRouter);
+genrpgApi.use(charactersRouter);
 genrpgApi.use(aliasesRouter);
 
 module.exports = genrpgApi;
