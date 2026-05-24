@@ -495,6 +495,12 @@ async function loadPackagesWithAssets() {
 function invalidatePackageCache() {
   packageCache = null;
   packagesWithAssetsCache = null;
+  try {
+    const { invalidatePackageSubscribers } = require("./events/packageEvents");
+    invalidatePackageSubscribers();
+  } catch {
+    // events module may not be loaded yet during early startup
+  }
 }
 
 function parsePackageCsv(value) {
@@ -546,6 +552,7 @@ module.exports = {
   REPO_ROOT,
   STATIC_PKG_PREFIX,
   CORE_PACKAGE_MACHINE_NAME,
+  packageRootDir,
   assertValidPackageConfiguration,
   loadPackages,
   loadPackagesWithAssets,

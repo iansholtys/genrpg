@@ -1,0 +1,11 @@
+events:
+  - name: CharacterPreGetEvent
+    module: events/characterEvents.js
+  - name: CharacterPostGetEvent
+    module: events/characterEvents.js
+  - name: CharacterPreCreateEvent
+    module: events/characterEvents.js
+  - name: CharacterPostCreateEvent
+    module: events/characterEvents.js
+
+subscribers: []

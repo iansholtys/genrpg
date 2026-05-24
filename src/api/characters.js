@@ -3,7 +3,18 @@ const express = require("express");
 
 const { isGlobalAdmin } = require("../auth");
 const { pool } = require("../db/pool");
-const { loadPackages, parsePackageCsv } = require("../packages");
+const {
+  CharacterPreCreateEvent,
+  CharacterPostCreateEvent,
+  CharacterPreGetEvent,
+  CharacterPostGetEvent,
+  getEventDispatcher,
+} = require("../events");
+const {
+  expandPackageSelectionForAssets,
+  loadPackages,
+  parsePackageCsv,
+} = require("../packages");
 
 const charactersRouter = express.Router();
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -339,7 +350,34 @@ async function loadCharacterRows(instanceGuid, packageNames, characterGuid = nul
     guid: row.guid,
     instance_guid: row.instance_guid,
     packages: row.packages,
+    extensions: {},
   }));
+}
+
+async function resolveInstancePackageNames(instancePackages) {
+  const { packages } = await loadPackages({ strict: true });
+  return expandPackageSelectionForAssets(parsePackageCsv(instancePackages), packages);
+}
+
+async function dispatchCharacterGetEvents(characters, context) {
+  const dispatcher = await getEventDispatcher();
+  const eventContext = {
+    characters,
+    instanceGuid: context.instanceGuid,
+    instancePackageNames: context.packageNames,
+    user: context.user,
+    pool,
+  };
+
+  const pre = new CharacterPreGetEvent(eventContext);
+  await dispatcher.dispatch(pre, context.packageNames);
+
+  const post = new CharacterPostGetEvent({
+    ...eventContext,
+    characters: pre.characters,
+  });
+  await dispatcher.dispatch(post, context.packageNames);
+  return post.characters;
 }
 
 function getWritableColumns(columnsBySchema, schema) {
@@ -428,7 +466,8 @@ charactersRouter.get("/instances/:instanceGuid/characters/form", async (req, res
     const instance = await requireInstancePermission(req, res, instanceGuid, "instance.run");
     if (!instance) return;
 
-    const metadata = await buildCharacterFormMetadata(parsePackageCsv(instance.packages));
+    const packageNames = await resolveInstancePackageNames(instance.packages);
+    const metadata = await buildCharacterFormMetadata(packageNames);
     res.json(metadata);
   } catch (error) {
     next(error);
@@ -441,8 +480,44 @@ charactersRouter.get("/instances/:instanceGuid/characters", async (req, res, nex
     const instance = await requireInstancePermission(req, res, instanceGuid, "instance.run");
     if (!instance) return;
 
-    const characters = await loadCharacterRows(instanceGuid, parsePackageCsv(instance.packages));
+    const packageNames = await resolveInstancePackageNames(instance.packages);
+    let characters = await loadCharacterRows(instanceGuid, packageNames);
+    characters = await dispatchCharacterGetEvents(characters, {
+      instanceGuid,
+      packageNames,
+      user: req.session.user,
+    });
     res.json({ characters });
+  } catch (error) {
+    next(error);
+  }
+});
+
+charactersRouter.get("/instances/:instanceGuid/characters/:characterGuid", async (req, res, next) => {
+  try {
+    const { instanceGuid, characterGuid } = req.params;
+    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.run");
+    if (!instance) return;
+
+    const packageNames = await resolveInstancePackageNames(instance.packages);
+    let characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
+    if (!characters.length) {
+      res.status(404).json({ error: "Character not found" });
+      return;
+    }
+
+    characters = await dispatchCharacterGetEvents(characters, {
+      instanceGuid,
+      packageNames,
+      user: req.session.user,
+    });
+
+    if (!characters.length) {
+      res.status(404).json({ error: "Character not found" });
+      return;
+    }
+
+    res.json({ character: characters[0] });
   } catch (error) {
     next(error);
   }
@@ -454,14 +529,41 @@ charactersRouter.post("/instances/:instanceGuid/characters", async (req, res, ne
     const instance = await requireInstancePermission(req, res, instanceGuid, "instance.edit");
     if (!instance) return;
 
-    const packageNames = parsePackageCsv(instance.packages);
+    const packageNames = await resolveInstancePackageNames(instance.packages);
+    const dispatcher = await getEventDispatcher();
+    const createContext = {
+      instanceGuid,
+      packageNames,
+      user: req.session.user,
+      pool,
+    };
+
+    const pre = new CharacterPreCreateEvent({
+      ...createContext,
+      payload: req.body,
+    });
+    await dispatcher.dispatch(pre, packageNames);
+    if (pre.errors.length) {
+      res.status(400).json({ error: pre.errors[0], errors: pre.errors });
+      return;
+    }
+
     const characterGuid = await createCharacter(
       instanceGuid,
       req.session.user.guid,
       packageNames,
-      req.body,
+      pre.payload,
     );
-    const characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
+    let characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
+
+    const post = new CharacterPostCreateEvent({
+      ...createContext,
+      characters,
+    });
+    await dispatcher.dispatch(post, packageNames);
+    characters = post.characters;
+
+    characters = await dispatchCharacterGetEvents(characters, createContext);
     res.status(201).json({ character: characters[0] });
   } catch (error) {
     next(error);

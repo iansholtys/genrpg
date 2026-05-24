@@ -26,12 +26,15 @@ function renderCharacterList(characters) {
       .map(([schema]) => schema)
       .join(", ");
 
+    const summary = character.extensions?.hardpoint?.summary;
+
     $list.append(
       $("<article>", { class: "character-card" }).append(
         $("<h3>", { text: characterName(character) }),
         core.full_name && core.full_name !== core.display_name
           ? $("<p>", { class: "character-card__subtitle", text: core.full_name })
           : null,
+        summary ? $("<p>", { class: "character-card__summary", text: summary }) : null,
         $("<p>", {
           class: "character-card__meta",
           text: packageNames ? `Data: ${packageNames}` : "Core data only",
