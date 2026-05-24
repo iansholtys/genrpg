@@ -37,8 +37,9 @@ function buildInstanceTile(instance) {
       $("<button>", {
         type: "button",
         class: "instance-tile-manage secondary-button",
-        text: "Manage",
+        title: "Manage",
         "aria-label": `Manage ${instance.name}`,
+        text: "✏️",
       }).attr("data-instance", encoded),
     );
   }
