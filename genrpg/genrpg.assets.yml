@@ -1,7 +1,9 @@
 css:
   - public/components/app-layout/app-layout.css
   - public/components/item-template-management/item-template-management.css
+  - public/components/character-management/character-management.css
 js:
   - public/components/app-layout/app-layout.js
   - public/components/item-template-management/item-template-management.js
+  - public/components/character-management/character-management.js
   - public/genrpg.init.js

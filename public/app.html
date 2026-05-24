@@ -6,7 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GenRPG</title>
   <link rel="stylesheet" href="/static/css/table-vars.css">
+  <link rel="stylesheet" href="/static/css/tabbed-region-vars.css">
   <link rel="stylesheet" href="/static/components/reusable/table/styles/table.css">
+  <link rel="stylesheet" href="/static/components/reusable/tabbed-region/styles/tabbed-region.css">
   <link rel="stylesheet" href="/static/css/menu-vars.css">
   <link rel="stylesheet" href="/static/components/reusable/menu/styles/menu.css">
   <link rel="stylesheet" href="/static/components/reusable/modal/styles/modal.css">
@@ -14,6 +16,7 @@
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"
     integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous" defer></script>
   <script src="/static/components/reusable/table/table.js" defer></script>
+  <script src="/static/components/reusable/tabbed-region/tabbed-region.js" defer></script>
   <script src="/static/components/reusable/menu/menu.js" defer></script>
   <script src="/static/components/reusable/modal/modal.js" defer></script>
   <script type="module" src="/static/js/app.js" defer></script>
@@ -37,21 +40,6 @@
     <section class="instances-home" aria-label="Your instances">
       <div id="message" class="message" role="status"></div>
       <div id="instances"></div>
-    </section>
-
-    <section id="instanceWorkspace" class="instance-workspace" hidden aria-label="Instance workspace">
-      <div class="instance-workspace__header">
-        <div>
-          <p class="eyebrow">Instance</p>
-          <h2 id="instanceTitle">Instance</h2>
-        </div>
-        <button type="button" id="createCharacterButton" class="primary-button">Create Character</button>
-      </div>
-      <div id="instanceMessage" class="message" role="status"></div>
-      <section class="characters-panel" aria-label="Characters">
-        <h2>Characters</h2>
-        <div id="characterList" class="character-list"></div>
-      </section>
     </section>
 
     <section id="administrationSection" class="administration" hidden aria-label="Administration">

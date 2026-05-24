@@ -1,0 +1,31 @@
+#genrpg-character-management {
+  margin: 0 auto;
+  max-width: 56rem;
+}
+
+.character-management__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.character-management__message {
+  min-height: 1.25rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+
+  &[data-tone="error"] {
+    color: var(--danger, #c0392b);
+  }
+
+  &[data-tone="success"] {
+    color: var(--accent-strong, #2d6a4f);
+  }
+}
+
+.character-management__table {
+  margin-top: 0.25rem;
+}
