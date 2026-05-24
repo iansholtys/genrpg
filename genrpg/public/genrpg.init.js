@@ -30,7 +30,8 @@
 
     instanceMenu = new Menu({
       id: "instance-header-menu",
-      preset: "top-right",
+      direction: "below",
+      alignment: "right",
       behavior: { closeDelay: 300 },
       items: [
         {
