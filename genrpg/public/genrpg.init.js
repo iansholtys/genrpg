@@ -2,7 +2,9 @@
   const NS = ".genrpg-init";
   const { Menu, Modal } = window;
   let appLayout = null;
+  let contentTabs = null;
   let itemTemplateManagement = null;
+  let characterManagement = null;
   let instanceMenu = null;
   let settingsModal = null;
 
@@ -76,7 +78,19 @@
     itemTemplateManagement = new ItemTemplateManagement({
       instanceGuid: detail.instanceGuid,
     });
-    appLayout.getSection("content").append(itemTemplateManagement.init());
+    characterManagement = new CharacterManagement({
+      instanceGuid: detail.instanceGuid,
+    });
+
+    contentTabs = new TabbedRegion({
+      id: "genrpg-instance-tabs",
+      ariaLabel: "Instance content",
+    });
+    contentTabs
+      .addTab("item-templates", "Item Templates", itemTemplateManagement.init())
+      .addTab("characters", "Characters", characterManagement.init());
+
+    appLayout.getSection("content").append(contentTabs.init());
   }
 
   function teardown() {
@@ -88,6 +102,12 @@
 
     itemTemplateManagement?.destroy();
     itemTemplateManagement = null;
+
+    characterManagement?.destroy();
+    characterManagement = null;
+
+    contentTabs?.destroy();
+    contentTabs = null;
 
     appLayout?.destroy();
     appLayout = null;

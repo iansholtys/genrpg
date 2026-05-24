@@ -1,0 +1,22 @@
+.tabbed-region-component {
+  --tabbed-region-radius: 8px;
+  --tabbed-region-bg: var(--panel);
+  --tabbed-region-shadow: none;
+  --tabbed-region-tab-min-width: 7.5rem;
+  --tabbed-region-tab-padding: 0.875rem 1.25rem;
+  --tabbed-region-tab-border-width: 3px;
+  --tabbed-region-tab-font-size: 0.95rem;
+  --tabbed-region-tab-transition: background 0.2s ease, color 0.2s ease;
+  --tabbed-region-tab-color: var(--muted);
+  --tabbed-region-tab-bg: transparent;
+  --tabbed-region-tab-hover-bg: rgba(255, 255, 255, 0.04);
+  --tabbed-region-tab-hover-color: var(--text);
+  --tabbed-region-tab-active-bg: var(--panel-strong);
+  --tabbed-region-tab-active-color: var(--accent);
+  --tabbed-region-tab-disabled-opacity: 0.5;
+  --tabbed-region-tab-disabled-bg: var(--panel);
+  --tabbed-region-tab-disabled-color: var(--muted);
+  --tabbed-region-content-padding: 1.25rem;
+  --tabbed-region-content-min-height: 12rem;
+  --tabbed-region-content-padding-sm: 1rem 0.875rem;
+}

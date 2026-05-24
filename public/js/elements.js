@@ -12,10 +12,6 @@ export function getElements() {
       $applyUpdatesButton: $("#applyUpdatesButton"),
       $managePackagesButton: $("#managePackagesButton"),
       $workspace: $("body > .workspace"),
-      $instanceWorkspace: $("#instanceWorkspace"),
-      $instanceTitle: $("#instanceTitle"),
-      $instanceMessage: $("#instanceMessage"),
-      $characterList: $("#characterList"),
       // Manage Roles
       $manageRolesButton: $("#manageRolesButton"),
       // Manage Global Users
