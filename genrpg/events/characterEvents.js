@@ -42,9 +42,19 @@ class CharacterPreCreateEvent extends BaseEvent {
 class CharacterPostCreateEvent extends BaseEvent {
   static eventName = "CharacterPostCreateEvent";
 
-  constructor({ characters, instanceGuid, instancePackageNames, user, pool }) {
+  constructor({
+    characters,
+    characterGuid,
+    payload,
+    instanceGuid,
+    instancePackageNames,
+    user,
+    pool,
+  }) {
     super();
     this.characters = characters;
+    this.characterGuid = characterGuid;
+    this.payload = payload;
     this.instanceGuid = instanceGuid;
     this.instancePackageNames = instancePackageNames;
     this.user = user;
@@ -69,9 +79,19 @@ class CharacterPreUpdateEvent extends BaseEvent {
 class CharacterPostUpdateEvent extends BaseEvent {
   static eventName = "CharacterPostUpdateEvent";
 
-  constructor({ characters, instanceGuid, instancePackageNames, user, pool }) {
+  constructor({
+    characters,
+    characterGuid,
+    payload,
+    instanceGuid,
+    instancePackageNames,
+    user,
+    pool,
+  }) {
     super();
     this.characters = characters;
+    this.characterGuid = characterGuid;
+    this.payload = payload;
     this.instanceGuid = instanceGuid;
     this.instancePackageNames = instancePackageNames;
     this.user = user;

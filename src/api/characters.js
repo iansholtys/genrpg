@@ -308,16 +308,42 @@ async function buildCharacterFormMetadata(packageNames) {
   return { schemas: formSchemas };
 }
 
-function buildCharactersQuery(schemas, { byCharacterGuid = false } = {}) {
-  const packageSchemas = schemas.filter((schema) => schema !== "genrpg");
-  const joins = packageSchemas.map((schema, index) => {
+function normalizePackagesObject(packages, packageNames) {
+  const normalized = {
+    genrpg: packages?.genrpg && typeof packages.genrpg === "object" ? packages.genrpg : {},
+  };
+
+  for (const packageName of packageNames) {
+    if (packageName === "genrpg") {
+      continue;
+    }
+    const value = packages?.[packageName];
+    normalized[packageName] = value && typeof value === "object" ? value : {};
+  }
+
+  return normalized;
+}
+
+function buildCharactersQuery(schemas, packageNames, { byCharacterGuid = false } = {}) {
+  const joinedSchemas = schemas.filter((schema) => schema !== "genrpg");
+  const aliasBySchema = new Map();
+  const joins = joinedSchemas.map((schema, index) => {
     const alias = `c${index + 1}`;
+    aliasBySchema.set(schema, alias);
     return `LEFT JOIN ${quoteIdentifier(schema)}.characters ${alias} ON ${alias}.character_guid = c0.guid`;
   });
-  const packageColumns = packageSchemas.map((schema, index) => {
-    const alias = `c${index + 1}`;
-    return `'${schema}', CASE WHEN ${alias}.character_guid IS NULL THEN NULL ELSE row_to_json(${alias}) END`;
-  });
+
+  const packageColumns = packageNames
+    .filter((packageName) => packageName !== "genrpg")
+    .map((packageName) => {
+      const alias = aliasBySchema.get(packageName);
+      if (!alias) {
+        return `'${packageName}', '{}'::json`;
+      }
+
+      return `'${packageName}', CASE WHEN ${alias}.character_guid IS NULL THEN '{}'::json ELSE row_to_json(${alias}) END`;
+    });
+
   const jsonArgs = [
     `'genrpg', row_to_json(c0)`,
     ...packageColumns,
@@ -344,14 +370,14 @@ async function loadCharacterRows(instanceGuid, packageNames, characterGuid = nul
   const schemas = schemaRows.map((row) => row.schema);
   const params = characterGuid ? [instanceGuid, characterGuid] : [instanceGuid];
   const result = await pool.query(
-    buildCharactersQuery(schemas, { byCharacterGuid: Boolean(characterGuid) }),
+    buildCharactersQuery(schemas, packageNames, { byCharacterGuid: Boolean(characterGuid) }),
     params,
   );
 
   return result.rows.map((row) => ({
     guid: row.guid,
     instance_guid: row.instance_guid,
-    packages: row.packages,
+    packages: normalizePackagesObject(row.packages, packageNames),
     extensions: {},
   }));
 }
@@ -441,6 +467,10 @@ function buildUpdateQuery(schema, table, values, whereColumn, whereValue) {
   };
 }
 
+function packagePayloadSectionHasValues(packageData) {
+  return Boolean(packageData && typeof packageData === "object" && Object.keys(packageData).length);
+}
+
 async function characterExistsInInstance(instanceGuid, characterGuid) {
   const result = await pool.query(
     `
@@ -476,11 +506,18 @@ async function createCharacter(instanceGuid, userGuid, instancePackages, payload
     await client.query(coreInsert.sql, coreInsert.params);
 
     for (const schema of schemas.filter((entry) => entry !== "genrpg")) {
+      const packageData = packagesPayload[schema];
+      if (!packagePayloadSectionHasValues(packageData)) {
+        continue;
+      }
+
       const packageValues = collectSubmittedValues(
-        packagesPayload[schema],
+        packageData,
         getWritableColumns(columnsBySchema, schema),
       );
-      if (!Object.keys(packageValues).length) continue;
+      if (!Object.keys(packageValues).length) {
+        continue;
+      }
 
       const columns = columnsBySchema.get(schema) || [];
       const guidColumn = columns.find((column) => column.name === "guid");
@@ -526,11 +563,18 @@ async function updateCharacter(instanceGuid, characterGuid, instancePackages, pa
     }
 
     for (const schema of schemas.filter((entry) => entry !== "genrpg")) {
+      const packageData = packagesPayload[schema];
+      if (!packagePayloadSectionHasValues(packageData)) {
+        continue;
+      }
+
       const packageValues = collectSubmittedValues(
-        packagesPayload[schema],
+        packageData,
         getWritableColumns(columnsBySchema, schema),
       );
-      if (!Object.keys(packageValues).length) continue;
+      if (!Object.keys(packageValues).length) {
+        continue;
+      }
 
       const columns = columnsBySchema.get(schema) || [];
       const guidColumn = columns.find((column) => column.name === "guid");
@@ -658,9 +702,11 @@ charactersRouter.post("/instances/:instanceGuid/characters", async (req, res, ne
     const post = new CharacterPostCreateEvent({
       ...createContext,
       characters,
+      characterGuid,
+      payload: pre.payload,
     });
     await dispatcher.dispatch(post, packageNames);
-    characters = post.characters;
+    characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
 
     characters = await dispatchCharacterGetEvents(characters, createContext);
     res.status(201).json({ character: characters[0] });
@@ -705,9 +751,11 @@ charactersRouter.patch("/instances/:instanceGuid/characters/:characterGuid", asy
     const post = new CharacterPostUpdateEvent({
       ...updateContext,
       characters,
+      characterGuid,
+      payload: pre.payload,
     });
     await dispatcher.dispatch(post, packageNames);
-    characters = post.characters;
+    characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
 
     characters = await dispatchCharacterGetEvents(characters, updateContext);
     res.json({ character: characters[0] });
