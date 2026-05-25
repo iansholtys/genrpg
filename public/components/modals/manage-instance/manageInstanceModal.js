@@ -27,10 +27,7 @@ class ManageInstanceModal extends Modal {
       classes: ["manage-instance-modal"],
     });
 
-    this.mode = "create";
-    this.editingInstance = null;
-    this.editingInstanceGuid = null;
-    this.instanceName = null;
+    this.instance = null;
     this.usersTabLoaded = false;
     this.instanceUsersTable = null;
     this.aliasInUse = false;
@@ -252,7 +249,7 @@ class ManageInstanceModal extends Modal {
     super.bindEvents();
     this.elements.$instanceForm?.on("submit", (event) => this.onSubmit(event));
     this.elements.$instanceNameInput?.on("input", () => this.onNameInput());
-    this.elements.$instanceUrlInput?.on("input", () => this.onUrlInput());
+    this.elements.$instanceUrlInput?.on("input", () => this.scheduleAliasAvailabilityCheck());
     this.elements.$instanceUrlInput?.on("blur", () => this.onUrlBlur());
     this.elements.$instancePackageList?.on("change", 'input[name="package"]', (event) => {
       if (this.isManageMode()) {
@@ -273,11 +270,11 @@ class ManageInstanceModal extends Modal {
   }
 
   isManageMode() {
-    return this.mode === "manage";
+    return this.instance != null;
   }
 
   isCreateMode() {
-    return this.mode === "create";
+    return this.instance == null;
   }
 
   setModalLayout() {
@@ -292,19 +289,21 @@ class ManageInstanceModal extends Modal {
       return;
     }
 
-    if (tabId === "users" && !this.usersTabLoaded) {
-      await this.loadUsersTab();
+    switch (tabId) {
+      case "users":
+        if (!this.usersTabLoaded) {
+          await this.populateUserSelects();
+          await this.loadInstanceUsers();
+          this.usersTabLoaded = true;
+        }
+        break;
+      case "delete":
+        this.elements.$deleteInstanceConfirmInput?.trigger("focus");
+        break;
+      case "edit":
+        this.elements.$instanceNameInput?.trigger("focus");
+        break;
     }
-
-    if (tabId === "delete") {
-      this.elements.$deleteInstanceConfirmInput?.trigger("focus");
-    } else if (tabId === "edit") {
-      this.elements.$instanceNameInput?.trigger("focus");
-    }
-  }
-
-  getSiteBase() {
-    return window.location.origin;
   }
 
   getUrlSegment() {
@@ -342,7 +341,7 @@ class ManageInstanceModal extends Modal {
     this.aliasInUse = false;
     this.aliasCheckPending = false;
     this.lastCheckedUrlSegment = segment;
-    const base = this.getSiteBase();
+    const base = window.location.origin;
     this.setUrlHelp(`Your instance will be at ${base}/instance/${segment}`, "neutral");
     this.updateSubmitDisabled();
   }
@@ -383,8 +382,8 @@ class ManageInstanceModal extends Modal {
   async checkAliasAvailability(segment, generation) {
     const alias = instanceAliasFromSegment(segment);
     const params = new URLSearchParams({ alias });
-    if (this.editingInstanceGuid) {
-      params.set("excludeInstanceGuid", this.editingInstanceGuid);
+    if (this.instance?.guid) {
+      params.set("excludeInstanceGuid", this.instance.guid);
     }
 
     try {
@@ -422,10 +421,6 @@ class ManageInstanceModal extends Modal {
     }
     const slug = slugifyInstanceUrlSegment(this.elements.$instanceNameInput.val());
     this.elements.$instanceUrlInput.val(slug);
-    this.scheduleAliasAvailabilityCheck();
-  }
-
-  onUrlInput() {
     this.scheduleAliasAvailabilityCheck();
   }
 
@@ -527,11 +522,11 @@ class ManageInstanceModal extends Modal {
   }
 
   async loadInstanceUsers() {
-    if (!this.editingInstanceGuid) {
+    if (!this.instance?.guid) {
       return;
     }
     try {
-      const data = await requestJson(`/api/genrpg/instances/${this.editingInstanceGuid}/users`);
+      const data = await requestJson(`/api/genrpg/instances/${this.instance.guid}/users`);
       this.buildInstanceUsersTable(data?.users || []);
     } catch (err) {
       this.instanceUsersTable = null;
@@ -562,14 +557,9 @@ class ManageInstanceModal extends Modal {
     }
   }
 
-  async loadUsersTab() {
-    await this.populateUserSelects();
-    await this.loadInstanceUsers();
-    this.usersTabLoaded = true;
-  }
-
   updateConfirmButton() {
-    const matches = this.elements.$deleteInstanceConfirmInput.val() === this.instanceName;
+    const matches =
+      this.elements.$deleteInstanceConfirmInput.val() === this.instance?.name;
     this.elements.$confirmDeleteInstanceButton.prop("disabled", !matches);
   }
 
@@ -581,14 +571,8 @@ class ManageInstanceModal extends Modal {
 
     this.createModalElement();
     this.resetForm();
-    this.usersTabLoaded = false;
-    this.instanceUsersTable = null;
 
-    this.mode = isManage ? "manage" : "create";
-    this.editingInstance = isManage ? instance : null;
-    this.editingInstanceGuid = isManage ? instance.guid : null;
-    this.instanceName = isManage ? instance.name : null;
-
+    this.instance = isManage ? instance : null;
     this.setModalLayout();
 
     if (isManage) {
@@ -644,16 +628,13 @@ class ManageInstanceModal extends Modal {
     this.resetDeleteTab();
     this.destroyTabbedRegion();
     this.elements.$bodyHost?.empty();
-    this.mode = "create";
-    this.editingInstance = null;
-    this.editingInstanceGuid = null;
-    this.instanceName = null;
+    this.instance = null;
   }
 
   async onSubmit(event) {
     event.preventDefault();
 
-    if (this.isManageMode() && !this.editingInstance?.can_edit) {
+    if (this.isManageMode() && !this.instance?.can_edit) {
       return;
     }
 
@@ -676,7 +657,7 @@ class ManageInstanceModal extends Modal {
       };
 
       try {
-        await requestJson(`/api/genrpg/instances/${this.editingInstanceGuid}`, {
+        await requestJson(`/api/genrpg/instances/${this.instance.guid}`, {
           method: "PUT",
           body: JSON.stringify(body),
         });
@@ -725,7 +706,7 @@ class ManageInstanceModal extends Modal {
 
   async onUsersFormSubmit(event) {
     event.preventDefault();
-    if (!this.editingInstanceGuid) {
+    if (!this.instance?.guid) {
       return;
     }
 
@@ -739,7 +720,7 @@ class ManageInstanceModal extends Modal {
     }
 
     try {
-      await requestJson(`/api/genrpg/instances/${this.editingInstanceGuid}/users/${userGuid}`, {
+      await requestJson(`/api/genrpg/instances/${this.instance.guid}/users/${userGuid}`, {
         method: "PUT",
         body: JSON.stringify({ roleId }),
       });
@@ -752,7 +733,8 @@ class ManageInstanceModal extends Modal {
   }
 
   async onRemoveUser(event) {
-    if (!this.editingInstanceGuid) {
+    const { guid } = this.instance;
+    if (!guid) {
       return;
     }
     const $btn = $(event.currentTarget);
@@ -761,7 +743,7 @@ class ManageInstanceModal extends Modal {
     $btn.prop("disabled", true).text("Removing...");
 
     try {
-      await requestJson(`/api/genrpg/instances/${this.editingInstanceGuid}/users/${userGuid}`, {
+      await requestJson(`/api/genrpg/instances/${guid}/users/${userGuid}`, {
         method: "DELETE",
       });
       this.setAddUserMessage("User removed.", "success");
@@ -773,7 +755,8 @@ class ManageInstanceModal extends Modal {
   }
 
   async onConfirmDelete() {
-    if (!this.editingInstanceGuid) {
+    const { guid, name } = this.instance;
+    if (!guid) {
       return;
     }
 
@@ -781,9 +764,9 @@ class ManageInstanceModal extends Modal {
     $btn.prop("disabled", true).text("Deleting...");
 
     try {
-      await requestJson(`/api/genrpg/instances/${this.editingInstanceGuid}`, {
+      await requestJson(`/api/genrpg/instances/${guid}`, {
         method: "DELETE",
-        body: JSON.stringify({ confirmName: this.instanceName }),
+        body: JSON.stringify({ confirmName: name }),
       });
       this.hide();
       setMessage(getElements().$message, "Instance deleted.", "success");
