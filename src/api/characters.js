@@ -154,20 +154,6 @@ async function loadCharacterSchemas(packageNames) {
     throw new Error("Core characters table does not exist");
   }
 
-  for (const packageName of packageNames) {
-    if (packageName === "genrpg") {
-      continue;
-    }
-
-    const packageTable = found.find((row) => row.schema === packageName);
-    if (packageTable && !packageTable.hasCharacterGuid) {
-      console.warn(
-        `Package "${packageName}" has a characters table without character_guid; `
-        + "character read/write for that package is disabled until package database updates are applied.",
-      );
-    }
-  }
-
   return found.filter((row) => row.schema === "genrpg" || row.hasCharacterGuid);
 }
 
@@ -322,41 +308,17 @@ async function buildCharacterFormMetadata(packageNames) {
   return { schemas: formSchemas };
 }
 
-function normalizePackagesObject(packages, packageNames) {
-  const normalized = {
-    genrpg: packages?.genrpg && typeof packages.genrpg === "object" ? packages.genrpg : {},
-  };
-
-  for (const packageName of packageNames) {
-    if (packageName === "genrpg") {
-      continue;
-    }
-    const value = packages?.[packageName];
-    normalized[packageName] = value && typeof value === "object" ? value : {};
-  }
-
-  return normalized;
-}
-
-function buildCharactersQuery(schemas, packageNames, { byCharacterGuid = false } = {}) {
-  const joinedSchemas = schemas.filter((schema) => schema !== "genrpg");
-  const aliasBySchema = new Map();
-  const joins = joinedSchemas.map((schema, index) => {
+function buildCharactersQuery(schemas, { byCharacterGuid = false } = {}) {
+  const packageSchemas = schemas.filter((schema) => schema !== "genrpg");
+  const joins = packageSchemas.map((schema, index) => {
     const alias = `c${index + 1}`;
-    aliasBySchema.set(schema, alias);
     return `LEFT JOIN ${quoteIdentifier(schema)}.characters ${alias} ON ${alias}.character_guid = c0.guid`;
   });
 
-  const packageColumns = packageNames
-    .filter((packageName) => packageName !== "genrpg")
-    .map((packageName) => {
-      const alias = aliasBySchema.get(packageName);
-      if (!alias) {
-        return `'${packageName}', '{}'::json`;
-      }
-
-      return `'${packageName}', CASE WHEN ${alias}.character_guid IS NULL THEN '{}'::json ELSE row_to_json(${alias}) END`;
-    });
+  const packageColumns = packageSchemas.map((schema, index) => {
+    const alias = `c${index + 1}`;
+    return `'${schema}', CASE WHEN ${alias}.character_guid IS NULL THEN NULL ELSE row_to_json(${alias}) END`;
+  });
 
   const jsonArgs = [
     `'genrpg', row_to_json(c0)`,
@@ -384,14 +346,14 @@ async function loadCharacterRows(instanceGuid, packageNames, characterGuid = nul
   const schemas = schemaRows.map((row) => row.schema);
   const params = characterGuid ? [instanceGuid, characterGuid] : [instanceGuid];
   const result = await pool.query(
-    buildCharactersQuery(schemas, packageNames, { byCharacterGuid: Boolean(characterGuid) }),
+    buildCharactersQuery(schemas, { byCharacterGuid: Boolean(characterGuid) }),
     params,
   );
 
   return result.rows.map((row) => ({
     guid: row.guid,
     instance_guid: row.instance_guid,
-    packages: normalizePackagesObject(row.packages, packageNames),
+    packages: row.packages,
     extensions: {},
   }));
 }

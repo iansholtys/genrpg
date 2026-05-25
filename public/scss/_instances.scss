@@ -194,40 +194,6 @@ dd {
   }
 }
 
-.character-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 1rem;
-}
-
-.character-card {
-  border: 1px solid var(--line);
-  border-radius: $radius;
-  background: $panel-overlay;
-  padding: 1rem;
-
-  h3 {
-    margin: 0 0 0.5rem;
-  }
-}
-
-.character-card__subtitle,
-.character-card__meta,
-.character-card__summary,
-.empty-state {
-  color: var(--muted);
-}
-
-.character-card__subtitle,
-.character-card__meta,
-.character-card__summary {
-  margin: 0.25rem 0 0;
-}
-
-.character-card__summary {
-  font-style: italic;
-}
-
 .character-form {
   display: grid;
   gap: 1rem;
