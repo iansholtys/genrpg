@@ -1,8 +1,6 @@
 /**
  * Item template management — CRUD UI for instance item templates.
  */
-const { Modal } = window;
-
 class ManageItemTemplateModal extends Modal {
   constructor() {
     super("manage-item-template-modal", "Create Item Template", {
