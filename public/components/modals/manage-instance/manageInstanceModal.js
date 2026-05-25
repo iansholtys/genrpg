@@ -42,7 +42,7 @@ class ManageInstanceModal extends Modal {
   }
 
   getContent() {
-    this.elements.$bodyHost = $('div', { class: 'manage-instance-body' });
+    this.elements.$bodyHost = $('<div>', { class: 'manage-instance-body' });
     return this.elements.$bodyHost;
   }
 
