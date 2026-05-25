@@ -650,7 +650,8 @@ textarea {
 }
 .instance-tile--create:hover {
   border-color: var(--accent);
-  color: var(--accent-strong);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--accent);
 }
 .instance-tile--create:disabled {
   opacity: 0.6;
