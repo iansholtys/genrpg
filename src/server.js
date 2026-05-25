@@ -5,6 +5,7 @@ const PgSession = require("connect-pg-simple")(session);
 
 const { pool } = require("./db/pool");
 const { applySchemaVersions } = require("./db/versions");
+const { applyPackageUpdates } = require("./updates");
 const { refreshPackageSubscribers } = require("./events/packageEvents");
 const { REPO_ROOT } = require("./packages");
 
@@ -135,6 +136,13 @@ async function main() {
   const { applied } = await applySchemaVersions({ pool });
   if (applied.length) {
     console.log(`Applied database schema versions: ${applied.join(", ")}`);
+  }
+
+  const { applied: updatesApplied } = await applyPackageUpdates(pool);
+  if (updatesApplied.length) {
+    console.log(
+      `Applied package database updates: ${updatesApplied.map((entry) => entry.machineName).join(", ")}`,
+    );
   }
 
   await refreshPackageSubscribers({ force: true });

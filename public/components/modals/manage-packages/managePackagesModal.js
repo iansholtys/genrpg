@@ -8,7 +8,7 @@ const Modal = window.Modal;
 class ManagePackagesModal extends Modal {
   constructor() {
     super("manage-packages-modal", "Manage Packages", {
-      maxWidth: "52rem",
+      maxWidth: "64rem",
       width: "92vw",
       enterAnimation: { preset: "scale-down", duration: 200 },
       exitAnimation: { preset: "scale-up", duration: 200 },
@@ -92,6 +92,9 @@ class ManagePackagesModal extends Modal {
     this.elements.$gitPackagesList.on("click", ".install-git-pkg-btn", (event) =>
       this.onInstallGitPackage(event),
     );
+    this.elements.$gitPackagesList.on("click", ".reinstall-git-pkg-btn", (event) =>
+      this.onReinstallGitPackage(event),
+    );
     this.elements.$pullPackageButton.on("click", () => this.onPullPackage());
   }
 
@@ -100,57 +103,52 @@ class ManagePackagesModal extends Modal {
   }
 
   buildGitPackagesTable(statuses) {
-    const hasUninstalled = statuses.some((pkg) => !pkg.installed);
-    const hasActions = hasUninstalled || statuses.some((pkg) => pkg.canUpdate);
-
     const columns = [
       { title: "Name", searchable: true },
       { title: "Repository", field: "url", searchable: true },
-    ];
-
-    if (hasUninstalled) {
-      columns.push({
-        title: "Status",
-        field: "installed",
-        renderFunction: (_value, pkg) => {
-          if (pkg.installed) {
-            return $("<span>", { class: "table-status-installed", text: "Installed" });
-          }
-          return $("<span>", { class: "table-status-available", text: "Available" });
-        },
-      });
-    }
-
-    columns.push({ title: "Local Version" });
-    columns.push({ title: "Remote Version" });
-
-    if (hasActions) {
-      columns.push({
+      { title: "Local Version" },
+      { title: "Remote Version" },
+      {
         title: "Actions",
         sortable: false,
         headerClass: "actions-cell",
         cellClass: "actions-cell",
         renderFunction: (_value, pkg) => {
+          const $actions = $("<div>", { class: "package-table-actions" });
+
           if (!pkg.installed) {
-            return $("<button>", {
-              type: "button",
-              class: "primary-button install-git-pkg-btn",
-              text: "Install",
-            }).attr("data-machine-name", pkg.machineName);
+            $actions.append(
+              $("<button>", {
+                type: "button",
+                class: "primary-button install-git-pkg-btn",
+                text: "Install",
+              }).attr("data-machine-name", pkg.machineName),
+            );
+            return $actions;
           }
 
           if (pkg.canUpdate) {
-            return $("<button>", {
-              type: "button",
-              class: "primary-button update-git-pkg-btn",
-              text: "Update",
-            }).attr("data-url", pkg.url);
+            $actions.append(
+              $("<button>", {
+                type: "button",
+                class: "secondary-button update-git-pkg-btn",
+                text: "Update",
+              }).attr("data-url", pkg.url),
+            );
           }
 
-          return $("<span>", { class: "table-status-muted", text: "Up to date" });
+          $actions.append(
+            $("<button>", {
+              type: "button",
+              class: "primary-button reinstall-git-pkg-btn",
+              text: "Reinstall",
+            }).attr("data-machine-name", pkg.machineName),
+          );
+
+          return $actions;
         },
-      });
-    }
+      },
+    ];
 
     this.gitPackagesTable = new Table({
       id: "git-packages-table",
@@ -318,10 +316,13 @@ class ManagePackagesModal extends Modal {
     $btn.prop("disabled", true).text("Installing...");
 
     try {
-      await requestJson("/api/genrpg/packages/install", {
+      const result = await requestJson("/api/genrpg/packages/install", {
         method: "POST",
         body: JSON.stringify({ machineName }),
       });
+      if (result.updateWarning) {
+        alert(`Package installed, but database setup reported a problem: ${result.updateWarning}`);
+      }
       $btn.text("Installed!");
       setTimeout(async () => {
         await this.loadGitPackages();
@@ -330,6 +331,39 @@ class ManagePackagesModal extends Modal {
     } catch (error) {
       $btn.prop("disabled", false).text("Install");
       alert("Failed to install: " + error.message);
+    }
+  }
+
+  async onReinstallGitPackage(event) {
+    const $btn = $(event.currentTarget);
+    const machineName = $btn.data("machine-name");
+
+    if (
+      !window.confirm(
+        `Reinstall "${machineName}"? This re-runs all package SQL and update steps from disk. Existing table data is kept, but seed scripts may insert duplicate rows.`,
+      )
+    ) {
+      return;
+    }
+
+    $btn.prop("disabled", true).text("Reinstalling...");
+
+    try {
+      const result = await requestJson("/api/genrpg/packages/reinstall", {
+        method: "POST",
+        body: JSON.stringify({ machineName }),
+      });
+      if (result.updateWarning) {
+        alert(`Reinstall finished with warnings: ${result.updateWarning}`);
+      }
+      $btn.text("Done!");
+      setTimeout(async () => {
+        await this.loadGitPackages();
+        await loadApp();
+      }, 1000);
+    } catch (error) {
+      $btn.prop("disabled", false).text("Reinstall");
+      alert("Failed to reinstall: " + error.message);
     }
   }
 }

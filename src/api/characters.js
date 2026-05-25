@@ -154,6 +154,20 @@ async function loadCharacterSchemas(packageNames) {
     throw new Error("Core characters table does not exist");
   }
 
+  for (const packageName of packageNames) {
+    if (packageName === "genrpg") {
+      continue;
+    }
+
+    const packageTable = found.find((row) => row.schema === packageName);
+    if (packageTable && !packageTable.hasCharacterGuid) {
+      console.warn(
+        `Package "${packageName}" has a characters table without character_guid; `
+        + "character read/write for that package is disabled until package database updates are applied.",
+      );
+    }
+  }
+
   return found.filter((row) => row.schema === "genrpg" || row.hasCharacterGuid);
 }
 

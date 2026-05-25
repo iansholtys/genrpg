@@ -398,6 +398,18 @@ textarea {
   cursor: not-allowed;
 }
 
+.package-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.manage-packages-modal .actions-cell {
+  min-width: 9rem;
+  white-space: nowrap;
+}
+
 .modal-backdrop {
   --modal-backdrop: rgba(0, 0, 0, 0.65);
   --modal-backdrop-duration: 0.3s;

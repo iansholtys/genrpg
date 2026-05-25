@@ -154,6 +154,67 @@ async function applySchemaVersion(client, schemaVersion, sql, checksum) {
   }
 }
 
+async function reapplyPackageSchemaVersions({
+  pool = defaultPool,
+  packageName,
+  rootDir = ROOT_DIR,
+} = {}) {
+  if (!packageName) {
+    throw new Error("packageName is required");
+  }
+
+  const client = await pool.connect();
+  const appliedNow = [];
+
+  try {
+    await ensureSchemaVersionTable(client);
+    await client.query(`CREATE SCHEMA IF NOT EXISTS "${packageName}"`);
+
+    const packageDbDir = path.join(rootDir, "packages", packageName, "db");
+    const filePaths = await listVersionFiles(packageDbDir);
+
+    for (const filePath of filePaths) {
+      const schemaVersion = parseVersionFile(packageName, filePath);
+      const { sql, checksum } = await readSchemaVersion(schemaVersion);
+      const key = `${schemaVersion.packageName}:${schemaVersion.fileName}`;
+
+      await client.query("BEGIN");
+      try {
+        await client.query(sql);
+        await client.query(
+          `
+            INSERT INTO schema_versions
+              (package_name, file_name, file_order, name, checksum)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (package_name, file_name)
+            DO UPDATE SET
+              file_order = EXCLUDED.file_order,
+              name = EXCLUDED.name,
+              checksum = EXCLUDED.checksum,
+              applied_at = now()
+          `,
+          [
+            schemaVersion.packageName,
+            schemaVersion.fileName,
+            schemaVersion.fileOrder,
+            schemaVersion.name,
+            checksum,
+          ],
+        );
+        await client.query("COMMIT");
+        appliedNow.push(key);
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    }
+
+    return { applied: appliedNow };
+  } finally {
+    client.release();
+  }
+}
+
 async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = {}) {
   const client = await pool.connect();
 
@@ -244,4 +305,8 @@ if (require.main === module) {
     });
 }
 
-module.exports = { applySchemaVersions, discoverSchemaVersions };
+module.exports = {
+  applySchemaVersions,
+  discoverSchemaVersions,
+  reapplyPackageSchemaVersions,
+};

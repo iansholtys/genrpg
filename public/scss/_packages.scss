@@ -34,3 +34,15 @@
     cursor: not-allowed;
   }
 }
+
+.package-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.manage-packages-modal .actions-cell {
+  min-width: 9rem;
+  white-space: nowrap;
+}

@@ -9,7 +9,7 @@ const semver = require("semver");
 const express = require("express");
 
 const { pool } = require("../db/pool");
-const { applySchemaVersions } = require("../db/versions");
+const { applySchemaVersions, reapplyPackageSchemaVersions } = require("../db/versions");
 const { requireAdmin } = require("../auth");
 const {
   PackageLoadError,
@@ -26,6 +26,50 @@ const {
 const execAsync = promisify(exec);
 
 const packagesRouter = express.Router();
+
+async function registerPackageVersion(machineName, packagePath) {
+  const { loadUpdatesModule, getLatestVersion } = require("../updates");
+  const updatesModule = await loadUpdatesModule(machineName, packagePath);
+  const latestVersion = getLatestVersion(updatesModule);
+  const registerClient = await pool.connect();
+  try {
+    await registerClient.query(
+      `
+        INSERT INTO genrpg.packages (package, version)
+        VALUES ($1, $2)
+        ON CONFLICT (package) DO UPDATE SET version = EXCLUDED.version
+      `,
+      [machineName, latestVersion],
+    );
+  } finally {
+    registerClient.release();
+  }
+}
+
+async function applyPackageDatabase(machineName, packagePath, { reinstall = false } = {}) {
+  const schemaClient = await pool.connect();
+  try {
+    await schemaClient.query(`CREATE SCHEMA IF NOT EXISTS "${machineName}"`);
+  } finally {
+    schemaClient.release();
+  }
+
+  let updateWarning = null;
+  try {
+    if (reinstall) {
+      await reapplyPackageSchemaVersions({ pool, packageName: machineName });
+    } else {
+      await applySchemaVersions({ pool });
+    }
+    await applyPackageUpdatesForMachine(pool, machineName);
+  } catch (error) {
+    console.error(`Failed to apply database for ${machineName}:`, error);
+    updateWarning = error.message || "Failed to apply package database updates";
+  }
+
+  await registerPackageVersion(machineName, packagePath);
+  return { updateWarning };
+}
 
 packagesRouter.get("/packages", async (req, res, next) => {
   try {
@@ -289,42 +333,41 @@ packagesRouter.post("/packages/install", requireAdmin, async (req, res, next) =>
       checkClient.release();
     }
 
-    // Create the package schema
-    const schemaClient = await pool.connect();
-    try {
-      await schemaClient.query(`CREATE SCHEMA IF NOT EXISTS "${machineName}"`);
-    } finally {
-      schemaClient.release();
-    }
-
-    // Apply schema versions (runs SQL files)
-    await applySchemaVersions({ pool });
-
-    // Apply update steps
-    await applyPackageUpdatesForMachine(pool, machineName);
-
-    // Ensure the package is registered in genrpg.packages even if it had
-    // no SQL files or update steps — this is what marks it as "installed".
-    const { loadUpdatesModule, getLatestVersion } = require("../updates");
-    const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
-    const latestVersion = getLatestVersion(updatesModule);
-    const registerClient = await pool.connect();
-    try {
-      await registerClient.query(
-        `
-          INSERT INTO genrpg.packages (package, version)
-          VALUES ($1, $2)
-          ON CONFLICT (package) DO UPDATE SET version = EXCLUDED.version
-        `,
-        [machineName, latestVersion],
-      );
-    } finally {
-      registerClient.release();
-    }
-
+    const { updateWarning } = await applyPackageDatabase(machineName, pkg.path);
     invalidatePackageCache();
 
-    res.json({ success: true });
+    res.json({ success: true, updateWarning });
+  } catch (error) {
+    if (error instanceof PackageLoadError) {
+      res.status(error.status).json({ error: error.message, details: error.details });
+      return;
+    }
+
+    next(error);
+  }
+});
+
+packagesRouter.post("/packages/reinstall", requireAdmin, async (req, res, next) => {
+  try {
+    const { machineName } = req.body;
+    if (!machineName || typeof machineName !== "string") {
+      return res.status(400).json({ error: "machineName is required" });
+    }
+
+    if (machineName === "genrpg") {
+      return res.status(400).json({ error: "The genrpg package cannot be reinstalled from this action" });
+    }
+
+    const { packages } = await loadPackages({ strict: false });
+    const pkg = packages.find((p) => p.machineName === machineName);
+    if (!pkg) {
+      return res.status(404).json({ error: `Package "${machineName}" not found on disk` });
+    }
+
+    const { updateWarning } = await applyPackageDatabase(machineName, pkg.path, { reinstall: true });
+    invalidatePackageCache();
+
+    res.json({ success: true, updateWarning });
   } catch (error) {
     if (error instanceof PackageLoadError) {
       res.status(error.status).json({ error: error.message, details: error.details });

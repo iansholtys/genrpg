@@ -25,7 +25,8 @@ Use **PostgreSQL**
   - Core schema: `genrpg/db/<order>_<name>.sql` (e.g., `genrpg/db/0001_initial.sql`)
   - Package schema: `packages/<package-name>/db/<order>_<name>.sql`
 - **Update Logic:** `src/db/versions.js` automatically discovers these directories, and applies the `.sql` scripts in order. It tracks applied updates in a `schema_versions` table. It also should handle the creation of the schema matching the package's `machine_name` if the schema doesn't already exist.
-- **Running Updates:** Use `npm run db:apply`
+- **Existing installs:** Put additive or altering changes in `packages/<name>/<name>.updates.js` (numbered steps). The `db/*.sql` files are for fresh installs and are only auto-applied once unless an admin uses **Reinstall** in Manage Packages, which re-runs all package SQL from disk plus `*.updates.js` steps.
+- **Running Updates:** Use `npm run db:apply` for pending schema files; use Manage Packages **Reinstall** or the package update API for a full package SQL + updates replay.
 - **Fully qualify SQL queries:** Always qualify your SQL queries.
   - Core schema: `genrpg.*` - Do not use the `public` schema for the core schema, rather use the `genrpg` schema.
   - Package schema: `<machine-name>.*` - Do not use the `public` schema for package schema, rather use the `<machine-name>` schema which matches the package's `machine_name`.

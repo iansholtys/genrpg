@@ -354,14 +354,6 @@ class CreateCharacterModal extends Modal {
       }
     });
 
-    // Temporary: hard-code Hardpoint stats to narrow down create/persist issues.
-    packages.hardpoint = {
-      ...(packages.hardpoint || {}),
-      spirit: 1,
-      mind: 2,
-      body: -1,
-    };
-
     return { packages };
   }
 
