@@ -1,6 +1,258 @@
 /**
  * Item template management — CRUD UI for instance item templates.
  */
+const { Modal } = window;
+
+class ManageItemTemplateModal extends Modal {
+  constructor() {
+    super("manage-item-template-modal", "Create Item Template", {
+      maxWidth: "36rem",
+      width: "92vw",
+      enterAnimation: { preset: "scale-down", duration: 200 },
+      exitAnimation: { preset: "scale-up", duration: 200 },
+      classes: ["manage-item-template-modal"],
+    });
+
+    this.instanceGuid = null;
+    this.templateGuid = null;
+    this.onChanged = null;
+    this.eventNs = ".manage-item-template-modal";
+  }
+
+  apiBase() {
+    return `/api/genrpg/instances/${this.instanceGuid}/item-templates`;
+  }
+
+  async requestJson(url, options) {
+    const response = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+
+    if (response.status === 401) {
+      window.location.assign("/login");
+      return null;
+    }
+
+    if (response.status === 204) {
+      return {};
+    }
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Request failed");
+    }
+
+    return data;
+  }
+
+  isEditMode() {
+    return Boolean(this.templateGuid);
+  }
+
+  getContent() {
+    this.elements.$message = $("<p>", {
+      class: "item-template-modal__message message",
+      role: "status",
+    });
+
+    this.elements.$form = $("<form>", { class: "item-template-modal__form" }).append(
+      $("<label>").append(
+        $("<span>", { text: "Name" }),
+        $("<input>", {
+          name: "name",
+          type: "text",
+          required: true,
+          maxlength: 120,
+          autocomplete: "off",
+        }),
+      ),
+      $("<label>").append(
+        $("<span>", { text: "Description" }),
+        $("<textarea>", { name: "description", rows: 2, maxlength: 2000 }),
+      ),
+      $("<label>").append(
+        $("<span>", { text: "Weight" }),
+        $("<input>", { name: "weight", type: "number", step: "any", min: "0" }),
+      ),
+      this.elements.$message,
+    );
+
+    this.elements.$cancelButton = $("<button>", {
+      type: "button",
+      class: "secondary-button",
+      text: "Cancel",
+    });
+
+    this.elements.$saveButton = $("<button>", {
+      type: "button",
+      class: "primary-button",
+      text: "Save",
+    });
+
+    this.elements.$saveAndAddButton = $("<button>", {
+      type: "submit",
+      class: "primary-button",
+      text: "Save and add another",
+    });
+
+    this.elements.$editSaveButton = $("<button>", {
+      type: "submit",
+      class: "primary-button",
+      text: "Save",
+    });
+
+    this.elements.$actions = $("<div>", { class: "item-template-modal__actions" }).append(
+      this.elements.$cancelButton,
+      this.elements.$saveButton,
+      this.elements.$saveAndAddButton,
+      this.elements.$editSaveButton,
+    );
+
+    this.elements.$form.append(this.elements.$actions);
+
+    this.elements.$form.on("submit" + this.eventNs, (event) => {
+      event.preventDefault();
+      void this.handleSave({ closeAfter: !this.isEditMode() });
+    });
+
+    this.elements.$cancelButton.on("click" + this.eventNs, () => this.hide());
+    this.elements.$saveButton.on("click" + this.eventNs, () => {
+      void this.handleSave({ closeAfter: true });
+    });
+
+    return this.elements.$form;
+  }
+
+  configureActions() {
+    const isEdit = this.isEditMode();
+    this.elements.$saveButton.prop("hidden", isEdit);
+    this.elements.$saveAndAddButton.prop("hidden", isEdit);
+    this.elements.$editSaveButton.prop("hidden", !isEdit);
+  }
+
+  setFormMessage(text, tone) {
+    const $message = this.elements.$message;
+    $message.text(text || "");
+    if (tone) {
+      $message.attr("data-tone", tone);
+    } else {
+      $message.removeAttr("data-tone");
+    }
+  }
+
+  resetForm() {
+    this.elements.$form?.[0]?.reset();
+    this.setFormMessage("");
+  }
+
+  fillForm(template) {
+    const $form = this.elements.$form;
+    $form.find('[name="name"]').val(template.name || "");
+    $form.find('[name="description"]').val(template.description || "");
+    $form.find('[name="weight"]').val(
+      template.weight === null || template.weight === undefined ? "" : template.weight,
+    );
+  }
+
+  readFormPayload() {
+    const formData = new FormData(this.elements.$form[0]);
+    const weightRaw = formData.get("weight");
+    return {
+      name: String(formData.get("name") || "").trim(),
+      description: String(formData.get("description") || ""),
+      weight: weightRaw === "" ? null : weightRaw,
+    };
+  }
+
+  setSaving(disabled) {
+    this.elements.$saveButton.prop("disabled", disabled);
+    this.elements.$saveAndAddButton.prop("disabled", disabled);
+    this.elements.$editSaveButton.prop("disabled", disabled);
+    this.elements.$cancelButton.prop("disabled", disabled);
+  }
+
+  async handleSave({ closeAfter }) {
+    const payload = this.readFormPayload();
+
+    if (!payload.name) {
+      this.setFormMessage("Name is required.", "error");
+      return;
+    }
+
+    this.setSaving(true);
+
+    try {
+      if (this.isEditMode()) {
+        await this.requestJson(`${this.apiBase()}/${this.templateGuid}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await this.requestJson(this.apiBase(), {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (this.onChanged) {
+        await this.onChanged();
+      }
+
+      if (closeAfter) {
+        this.hide();
+        return;
+      }
+
+      this.resetForm();
+      this.elements.$form.find('[name="name"]').trigger("focus");
+    } catch (error) {
+      this.setFormMessage(error.message, "error");
+    } finally {
+      this.setSaving(false);
+    }
+  }
+
+  /**
+   * @param {string} instanceGuid
+   * @param {() => void|Promise<void>} onChanged
+   */
+  showCreate(instanceGuid, onChanged) {
+    this.instanceGuid = instanceGuid;
+    this.templateGuid = null;
+    this.onChanged = onChanged;
+    this.setTitle("Create Item Template");
+    this.resetForm();
+    this.configureActions();
+    super.show();
+    this.elements.$form.find('[name="name"]').trigger("focus");
+  }
+
+  /**
+   * @param {string} instanceGuid
+   * @param {Object} template
+   * @param {() => void|Promise<void>} onChanged
+   */
+  showEdit(instanceGuid, template, onChanged) {
+    this.instanceGuid = instanceGuid;
+    this.templateGuid = template.guid;
+    this.onChanged = onChanged;
+    this.setTitle(`Edit — ${template.name || "Item Template"}`);
+    this.resetForm();
+    this.fillForm(template);
+    this.configureActions();
+    super.show();
+    this.elements.$form.find('[name="name"]').trigger("focus");
+  }
+
+  onHide() {
+    this.resetForm();
+    this.instanceGuid = null;
+    this.templateGuid = null;
+    this.onChanged = null;
+  }
+}
+
 class ItemTemplateManagement {
   static defaultId = "genrpg-item-template-management";
 
@@ -18,7 +270,6 @@ class ItemTemplateManagement {
     this.id = options.id || ItemTemplateManagement.defaultId;
     this.eventNs = ".item-template-management-" + this.id;
 
-    this.editingGuid = null;
     this.table = null;
     this.isMounted = false;
 
@@ -84,46 +335,34 @@ class ItemTemplateManagement {
     }
   }
 
-  resetForm() {
-    this.editingGuid = null;
-    if (this.elements.$form) {
-      this.elements.$form[0].reset();
-    }
-    this.elements.$submitButton.text("Save");
-    this.elements.$cancelButton.prop("hidden", true);
-    this.setMessage("");
-  }
-
-  fillForm(template) {
-    this.editingGuid = template.guid;
-    const $form = this.elements.$form;
-    $form.find('[name="name"]').val(template.name || "");
-    $form.find('[name="description"]').val(template.description || "");
-    $form.find('[name="weight"]').val(
-      template.weight === null || template.weight === undefined ? "" : template.weight,
-    );
-    this.elements.$submitButton.text("Update");
-    this.elements.$cancelButton.prop("hidden", false);
-    this.setMessage("");
-    $form.find('[name="name"]').trigger("focus");
-  }
-
-  readFormPayload() {
-    const formData = new FormData(this.elements.$form[0]);
-    const weightRaw = formData.get("weight");
-    return {
-      name: String(formData.get("name") || "").trim(),
-      description: String(formData.get("description") || ""),
-      weight: weightRaw === "" ? null : weightRaw,
-    };
-  }
-
   async loadTemplates() {
     const data = await this.requestJson(this.apiBase());
     if (!data) {
       return;
     }
     this.table.setData(data.itemTemplates || []);
+  }
+
+  async deleteTemplate(template) {
+    if (!window.confirm("Delete this item template?")) {
+      return;
+    }
+
+    try {
+      await this.requestJson(`${this.apiBase()}/${template.guid}`, { method: "DELETE" });
+      this.setMessage("Template deleted.", "success");
+      await this.loadTemplates();
+    } catch (error) {
+      this.setMessage(error.message, "error");
+    }
+  }
+
+  static getManageItemTemplateModal() {
+    if (!ItemTemplateManagement._manageItemTemplateModal) {
+      ItemTemplateManagement._manageItemTemplateModal = new ManageItemTemplateModal();
+      ItemTemplateManagement._manageItemTemplateModal.init();
+    }
+    return ItemTemplateManagement._manageItemTemplateModal;
   }
 
   ensureTable() {
@@ -159,20 +398,30 @@ class ItemTemplateManagement {
             $container.append(
               $("<button>", {
                 type: "button",
-                class: "secondary-button item-template-actions__btn edit-item-template-btn",
+                class: "secondary-button item-template-actions__btn",
                 title: "Edit",
                 "aria-label": "Edit",
                 text: "✏️",
-              }).attr("data-template-guid", row.guid),
+              }).on("click", (event) => {
+                event.stopPropagation();
+                ItemTemplateManagement.getManageItemTemplateModal().showEdit(
+                  this.instanceGuid,
+                  row,
+                  () => this.loadTemplates(),
+                );
+              }),
             );
             $container.append(
               $("<button>", {
                 type: "button",
-                class: "danger-button-outline item-template-actions__btn delete-item-template-btn",
+                class: "danger-button-outline item-template-actions__btn",
                 title: "Delete",
                 "aria-label": "Delete",
                 text: "🗑️",
-              }).attr("data-template-guid", row.guid),
+              }).on("click", (event) => {
+                event.stopPropagation();
+                void this.deleteTemplate(row);
+              }),
             );
             return $container;
           },
@@ -181,7 +430,7 @@ class ItemTemplateManagement {
       emptyState: {
         message: "No item templates",
         icon: "",
-        detailNoData: "Create a template using the form above.",
+        detailNoData: "Add a template using the button above.",
       },
     });
 
@@ -196,43 +445,16 @@ class ItemTemplateManagement {
       "aria-label": "Item template management",
     });
 
-    $root.append($("<h2>", { class: "item-template-management__heading", text: "Item Templates" }));
-
-    const $form = $("<form>", { class: "item-template-management__form" }).append(
-      $("<label>").append(
-        $("<span>", { text: "Name" }),
-        $("<input>", {
-          name: "name",
-          type: "text",
-          required: true,
-          maxlength: 120,
-          autocomplete: "off",
-        }),
-      ),
-    );
-    $form.append(
-      $("<label>").append(
-        $("<span>", { text: "Description" }),
-        $("<textarea>", { name: "description", rows: 2, maxlength: 2000 }),
-      ),
-    );
-    $form.append(
-      $("<label>").append(
-        $("<span>", { text: "Weight" }),
-        $("<input>", { name: "weight", type: "number", step: "any", min: "0" }),
-      ),
-    );
-
-    const $formActions = $("<div>", { class: "item-template-management__form-actions" });
-    const $submitButton = $("<button>", { type: "submit", text: "Save" });
-    const $cancelButton = $("<button>", {
+    const $header = $("<div>", { class: "item-template-management__header" });
+    const $addButton = $("<button>", {
       type: "button",
-      class: "secondary-button",
-      text: "Cancel",
-      hidden: true,
+      class: "primary-button item-template-management__add-btn",
+      text: "Add Template",
     });
-    $formActions.append($submitButton, $cancelButton);
-    $form.append($formActions);
+    $header.append(
+      $("<h2>", { class: "item-template-management__heading", text: "Item Templates" }),
+      $addButton,
+    );
 
     const $message = $("<p>", {
       class: "item-template-management__message",
@@ -240,13 +462,11 @@ class ItemTemplateManagement {
     });
 
     const $tableHost = $("<div>", { class: "item-template-management__table" });
-    $root.append($form, $message, $tableHost);
+    $root.append($header, $message, $tableHost);
 
     this.elements.$root = $root;
-    this.elements.$form = $form;
+    this.elements.$addButton = $addButton;
     this.elements.$message = $message;
-    this.elements.$submitButton = $submitButton;
-    this.elements.$cancelButton = $cancelButton;
     this.elements.$tableHost = $tableHost;
 
     return $root;
@@ -254,87 +474,16 @@ class ItemTemplateManagement {
 
   bindEvents() {
     const ns = this.eventNs;
-    const { $form, $root, $cancelButton, $submitButton } = this.elements;
-
-    $form.on("submit" + ns, async (event) => {
-      event.preventDefault();
-      const payload = this.readFormPayload();
-
-      if (!payload.name) {
-        this.setMessage("Name is required.", "error");
-        return;
-      }
-
-      $submitButton.prop("disabled", true);
-
-      try {
-        if (this.editingGuid) {
-          await this.requestJson(`${this.apiBase()}/${this.editingGuid}`, {
-            method: "PUT",
-            body: JSON.stringify(payload),
-          });
-          this.setMessage("Template updated.", "success");
-        } else {
-          await this.requestJson(this.apiBase(), {
-            method: "POST",
-            body: JSON.stringify(payload),
-          });
-          this.setMessage("Template created.", "success");
-        }
-
-        this.resetForm();
-        await this.loadTemplates();
-      } catch (error) {
-        this.setMessage(error.message, "error");
-      } finally {
-        $submitButton.prop("disabled", false);
-      }
-    });
-
-    $cancelButton.on("click" + ns, () => this.resetForm());
-
-    $root.on("click" + ns, ".edit-item-template-btn", async (event) => {
-      const templateGuid = $(event.currentTarget).attr("data-template-guid");
-      try {
-        const data = await this.requestJson(`${this.apiBase()}/${templateGuid}`);
-        if (data?.itemTemplate) {
-          this.fillForm(data.itemTemplate);
-        }
-      } catch (error) {
-        this.setMessage(error.message, "error");
-      }
-    });
-
-    $root.on("click" + ns, ".delete-item-template-btn", async (event) => {
-      const templateGuid = $(event.currentTarget).attr("data-template-guid");
-      if (!window.confirm("Delete this item template?")) {
-        return;
-      }
-
-      try {
-        await this.requestJson(`${this.apiBase()}/${templateGuid}`, { method: "DELETE" });
-        if (this.editingGuid === templateGuid) {
-          this.resetForm();
-        }
-        this.setMessage("Template deleted.", "success");
-        await this.loadTemplates();
-      } catch (error) {
-        this.setMessage(error.message, "error");
-      }
+    this.elements.$addButton.on("click" + ns, () => {
+      ItemTemplateManagement.getManageItemTemplateModal().showCreate(
+        this.instanceGuid,
+        () => this.loadTemplates(),
+      );
     });
   }
 
   unbindEvents() {
-    const ns = this.eventNs;
-    if (this.elements.$form) {
-      this.elements.$form.off(ns);
-    }
-    if (this.elements.$cancelButton) {
-      this.elements.$cancelButton.off(ns);
-    }
-    if (this.elements.$root) {
-      this.elements.$root.off(ns);
-    }
+    this.elements.$addButton?.off(this.eventNs);
   }
 
   /**
@@ -349,7 +498,6 @@ class ItemTemplateManagement {
     this.buildRoot();
     this.ensureTable();
     this.bindEvents();
-    this.resetForm();
     this.isMounted = true;
 
     this.loadTemplates().catch((error) => {
@@ -370,7 +518,6 @@ class ItemTemplateManagement {
     this.unbindEvents();
     this.elements.$root?.remove();
 
-    this.editingGuid = null;
     this.table = null;
     this.isMounted = false;
     this.elements = {};

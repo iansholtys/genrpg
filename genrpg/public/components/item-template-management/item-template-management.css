@@ -4,45 +4,30 @@
   padding: 0 1rem 2rem;
 }
 
-.item-template-management__heading {
-  margin: 0 0 1rem;
-}
-
-.item-template-management__form {
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
-}
-
-.item-template-management__form label {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.item-template-management__form-actions {
+.item-template-management__header {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
 }
-
+.item-template-management__heading {
+  margin: 0;
+}
 .item-template-management__message {
   min-height: 1.25rem;
   font-size: 0.9rem;
 }
-
 .item-template-management__message[data-tone=error] {
   color: var(--danger, #c0392b);
 }
-
 .item-template-management__message[data-tone=success] {
   color: var(--accent-strong, #2d6a4f);
 }
-
 .item-template-management__table {
   margin-top: 0.5rem;
 }
-
 .item-template-management__table .data-table .actions-cell {
   text-align: right;
   white-space: nowrap;
@@ -54,11 +39,35 @@
   justify-content: flex-end;
   gap: 0.25rem;
 }
-
 .item-template-actions__btn {
   min-width: 1.75rem;
   min-height: 1.75rem;
   padding: 0.1rem 0.35rem;
   font-size: 0.85rem;
   line-height: 1;
+}
+
+.manage-item-template-modal .item-template-modal__form {
+  display: grid;
+  gap: 0.75rem;
+}
+.manage-item-template-modal .item-template-modal__form label {
+  display: grid;
+  gap: 0.35rem;
+}
+.manage-item-template-modal .item-template-modal__message {
+  min-height: 1.25rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+.manage-item-template-modal .item-template-modal__message[data-tone=error] {
+  color: var(--danger, #c0392b);
+}
+.manage-item-template-modal .item-template-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
 }
