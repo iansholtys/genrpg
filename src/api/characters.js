@@ -361,24 +361,34 @@ async function resolveInstancePackageNames(instancePackages) {
   return expandPackageSelectionForAssets(parsePackageCsv(instancePackages), packages);
 }
 
+function buildCharacterDispatchContext(instanceGuid, packageNames, user) {
+  return {
+    instanceGuid,
+    instancePackageNames: packageNames,
+    user,
+    pool,
+  };
+}
+
 async function dispatchCharacterGetEvents(characters, context) {
   const dispatcher = await getEventDispatcher();
+  const packageNames = context.instancePackageNames;
   const eventContext = {
     characters,
     instanceGuid: context.instanceGuid,
-    instancePackageNames: context.packageNames,
+    instancePackageNames: packageNames,
     user: context.user,
     pool,
   };
 
   const pre = new CharacterPreGetEvent(eventContext);
-  await dispatcher.dispatch(pre, context.packageNames);
+  await dispatcher.dispatch(pre, packageNames);
 
   const post = new CharacterPostGetEvent({
     ...eventContext,
     characters: pre.characters,
   });
-  await dispatcher.dispatch(post, context.packageNames);
+  await dispatcher.dispatch(post, packageNames);
   return post.characters;
 }
 
@@ -574,11 +584,10 @@ charactersRouter.get("/instances/:instanceGuid/characters", async (req, res, nex
 
     const packageNames = await resolveInstancePackageNames(instance.packages);
     let characters = await loadCharacterRows(instanceGuid, packageNames);
-    characters = await dispatchCharacterGetEvents(characters, {
-      instanceGuid,
-      packageNames,
-      user: req.session.user,
-    });
+    characters = await dispatchCharacterGetEvents(
+      characters,
+      buildCharacterDispatchContext(instanceGuid, packageNames, req.session.user),
+    );
     res.json({ characters });
   } catch (error) {
     next(error);
@@ -598,11 +607,10 @@ charactersRouter.get("/instances/:instanceGuid/characters/:characterGuid", async
       return;
     }
 
-    characters = await dispatchCharacterGetEvents(characters, {
-      instanceGuid,
-      packageNames,
-      user: req.session.user,
-    });
+    characters = await dispatchCharacterGetEvents(
+      characters,
+      buildCharacterDispatchContext(instanceGuid, packageNames, req.session.user),
+    );
 
     if (!characters.length) {
       res.status(404).json({ error: "Character not found" });
@@ -623,12 +631,11 @@ charactersRouter.post("/instances/:instanceGuid/characters", async (req, res, ne
 
     const packageNames = await resolveInstancePackageNames(instance.packages);
     const dispatcher = await getEventDispatcher();
-    const createContext = {
+    const createContext = buildCharacterDispatchContext(
       instanceGuid,
       packageNames,
-      user: req.session.user,
-      pool,
-    };
+      req.session.user,
+    );
 
     const pre = new CharacterPreCreateEvent({
       ...createContext,
@@ -675,12 +682,11 @@ charactersRouter.patch("/instances/:instanceGuid/characters/:characterGuid", asy
 
     const packageNames = await resolveInstancePackageNames(instance.packages);
     const dispatcher = await getEventDispatcher();
-    const updateContext = {
+    const updateContext = buildCharacterDispatchContext(
       instanceGuid,
       packageNames,
-      user: req.session.user,
-      pool,
-    };
+      req.session.user,
+    );
 
     const pre = new CharacterPreUpdateEvent({
       ...updateContext,
