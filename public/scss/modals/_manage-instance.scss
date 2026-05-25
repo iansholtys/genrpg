@@ -1,36 +1,10 @@
 @use "../variables" as *;
 
-// ManageInstanceModal — tabs, edit form, users panel, delete panel
+// ManageInstanceModal — TabbedRegion, edit form, users panel, delete panel
 .manage-instance-modal {
-  .manage-instance-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid var(--line);
-    padding-bottom: 0.75rem;
-  }
-
-  .manage-instance-tab {
-    padding: 0.45rem 0.85rem;
-    border: 1px solid var(--line);
-    border-radius: $radius;
-    background: var(--panel);
-    color: var(--text);
-    font: inherit;
-    font-size: 0.9rem;
-    cursor: pointer;
-
-    &.is-active,
-    &[aria-selected="true"] {
-      border-color: var(--accent);
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--accent-strong);
-    }
-  }
-
-  .manage-instance-tab-panel[hidden] {
-    display: none;
+  .tabbed-region-component {
+    --tabbed-region-content-min-height: 0;
+    --tabbed-region-shadow: none;
   }
 
   .manage-instance-form {

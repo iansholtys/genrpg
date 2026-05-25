@@ -14,9 +14,8 @@ import {
   instanceAliasFromSegment,
 } from "../../../js/slug.js";
 
-const Modal = window.Modal;
+const { Modal, TabbedRegion } = window;
 const ALIAS_CHECK_DEBOUNCE_MS = 300;
-const TAB_IDS = ["edit", "users", "delete"];
 
 class ManageInstanceModal extends Modal {
   constructor() {
@@ -32,8 +31,6 @@ class ManageInstanceModal extends Modal {
     this.editingInstance = null;
     this.editingInstanceGuid = null;
     this.instanceName = null;
-    this.activeTab = "edit";
-    this.visibleTabs = [];
     this.usersTabLoaded = false;
     this.instanceUsersTable = null;
     this.aliasInUse = false;
@@ -41,51 +38,48 @@ class ManageInstanceModal extends Modal {
     this.aliasCheckGeneration = 0;
     this.aliasCheckTimer = null;
     this.lastCheckedUrlSegment = "";
+    this.tabbedRegion = null;
   }
 
   getContent() {
-    this.elements.$tabs = $("<div>", {
-      class: "manage-instance-tabs",
-      role: "tablist",
-      "aria-label": "Instance management",
+    this.elements.$bodyHost = $('div', { class: 'manage-instance-body' });
+    return this.elements.$bodyHost;
+  }
+
+  renderCreateBody() {
+    this.destroyTabbedRegion();
+    this.elements.$bodyHost.empty();
+    this.elements.$bodyHost.append(this.buildEditPanel());
+  }
+
+  renderManageBody(instance) {
+    this.destroyTabbedRegion();
+    this.elements.$bodyHost.empty();
+
+    this.tabbedRegion = new TabbedRegion({
+      id: "manage-instance-tabs",
+      ariaLabel: "Instance management",
+      onTabChange: ({ tab }) => void this.onTabChange(tab.id),
     });
 
-    this.elements.$tabButtons = {};
-    for (const tabId of TAB_IDS) {
-      const label = tabId.charAt(0).toUpperCase() + tabId.slice(1);
-      this.elements.$tabButtons[tabId] = $("<button>", {
-        type: "button",
-        class: "manage-instance-tab",
-        role: "tab",
-        text: label,
-        "aria-selected": "false",
-        "aria-controls": `manage-instance-panel-${tabId}`,
-        id: `manage-instance-tab-${tabId}`,
-      }).attr("data-tab", tabId);
-      this.elements.$tabs.append(this.elements.$tabButtons[tabId]);
+    if (instance.can_edit) {
+      this.tabbedRegion.addTab("edit", "Edit", this.buildEditPanel());
+    }
+    if (instance.can_manage_users) {
+      this.tabbedRegion.addTab("users", "Users", this.buildUsersPanel());
+    }
+    if (instance.can_delete) {
+      this.tabbedRegion.addTab("delete", "Delete", this.buildDeletePanel());
     }
 
-    const panelContent = {
-      edit: this.buildEditPanel(),
-      users: this.buildUsersPanel(),
-      delete: this.buildDeletePanel(),
-    };
+    this.elements.$tabbedRegion = this.tabbedRegion.init();
+    this.elements.$bodyHost.append(this.elements.$tabbedRegion);
+  }
 
-    this.elements.$panelWrappers = {};
-    this.elements.$tabPanels = $("<div>", { class: "manage-instance-tab-panels" });
-    for (const tabId of TAB_IDS) {
-      const $panel = $("<div>", {
-        id: `manage-instance-panel-${tabId}`,
-        class: "manage-instance-tab-panel",
-        role: "tabpanel",
-        "aria-labelledby": `manage-instance-tab-${tabId}`,
-        hidden: true,
-      }).append(panelContent[tabId]);
-      this.elements.$panelWrappers[tabId] = $panel;
-      this.elements.$tabPanels.append($panel);
-    }
-
-    return this.elements.$tabs.add(this.elements.$tabPanels);
+  destroyTabbedRegion() {
+    this.tabbedRegion?.destroy();
+    this.tabbedRegion = null;
+    this.elements.$tabbedRegion = null;
   }
 
   buildEditPanel() {
@@ -256,11 +250,11 @@ class ManageInstanceModal extends Modal {
 
   bindEvents() {
     super.bindEvents();
-    this.elements.$instanceForm.on("submit", (event) => this.onSubmit(event));
-    this.elements.$instanceNameInput.on("input", () => this.onNameInput());
-    this.elements.$instanceUrlInput.on("input", () => this.onUrlInput());
-    this.elements.$instanceUrlInput.on("blur", () => this.onUrlBlur());
-    this.elements.$instancePackageList.on("change", 'input[name="package"]', (event) => {
+    this.elements.$instanceForm?.on("submit", (event) => this.onSubmit(event));
+    this.elements.$instanceNameInput?.on("input", () => this.onNameInput());
+    this.elements.$instanceUrlInput?.on("input", () => this.onUrlInput());
+    this.elements.$instanceUrlInput?.on("blur", () => this.onUrlBlur());
+    this.elements.$instancePackageList?.on("change", 'input[name="package"]', (event) => {
       if (this.isManageMode()) {
         return;
       }
@@ -270,21 +264,12 @@ class ManageInstanceModal extends Modal {
       }
       applyPackageSelectionChange(input.value, input.checked, this.elements.$instancePackageList);
     });
-
-    this.elements.$tabs.on("click", ".manage-instance-tab", (event) => {
-      const tabId = $(event.currentTarget).attr("data-tab");
-      if (tabId) {
-        this.switchTab(tabId);
-      }
-    });
-
-    this.elements.$addUserRoleForm.on("submit", (event) => this.onUsersFormSubmit(event));
-    this.elements.$instanceUsersList.on("click", ".remove-user-role-btn", (event) =>
+    this.elements.$addUserRoleForm?.on("submit", (event) => this.onUsersFormSubmit(event));
+    this.elements.$instanceUsersList?.on("click", ".remove-user-role-btn", (event) =>
       this.onRemoveUser(event),
     );
-
-    this.elements.$deleteInstanceConfirmInput.on("input", () => this.updateConfirmButton());
-    this.elements.$confirmDeleteInstanceButton.on("click", () => this.onConfirmDelete());
+    this.elements.$deleteInstanceConfirmInput?.on("input", () => this.updateConfirmButton());
+    this.elements.$confirmDeleteInstanceButton?.on("click", () => this.onConfirmDelete());
   }
 
   isManageMode() {
@@ -300,60 +285,21 @@ class ManageInstanceModal extends Modal {
     this.elements.$root.toggleClass("manage-instance-modal--manage", isManage);
     this.elements.$root.toggleClass("manage-instance-modal--create", !isManage);
     this.elements.$content.css("max-width", isManage ? "52rem" : "36rem");
-    this.elements.$tabs.toggle(isManage);
   }
 
-  getVisibleTabsForInstance(instance) {
-    const tabs = [];
-    if (instance.can_edit) {
-      tabs.push("edit");
-    }
-    if (instance.can_manage_users) {
-      tabs.push("users");
-    }
-    if (instance.can_delete) {
-      tabs.push("delete");
-    }
-    return tabs;
-  }
-
-  configureTabs(instance, preferredTab) {
-    this.visibleTabs = instance ? this.getVisibleTabsForInstance(instance) : [];
-
-    for (const tabId of TAB_IDS) {
-      const visible = this.visibleTabs.includes(tabId);
-      this.elements.$tabButtons[tabId].toggle(visible);
-    }
-
-    const initialTab =
-      preferredTab && this.visibleTabs.includes(preferredTab)
-        ? preferredTab
-        : this.visibleTabs[0] || "edit";
-    this.switchTab(initialTab, { skipLoad: true });
-  }
-
-  async switchTab(tabId, { skipLoad = false } = {}) {
-    if (!this.isManageMode() || !this.visibleTabs.includes(tabId)) {
+  async onTabChange(tabId) {
+    if (!this.isManageMode()) {
       return;
     }
 
-    this.activeTab = tabId;
-
-    for (const id of TAB_IDS) {
-      const selected = id === tabId;
-      this.elements.$tabButtons[id].attr("aria-selected", selected ? "true" : "false");
-      this.elements.$tabButtons[id].toggleClass("is-active", selected);
-      this.elements.$panelWrappers[id].prop("hidden", !selected);
-    }
-
-    if (tabId === "users" && !skipLoad && !this.usersTabLoaded) {
+    if (tabId === "users" && !this.usersTabLoaded) {
       await this.loadUsersTab();
     }
 
     if (tabId === "delete") {
-      this.elements.$deleteInstanceConfirmInput.trigger("focus");
+      this.elements.$deleteInstanceConfirmInput?.trigger("focus");
     } else if (tabId === "edit") {
-      this.elements.$instanceNameInput.trigger("focus");
+      this.elements.$instanceNameInput?.trigger("focus");
     }
   }
 
@@ -501,11 +447,15 @@ class ManageInstanceModal extends Modal {
   }
 
   setAddUserMessage(message, tone = "neutral") {
-    setMessage(this.elements.$addUserMessage, message, tone);
+    if (this.elements.$addUserMessage) {
+      setMessage(this.elements.$addUserMessage, message, tone);
+    }
   }
 
   setDeleteMessage(message, tone = "neutral") {
-    setMessage(this.elements.$deleteInstanceMessage, message, tone);
+    if (this.elements.$deleteInstanceMessage) {
+      setMessage(this.elements.$deleteInstanceMessage, message, tone);
+    }
   }
 
   setPackagesFieldEnabled(enabled) {
@@ -527,14 +477,14 @@ class ManageInstanceModal extends Modal {
   resetUsersTab() {
     this.usersTabLoaded = false;
     this.instanceUsersTable = null;
-    this.elements.$addUserRoleForm[0]?.reset();
+    this.elements.$addUserRoleForm?.[0]?.reset();
     this.setAddUserMessage("");
-    this.elements.$instanceUsersList.empty();
+    this.elements.$instanceUsersList?.empty();
   }
 
   resetDeleteTab() {
-    this.elements.$deleteInstanceConfirmInput.val("");
-    this.elements.$confirmDeleteInstanceButton.prop("disabled", true).text("Delete Instance");
+    this.elements.$deleteInstanceConfirmInput?.val("");
+    this.elements.$confirmDeleteInstanceButton?.prop("disabled", true).text("Delete Instance");
     this.setDeleteMessage("");
   }
 
@@ -625,28 +575,39 @@ class ManageInstanceModal extends Modal {
 
   /**
    * @param {object|null} [instance] Omit to create; pass instance row to manage.
-   * @param {{ tab?: string }} [options]
    */
-  show(instance = null, options = {}) {
+  show(instance = null) {
     const isManage = Boolean(instance);
 
     this.createModalElement();
     this.resetForm();
-    this.resetUsersTab();
-    this.resetDeleteTab();
+    this.usersTabLoaded = false;
+    this.instanceUsersTable = null;
 
     this.mode = isManage ? "manage" : "create";
     this.editingInstance = isManage ? instance : null;
     this.editingInstanceGuid = isManage ? instance.guid : null;
     this.instanceName = isManage ? instance.name : null;
 
-    this.elements.$instanceForm[0].reset();
-    this.setFormMessage("");
     this.setModalLayout();
 
     if (isManage) {
       this.setTitle(`Manage — ${instance.name}`);
-      this.elements.$deleteInstanceName.text(instance.name);
+      this.renderManageBody(instance);
+    } else {
+      this.setTitle("Create Instance");
+      this.renderCreateBody();
+      this.elements.$instanceForm?.[0]?.reset();
+    }
+
+    this.setFormMessage("");
+    this.resetUsersTab();
+    this.resetDeleteTab();
+
+    if (isManage) {
+      if (instance.can_delete) {
+        this.elements.$deleteInstanceName.text(instance.name);
+      }
 
       if (instance.can_edit) {
         const urlSegment = instance.url_segment || "";
@@ -661,23 +622,19 @@ class ManageInstanceModal extends Modal {
         this.elements.$instanceSubmitButton.prop("disabled", false).text("Save Changes");
         this.scheduleAliasAvailabilityCheck();
       }
-
-      this.configureTabs(instance, options.tab);
     } else {
-      this.setTitle("Create Instance");
       renderInstancePackageSelection(this.elements.$instancePackageList);
       this.setPackagesFieldEnabled(true);
       this.elements.$instanceSubmitButton.prop("disabled", false).text("Create Instance");
       this.updateUrlHelpForEmpty();
-      for (const tabId of TAB_IDS) {
-        this.elements.$panelWrappers[tabId].prop("hidden", tabId !== "edit");
-      }
     }
 
     this.bindEvents();
     super.show();
-    if (this.isCreateMode() || this.activeTab === "edit") {
-      this.elements.$instanceNameInput.trigger("focus");
+
+    const activeTabId = this.tabbedRegion?.getActiveTab()?.id;
+    if (this.isCreateMode() || activeTabId === "edit") {
+      this.elements.$instanceNameInput?.trigger("focus");
     }
   }
 
@@ -685,18 +642,18 @@ class ManageInstanceModal extends Modal {
     this.resetForm();
     this.resetUsersTab();
     this.resetDeleteTab();
+    this.destroyTabbedRegion();
+    this.elements.$bodyHost?.empty();
     this.mode = "create";
     this.editingInstance = null;
     this.editingInstanceGuid = null;
     this.instanceName = null;
-    this.visibleTabs = [];
-    this.activeTab = "edit";
   }
 
   async onSubmit(event) {
     event.preventDefault();
 
-    if (!this.visibleTabs.includes("edit") && this.isManageMode()) {
+    if (this.isManageMode() && !this.editingInstance?.can_edit) {
       return;
     }
 
@@ -853,6 +810,6 @@ export function openCreateInstanceModal() {
   getManageInstanceModal().show();
 }
 
-export function openManageInstanceModal(instance, options = {}) {
-  getManageInstanceModal().show(instance, options);
+export function openManageInstanceModal(instance) {
+  getManageInstanceModal().show(instance);
 }
