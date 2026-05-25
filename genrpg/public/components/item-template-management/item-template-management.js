@@ -123,14 +123,27 @@ class ManageItemTemplateModal extends Modal {
   }
 
   configureActions() {
+    if (!this.elements.$saveButton?.length) {
+      return;
+    }
     const isEdit = this.isEditMode();
     this.elements.$saveButton.prop("hidden", isEdit);
     this.elements.$saveAndAddButton.prop("hidden", isEdit);
     this.elements.$editSaveButton.prop("hidden", !isEdit);
   }
 
+  prepareShow() {
+    if (!this.domExists) {
+      this.createModalElement();
+      this.bindEvents();
+    }
+  }
+
   setFormMessage(text, tone) {
     const $message = this.elements.$message;
+    if (!$message?.length) {
+      return;
+    }
     $message.text(text || "");
     if (tone) {
       $message.attr("data-tone", tone);
@@ -219,6 +232,7 @@ class ManageItemTemplateModal extends Modal {
     this.instanceGuid = instanceGuid;
     this.templateGuid = null;
     this.onChanged = onChanged;
+    this.prepareShow();
     this.setTitle("Create Item Template");
     this.resetForm();
     this.configureActions();
@@ -235,6 +249,7 @@ class ManageItemTemplateModal extends Modal {
     this.instanceGuid = instanceGuid;
     this.templateGuid = template.guid;
     this.onChanged = onChanged;
+    this.prepareShow();
     this.setTitle(`Edit — ${template.name || "Item Template"}`);
     this.resetForm();
     this.fillForm(template);
