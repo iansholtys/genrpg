@@ -8,6 +8,8 @@ const {
   CharacterPostCreateEvent,
   CharacterPreUpdateEvent,
   CharacterPostUpdateEvent,
+  CharacterPreDeleteEvent,
+  CharacterPostDeleteEvent,
   CharacterPreGetEvent,
   CharacterPostGetEvent,
   getEventDispatcher,
@@ -582,6 +584,48 @@ async function updateCharacter(instanceGuid, characterGuid, instancePackages, pa
   }
 }
 
+async function deleteCharacter(instanceGuid, characterGuid, instancePackages) {
+  const schemaRows = await loadCharacterSchemas(instancePackages);
+  const schemas = schemaRows.map((row) => row.schema);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    for (const schema of schemas.filter((entry) => entry !== "genrpg")) {
+      await client.query(
+        `
+          DELETE FROM ${quoteIdentifier(schema)}.${quoteIdentifier("characters")}
+          WHERE ${quoteColumn("character_guid")} = $1
+        `,
+        [characterGuid],
+      );
+    }
+
+    const coreResult = await client.query(
+      `
+        DELETE FROM genrpg.characters
+        WHERE guid = $1 AND instance_guid = $2
+        RETURNING guid
+      `,
+      [characterGuid, instanceGuid],
+    );
+
+    if (!coreResult.rows.length) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 charactersRouter.get("/instances/:instanceGuid/characters/form", async (req, res, next) => {
   try {
     const { instanceGuid } = req.params;
@@ -735,6 +779,53 @@ charactersRouter.patch("/instances/:instanceGuid/characters/:characterGuid", asy
 
     characters = await dispatchCharacterGetEvents(characters, updateContext);
     res.json({ character: characters[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+charactersRouter.delete("/instances/:instanceGuid/characters/:characterGuid", async (req, res, next) => {
+  try {
+    const { instanceGuid, characterGuid } = req.params;
+    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.edit");
+    if (!instance) return;
+
+    if (!(await characterExistsInInstance(instanceGuid, characterGuid))) {
+      res.status(404).json({ error: "Character not found" });
+      return;
+    }
+
+    const packageNames = await resolveInstancePackageNames(instance.packages);
+    const dispatcher = await getEventDispatcher();
+    const deleteContext = buildCharacterDispatchContext(
+      instanceGuid,
+      packageNames,
+      req.session.user,
+    );
+
+    const pre = new CharacterPreDeleteEvent({
+      ...deleteContext,
+      characterGuid,
+    });
+    await dispatcher.dispatch(pre, packageNames);
+    if (pre.errors.length) {
+      res.status(400).json({ error: pre.errors[0], errors: pre.errors });
+      return;
+    }
+
+    const deleted = await deleteCharacter(instanceGuid, characterGuid, packageNames);
+    if (!deleted) {
+      res.status(404).json({ error: "Character not found" });
+      return;
+    }
+
+    const post = new CharacterPostDeleteEvent({
+      ...deleteContext,
+      characterGuid,
+    });
+    await dispatcher.dispatch(post, packageNames);
+
+    res.status(204).send();
   } catch (error) {
     next(error);
   }

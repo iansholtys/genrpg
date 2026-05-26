@@ -11,5 +11,9 @@ events:
     module: events/characterEvents.js
   - name: CharacterPostUpdateEvent
     module: events/characterEvents.js
+  - name: CharacterPreDeleteEvent
+    module: events/characterEvents.js
+  - name: CharacterPostDeleteEvent
+    module: events/characterEvents.js
 
 subscribers: []

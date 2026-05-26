@@ -1,31 +1,90 @@
-#genrpg-character-management {
-  margin: 0 auto;
-  max-width: 56rem;
+.character-management {
+  &__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  &__message {
+    min-height: 1.25rem;
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+  
+    &[data-tone="error"] {
+      color: var(--danger, #c0392b);
+    }
+  
+    &[data-tone="success"] {
+      color: var(--accent-strong, #2d6a4f);
+    }
+  }
+  
+  &__table {
+    margin-top: 0.25rem;
+  
+    .data-table .actions-cell {
+      text-align: right;
+      white-space: nowrap;
+    }
+  }
 }
 
-.character-management__toolbar {
+.character-actions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
+  gap: 0.25rem;
 
-.character-management__message {
-  min-height: 1.25rem;
-  margin: 0 0 0.75rem;
-  font-size: 0.9rem;
-
-  &[data-tone="error"] {
-    color: var(--danger, #c0392b);
-  }
-
-  &[data-tone="success"] {
-    color: var(--accent-strong, #2d6a4f);
+  &__btn {
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.85rem;
+    line-height: 1;
   }
 }
 
-.character-management__table {
-  margin-top: 0.25rem;
+.manage-character-modal {
+  .character-form {
+    display: grid;
+    gap: 0.75rem;
+
+    &__fieldset {
+      border: 0;
+      margin: 0;
+      padding: 0;
+    }
+
+    &__fields {
+      display: grid;
+      gap: 0.75rem;
+
+      label {
+        display: grid;
+        gap: 0.35rem;
+      }
+    }
+
+    &__message {
+      min-height: 1.25rem;
+      margin: 0;
+      font-size: 0.9rem;
+
+      &[data-tone="error"] {
+        color: var(--danger, #c0392b);
+      }
+    }
+
+    &__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      justify-content: flex-end;
+      margin-top: 0.25rem;
+    }
+  }
 }

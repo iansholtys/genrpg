@@ -99,6 +99,32 @@ class CharacterPostUpdateEvent extends BaseEvent {
   }
 }
 
+class CharacterPreDeleteEvent extends BaseEvent {
+  static eventName = "CharacterPreDeleteEvent";
+
+  constructor({ characterGuid, instanceGuid, instancePackageNames, user, pool }) {
+    super();
+    this.characterGuid = characterGuid;
+    this.instanceGuid = instanceGuid;
+    this.instancePackageNames = instancePackageNames;
+    this.user = user;
+    this.pool = pool;
+  }
+}
+
+class CharacterPostDeleteEvent extends BaseEvent {
+  static eventName = "CharacterPostDeleteEvent";
+
+  constructor({ characterGuid, instanceGuid, instancePackageNames, user, pool }) {
+    super();
+    this.characterGuid = characterGuid;
+    this.instanceGuid = instanceGuid;
+    this.instancePackageNames = instancePackageNames;
+    this.user = user;
+    this.pool = pool;
+  }
+}
+
 module.exports = {
   CharacterPreGetEvent,
   CharacterPostGetEvent,
@@ -106,4 +132,6 @@ module.exports = {
   CharacterPostCreateEvent,
   CharacterPreUpdateEvent,
   CharacterPostUpdateEvent,
+  CharacterPreDeleteEvent,
+  CharacterPostDeleteEvent,
 };

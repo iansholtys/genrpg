@@ -1,5 +1,5 @@
 /**
- * Character management — table of instance characters and create modal.
+ * Character management — CRUD UI for instance characters.
  */
 class CharacterManagement {
   static defaultId = "genrpg-character-management";
@@ -50,6 +50,7 @@ class CharacterManagement {
       displayName: core.display_name || core.full_name || character.guid,
       pronouns: core.pronouns || "",
       appearance: core.appearance || "",
+      packages: character.packages || {},
     };
   }
 
@@ -105,18 +106,26 @@ class CharacterManagement {
     this.table.setData(rows);
   }
 
-  async openCreateModal() {
-    const metadata = await this.requestJson(`${this.apiBase()}/form`);
-    if (!metadata) {
+  async deleteCharacter(row) {
+    if (!window.confirm("Delete this character?")) {
       return;
     }
 
-    const modal = new CreateCharacterModal(
-      this.instanceGuid,
-      metadata,
-      () => this.loadCharacters(),
-    );
-    modal.show();
+    try {
+      await this.requestJson(`${this.apiBase()}/${row.guid}`, { method: "DELETE" });
+      this.setMessage("Character deleted.", "success");
+      await this.loadCharacters();
+    } catch (error) {
+      this.setMessage(error.message, "error");
+    }
+  }
+
+  static getManageCharacterModal() {
+    if (!CharacterManagement._manageCharacterModal) {
+      CharacterManagement._manageCharacterModal = new ManageCharacterModal();
+      CharacterManagement._manageCharacterModal.init();
+    }
+    return CharacterManagement._manageCharacterModal;
   }
 
   ensureTable() {
@@ -149,6 +158,44 @@ class CharacterManagement {
           valueFunction: (row) => row.appearance || "",
           renderFunction: (value) =>
             CharacterManagement.escapeHtml(CharacterManagement.appearancePreview(value)),
+        },
+        {
+          title: "Actions",
+          sortable: false,
+          headerClass: "actions-cell",
+          cellClass: "actions-cell",
+          renderFunction: (_value, row) => {
+            const $container = $("<div>", { class: "character-actions" });
+            $container.append(
+              $("<button>", {
+                type: "button",
+                class: "secondary-button character-actions__btn",
+                title: "Edit",
+                "aria-label": "Edit",
+                text: "✏️",
+              }).on("click", (event) => {
+                event.stopPropagation();
+                void CharacterManagement.getManageCharacterModal().showEdit(
+                  this.instanceGuid,
+                  row,
+                  () => this.loadCharacters(),
+                );
+              }),
+            );
+            $container.append(
+              $("<button>", {
+                type: "button",
+                class: "danger-button-outline character-actions__btn",
+                title: "Delete",
+                "aria-label": "Delete",
+                text: "🗑️",
+              }).on("click", (event) => {
+                event.stopPropagation();
+                void this.deleteCharacter(row);
+              }),
+            );
+            return $container;
+          },
         },
       ],
       emptyState: {
@@ -197,9 +244,9 @@ class CharacterManagement {
   bindEvents() {
     const ns = this.eventNs;
     this.elements.$addButton.on("click" + ns, () => {
-      this.openCreateModal().catch((error) => {
-        this.setMessage(error.message, "error");
-      });
+      void CharacterManagement.getManageCharacterModal().showCreate(this.instanceGuid, () =>
+        this.loadCharacters(),
+      );
     });
   }
 
@@ -241,18 +288,52 @@ class CharacterManagement {
   }
 }
 
-class CreateCharacterModal extends Modal {
-  constructor(instanceGuid, metadata, onCreated) {
-    super("create-character-modal", "Create Character", {
+class ManageCharacterModal extends Modal {
+  constructor() {
+    super("manage-character-modal", "Create Character", {
       maxWidth: "44rem",
       width: "94vw",
       enterAnimation: { preset: "scale-down", duration: 200 },
       exitAnimation: { preset: "scale-up", duration: 200 },
-      classes: ["create-character-modal"],
+      classes: ["manage-character-modal"],
     });
-    this.instanceGuid = instanceGuid;
-    this.metadata = metadata;
-    this.onCreated = onCreated;
+
+    this.instanceGuid = null;
+    this.characterGuid = null;
+    this.metadata = null;
+    this.onChanged = null;
+    this.eventNs = ".manage-character-modal";
+  }
+
+  apiBase() {
+    return `/api/genrpg/instances/${this.instanceGuid}/characters`;
+  }
+
+  async requestJson(url, options) {
+    const response = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+
+    if (response.status === 401) {
+      window.location.assign("/login");
+      return null;
+    }
+
+    if (response.status === 204) {
+      return {};
+    }
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Request failed");
+    }
+
+    return data;
+  }
+
+  isEditMode() {
+    return Boolean(this.characterGuid);
   }
 
   buildField(schema, column) {
@@ -289,13 +370,26 @@ class CreateCharacterModal extends Modal {
   }
 
   getContent() {
-    this.$message = $("<div>", { class: "message", role: "status" });
-    this.$submit = $("<button>", {
+    this.elements = {};
+
+    this.elements.$message = $("<div>", { class: "character-form__message message", role: "status" });
+    this.elements.$createSubmit = $("<button>", {
       type: "submit",
       class: "primary-button",
       text: "Create Character",
     });
-    this.$form = $("<form>", { class: "character-form" }).append(this.$message);
+    this.elements.$editSubmit = $("<button>", {
+      type: "submit",
+      class: "primary-button",
+      text: "Save",
+    });
+    this.elements.$cancelButton = $("<button>", {
+      type: "button",
+      class: "secondary-button",
+      text: "Cancel",
+    });
+
+    this.elements.$form = $("<form>", { class: "character-form" }).append(this.elements.$message);
 
     for (const schema of this.metadata.schemas || []) {
       const $fields = $("<div>", { class: "character-form__fields" });
@@ -303,7 +397,7 @@ class CreateCharacterModal extends Modal {
         $fields.append(this.buildField(schema.schema, column));
       }
 
-      this.$form.append(
+      this.elements.$form.append(
         $("<fieldset>", { class: "character-form__fieldset" }).append(
           $("<legend>", { text: schema.label || schema.schema }),
           $fields.children().length
@@ -313,18 +407,51 @@ class CreateCharacterModal extends Modal {
       );
     }
 
-    this.$form.append(this.$submit);
-    this.$form.on("submit", (event) => this.handleSubmit(event));
-    return this.$form;
+    this.elements.$actions = $("<div>", { class: "character-form__actions" }).append(
+      this.elements.$cancelButton,
+      this.elements.$createSubmit,
+      this.elements.$editSubmit,
+    );
+    this.elements.$form.append(this.elements.$actions);
+
+    this.elements.$form.on("submit" + this.eventNs, (event) => {
+      event.preventDefault();
+      void this.handleSubmit();
+    });
+    this.elements.$cancelButton.on("click" + this.eventNs, () => this.hide());
+
+    return this.elements.$form;
+  }
+
+  configureActions() {
+    const isEdit = this.isEditMode();
+    this.elements.$createSubmit?.prop("hidden", isEdit);
+    this.elements.$editSubmit?.prop("hidden", !isEdit);
+  }
+
+  prepareShow() {
+    if (!this.domExists) {
+      this.createModalElement();
+      this.bindEvents();
+    }
   }
 
   setFormMessage(text, tone) {
-    this.$message.text(text || "");
-    if (tone) {
-      this.$message.attr("data-tone", tone);
-    } else {
-      this.$message.removeAttr("data-tone");
+    const $message = this.elements.$message;
+    if (!$message?.length) {
+      return;
     }
+    $message.text(text || "");
+    if (tone) {
+      $message.attr("data-tone", tone);
+    } else {
+      $message.removeAttr("data-tone");
+    }
+  }
+
+  resetForm() {
+    this.elements.$form?.[0]?.reset();
+    this.setFormMessage("");
   }
 
   gatherPayload() {
@@ -333,7 +460,7 @@ class CreateCharacterModal extends Modal {
       packages[schema.schema] = {};
     }
 
-    this.$form.find("input, textarea, select").each((_, element) => {
+    this.elements.$form.find("input, textarea, select").each((_, element) => {
       const $input = $(element);
       const schema = $input.attr("data-schema");
       const name = $input.attr("name");
@@ -357,34 +484,125 @@ class CreateCharacterModal extends Modal {
     return { packages };
   }
 
-  async handleSubmit(event) {
-    event.preventDefault();
-    this.$submit.prop("disabled", true);
-    this.setFormMessage("Creating character...");
+  async handleSubmit() {
+    this.setSaving(true);
+    this.setFormMessage(this.isEditMode() ? "Saving character..." : "Creating character...");
 
     try {
-      const response = await fetch(`/api/genrpg/instances/${this.instanceGuid}/characters`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(this.gatherPayload()),
-      });
-
-      if (response.status === 401) {
-        window.location.assign("/login");
-        return;
+      const payload = this.gatherPayload();
+      if (this.isEditMode()) {
+        await this.requestJson(`${this.apiBase()}/${this.characterGuid}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await this.requestJson(this.apiBase(), {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
       }
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Request failed");
+      if (this.onChanged) {
+        await this.onChanged();
       }
 
       this.hide();
-      await this.onCreated();
     } catch (error) {
       this.setFormMessage(error.message, "error");
     } finally {
-      this.$submit.prop("disabled", false);
+      this.setSaving(false);
     }
+  }
+
+  setSaving(disabled) {
+    this.elements.$createSubmit?.prop("disabled", disabled);
+    this.elements.$editSubmit?.prop("disabled", disabled);
+    this.elements.$cancelButton?.prop("disabled", disabled);
+  }
+
+  async loadFormMetadata() {
+    const data = await this.requestJson(`${this.apiBase()}/form`);
+    if (!data) {
+      return false;
+    }
+    this.metadata = data;
+    return true;
+  }
+
+  /**
+   * @param {string} instanceGuid
+   * @param {() => void|Promise<void>} onChanged
+   */
+  async showCreate(instanceGuid, onChanged) {
+    this.instanceGuid = instanceGuid;
+    this.characterGuid = null;
+    this.onChanged = onChanged;
+    this.setTitle("Create Character");
+
+    const loaded = await this.loadFormMetadata();
+    if (!loaded) {
+      return;
+    }
+
+    this.prepareShow();
+    this.resetForm();
+    this.configureActions();
+    super.show();
+  }
+
+  /**
+   * @param {string} instanceGuid
+   * @param {Object} row
+   * @param {() => void|Promise<void>} onChanged
+   */
+  async showEdit(instanceGuid, row, onChanged) {
+    this.instanceGuid = instanceGuid;
+    this.characterGuid = row.guid;
+    this.onChanged = onChanged;
+    this.setTitle(`Edit — ${row.displayName || "Character"}`);
+
+    const loaded = await this.loadFormMetadata();
+    if (!loaded) {
+      return;
+    }
+
+    this.prepareShow();
+    this.resetForm();
+
+    // Form fields come from /form metadata (labels, types) — not character values.
+    // Apply row.packages so edit mode shows current data (inverse of gatherPayload).
+    const packageData = row.packages && typeof row.packages === "object" ? row.packages : {};
+    this.elements.$form.find("input, textarea, select").each((_, element) => {
+      const $input = $(element);
+      const schema = $input.attr("data-schema");
+      const name = $input.attr("name");
+      if (!schema || !name) {
+        return;
+      }
+
+      const value = packageData[schema]?.[name];
+      if ($input.attr("type") === "checkbox") {
+        $input.prop("checked", Boolean(value));
+        return;
+      }
+
+      if (value === null || value === undefined) {
+        $input.val("");
+        return;
+      }
+
+      $input.val(String(value));
+    });
+
+    this.configureActions();
+    super.show();
+  }
+
+  onHide() {
+    this.resetForm();
+    this.instanceGuid = null;
+    this.characterGuid = null;
+    this.metadata = null;
+    this.onChanged = null;
   }
 }
