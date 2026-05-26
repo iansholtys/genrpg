@@ -83,8 +83,6 @@ class ManageCharacterModal extends Modal {
   }
 
   getContent() {
-    this.elements = {};
-
     this.elements.$message = $("<div>", { class: "character-form__message message", role: "status" });
     this.elements.$createSubmit = $("<button>", {
       type: "submit",
