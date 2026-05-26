@@ -239,4 +239,33 @@ module.exports = {
       ON CONFLICT (alias) DO NOTHING;
     `);
   },
+
+  5: async (client) => {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS genrpg.items (
+        guid uuid PRIMARY KEY,
+        instance_guid uuid NOT NULL REFERENCES genrpg.instances(guid) ON DELETE CASCADE,
+        item_template_guid uuid NOT NULL REFERENCES genrpg.item_templates(guid) ON DELETE RESTRICT,
+        name text,
+        description text,
+        weight double precision,
+        create_datetime timestamptz NOT NULL DEFAULT now(),
+        update_datetime timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_items_instance
+        ON genrpg.items(instance_guid);
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_items_template
+        ON genrpg.items(item_template_guid);
+    `);
+    await client.query(`
+      DROP TRIGGER IF EXISTS items_update_datetime ON genrpg.items;
+      CREATE TRIGGER items_update_datetime
+        BEFORE UPDATE ON genrpg.items
+        FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();
+    `);
+  },
 };

@@ -1,0 +1,10 @@
+.items-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.items-panel__templates {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border-subtle, #ddd);
+}

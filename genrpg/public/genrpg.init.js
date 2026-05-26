@@ -3,7 +3,7 @@
   const { Menu, Modal } = window;
   let appLayout = null;
   let contentTabs = null;
-  let itemTemplateManagement = null;
+  let itemsPanel = null;
   let characterManagement = null;
   let instanceMenu = null;
   let settingsModal = null;
@@ -75,7 +75,7 @@
 
     appLayout.getSection("header").append(instanceMenu.init());
 
-    itemTemplateManagement = new ItemTemplateManagement({
+    itemsPanel = new ItemsPanel({
       instanceGuid: detail.instanceGuid,
     });
     characterManagement = new CharacterManagement({
@@ -87,7 +87,7 @@
       ariaLabel: "Instance content",
     });
     contentTabs
-      .addTab("item-templates", "Item Templates", itemTemplateManagement.init())
+      .addTab("items", "Items", itemsPanel.init())
       .addTab("characters", "Characters", characterManagement.init());
 
     appLayout.getSection("content").append(contentTabs.init());
@@ -100,8 +100,8 @@
     settingsModal?.destroy();
     settingsModal = null;
 
-    itemTemplateManagement?.destroy();
-    itemTemplateManagement = null;
+    itemsPanel?.destroy();
+    itemsPanel = null;
 
     characterManagement?.destroy();
     characterManagement = null;

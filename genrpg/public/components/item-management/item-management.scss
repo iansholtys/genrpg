@@ -1,4 +1,4 @@
-.item-template-management {
+.item-management {
   &__header {
     display: flex;
     flex-wrap: wrap;
@@ -35,7 +35,7 @@
   }
 }
 
-.item-template-actions {
+.item-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -50,8 +50,8 @@
   }
 }
 
-.manage-item-template-modal {
-  .item-template-modal {
+.manage-item-modal {
+  .item-modal {
     &__form {
       display: grid;
       gap: 0.75rem;
@@ -60,6 +60,12 @@
         display: grid;
         gap: 0.35rem;
       }
+    }
+
+    &__hint {
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--text-muted, #666);
     }
 
     &__message {

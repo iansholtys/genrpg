@@ -1,4 +1,4 @@
-.item-template-management__header {
+.item-management__header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -6,34 +6,34 @@
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
-.item-template-management__heading {
+.item-management__heading {
   margin: 0;
 }
-.item-template-management__message {
+.item-management__message {
   min-height: 1.25rem;
   font-size: 0.9rem;
 }
-.item-template-management__message[data-tone=error] {
+.item-management__message[data-tone=error] {
   color: var(--danger, #c0392b);
 }
-.item-template-management__message[data-tone=success] {
+.item-management__message[data-tone=success] {
   color: var(--accent-strong, #2d6a4f);
 }
-.item-template-management__table {
+.item-management__table {
   margin-top: 0.5rem;
 }
-.item-template-management__table .data-table .actions-cell {
+.item-management__table .data-table .actions-cell {
   text-align: right;
   white-space: nowrap;
 }
 
-.item-template-actions {
+.item-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 0.25rem;
 }
-.item-template-actions__btn {
+.item-actions__btn {
   min-width: 1.75rem;
   min-height: 1.75rem;
   padding: 0.1rem 0.35rem;
@@ -41,23 +41,28 @@
   line-height: 1;
 }
 
-.manage-item-template-modal .item-template-modal__form {
+.manage-item-modal .item-modal__form {
   display: grid;
   gap: 0.75rem;
 }
-.manage-item-template-modal .item-template-modal__form label {
+.manage-item-modal .item-modal__form label {
   display: grid;
   gap: 0.35rem;
 }
-.manage-item-template-modal .item-template-modal__message {
+.manage-item-modal .item-modal__hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, #666);
+}
+.manage-item-modal .item-modal__message {
   min-height: 1.25rem;
   margin: 0;
   font-size: 0.9rem;
 }
-.manage-item-template-modal .item-template-modal__message[data-tone=error] {
+.manage-item-modal .item-modal__message[data-tone=error] {
   color: var(--danger, #c0392b);
 }
-.manage-item-template-modal .item-template-modal__actions {
+.manage-item-modal .item-modal__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
