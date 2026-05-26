@@ -111,7 +111,7 @@ class ManageItemTemplateModal extends Modal {
 
     this.elements.$form.on("submit" + this.eventNs, (event) => {
       event.preventDefault();
-      void this.handleSave({ closeAfter: !this.isEditMode() });
+      void this.handleSave({ closeAfter: this.isEditMode() });
     });
 
     this.elements.$cancelButton.on("click" + this.eventNs, () => this.hide());
