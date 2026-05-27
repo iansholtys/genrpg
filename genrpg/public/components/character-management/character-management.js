@@ -318,6 +318,435 @@ class ManageCharacterModal extends Modal {
   }
 }
 
+class ManageInventoryModal extends Modal {
+  constructor() {
+    super("manage-inventory-modal", "Manage Inventory", {
+      maxWidth: "52rem",
+      width: "94vw",
+      enterAnimation: { preset: "scale-down", duration: 200 },
+      exitAnimation: { preset: "scale-up", duration: 200 },
+      classes: ["manage-inventory-modal"],
+    });
+
+    this.instanceGuid = null;
+    this.characterGuid = null;
+    this.characterName = "";
+    this.primaryCollectionGuid = null;
+    this.inventoryTable = null;
+    this.eventNs = ".manage-inventory-modal";
+  }
+
+  apiBase() {
+    return `/api/genrpg/instances/${this.instanceGuid}`;
+  }
+
+  async requestJson(url, options) {
+    const response = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+
+    if (response.status === 401) {
+      window.location.assign("/login");
+      return null;
+    }
+
+    if (response.status === 204) {
+      return {};
+    }
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Request failed");
+    }
+
+    return data;
+  }
+
+  static escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (character) => {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      }[character];
+    });
+  }
+
+  static formatWeight(weight) {
+    if (weight === null || weight === undefined || weight === "") {
+      return "—";
+    }
+    return String(weight);
+  }
+
+  getContent() {
+    this.elements.$message = $("<p>", {
+      class: "manage-inventory-modal__message",
+      role: "status",
+    });
+
+    this.elements.$itemSelect = $("<select>", {
+      id: "manage-inventory-item-select",
+      name: "itemGuid",
+      required: true,
+    }).append($("<option>", { value: "", text: "Select an item", disabled: true, selected: true }));
+
+    this.elements.$pickUpButton = $("<button>", {
+      type: "submit",
+      class: "primary-button",
+      text: "Pick Up",
+    });
+
+    this.elements.$pickUpForm = $("<form>", { class: "manage-inventory-modal__pickup" }).append(
+      $("<label>", { for: "manage-inventory-item-select" }).append(
+        $("<span>", { text: "Item on the ground" }),
+        this.elements.$itemSelect,
+      ),
+      this.elements.$pickUpButton,
+    );
+
+    this.elements.$inventoryTableHost = $("<div>", {
+      class: "manage-inventory-modal__inventory-table",
+    });
+
+    this.elements.$closeButton = $("<button>", {
+      type: "button",
+      class: "secondary-button",
+      text: "Close",
+    });
+
+    this.elements.$pickUpForm.on("submit" + this.eventNs, (event) => {
+      event.preventDefault();
+      void this.handlePickUp();
+    });
+    this.elements.$closeButton.on("click" + this.eventNs, () => this.hide());
+
+    return $("<div>", { class: "manage-inventory-modal__body" }).append(
+      this.elements.$message,
+      this.elements.$pickUpForm,
+      $("<h3>", { class: "manage-inventory-modal__heading", text: "Carried items" }),
+      this.elements.$inventoryTableHost,
+      $("<div>", { class: "manage-inventory-modal__footer" }).append(this.elements.$closeButton),
+    );
+  }
+
+  prepareShow() {
+    if (!this.domExists) {
+      this.createModalElement();
+      this.bindEvents();
+    }
+  }
+
+  setMessage(text, tone) {
+    const $message = this.elements.$message;
+    if (!$message?.length) {
+      return;
+    }
+    $message.text(text || "");
+    if (tone) {
+      $message.attr("data-tone", tone);
+    } else {
+      $message.removeAttr("data-tone");
+    }
+  }
+
+  setBusy(busy) {
+    this.elements.$pickUpButton?.prop("disabled", busy);
+    this.elements.$itemSelect?.prop("disabled", busy);
+    this.elements.$closeButton?.prop("disabled", busy);
+  }
+
+  ensureInventoryTable() {
+    if (this.inventoryTable) {
+      return this.inventoryTable;
+    }
+
+    this.inventoryTable = new Table({
+      id: "character-inventory-table",
+      rowCount: { show: true, nounSingular: "item", nounPlural: "items" },
+      searchPlaceholder: "Search inventory…",
+      defaultSort: { field: "name" },
+      columns: [
+        {
+          title: "Name",
+          field: "name",
+          searchable: true,
+          renderFunction: (value) => ManageInventoryModal.escapeHtml(value || ""),
+        },
+        {
+          title: "Description",
+          field: "description",
+          searchable: true,
+          sortable: false,
+          renderFunction: (value) => ManageInventoryModal.escapeHtml(value || "—"),
+        },
+        {
+          title: "Weight",
+          field: "weight",
+          renderFunction: (value) =>
+            ManageInventoryModal.escapeHtml(ManageInventoryModal.formatWeight(value)),
+        },
+        {
+          title: "Actions",
+          sortable: false,
+          headerClass: "actions-cell",
+          cellClass: "actions-cell",
+          renderFunction: (_value, row) => {
+            return $("<button>", {
+              type: "button",
+              class: "secondary-button",
+              text: "Drop",
+            }).on("click", (event) => {
+              event.stopPropagation();
+              void this.handleDrop(row);
+            });
+          },
+        },
+      ],
+      emptyState: {
+        message: "No items",
+        icon: "",
+        detailNoData: "Pick up an item using the form above.",
+      },
+    });
+
+    this.elements.$inventoryTableHost.empty().append(this.inventoryTable.init());
+    return this.inventoryTable;
+  }
+
+  async loadContainedItemGuids() {
+    const collectionsData = await this.requestJson(`${this.apiBase()}/item-collections`);
+    if (!collectionsData) {
+      return new Set();
+    }
+
+    const collections = collectionsData.itemCollections || [];
+    const contained = new Set();
+
+    await Promise.all(
+      collections.map(async (collection) => {
+        const contentsData = await this.requestJson(
+          `${this.apiBase()}/item-collections/${collection.guid}/contents`,
+        );
+        if (!contentsData) {
+          return;
+        }
+        for (const content of contentsData.contents || []) {
+          if (content.item_guid) {
+            contained.add(content.item_guid);
+          }
+        }
+      }),
+    );
+
+    return contained;
+  }
+
+  async resolvePrimaryCollectionGuid() {
+    const data = await this.requestJson(
+      `${this.apiBase()}/inventories?characterGuid=${encodeURIComponent(this.characterGuid)}`,
+    );
+    if (!data) {
+      return null;
+    }
+
+    const inventories = data.inventories || [];
+    if (!inventories.length) {
+      return null;
+    }
+
+    return inventories[0].collection_guid;
+  }
+
+  async loadAvailableItems() {
+    const [itemsData, containedGuids] = await Promise.all([
+      this.requestJson(`${this.apiBase()}/items`),
+      this.loadContainedItemGuids(),
+    ]);
+    if (!itemsData) {
+      return [];
+    }
+
+    return (itemsData.items || []).filter((item) => !containedGuids.has(item.guid));
+  }
+
+  populateItemSelect(items) {
+    const $select = this.elements.$itemSelect;
+    $select.empty();
+    $select.append(
+      $("<option>", { value: "", text: "Select an item", disabled: true, selected: true }),
+    );
+
+    for (const item of items) {
+      const label = item.effectiveName || item.name || item.guid;
+      $select.append($("<option>", { value: item.guid, text: label }));
+    }
+  }
+
+  async loadInventoryRows() {
+    const [inventoriesData, itemsData] = await Promise.all([
+      this.requestJson(
+        `${this.apiBase()}/inventories?characterGuid=${encodeURIComponent(this.characterGuid)}`,
+      ),
+      this.requestJson(`${this.apiBase()}/items`),
+    ]);
+    if (!inventoriesData || !itemsData) {
+      return [];
+    }
+
+    const itemsByGuid = new Map((itemsData.items || []).map((item) => [item.guid, item]));
+    const inventories = inventoriesData.inventories || [];
+    const rows = [];
+
+    for (const inventory of inventories) {
+      const contentsData = await this.requestJson(
+        `${this.apiBase()}/item-collections/${inventory.collection_guid}/contents`,
+      );
+      if (!contentsData) {
+        continue;
+      }
+
+      for (const content of contentsData.contents || []) {
+        if (!content.item_guid) {
+          continue;
+        }
+
+        const item = itemsByGuid.get(content.item_guid);
+        rows.push({
+          contentGuid: content.guid,
+          collectionGuid: inventory.collection_guid,
+          itemGuid: content.item_guid,
+          name: item?.effectiveName || item?.name || content.item_guid,
+          description: item?.effectiveDescription ?? item?.description ?? "",
+          weight: item?.effectiveWeight ?? item?.weight ?? null,
+        });
+      }
+    }
+
+    return rows;
+  }
+
+  async refresh() {
+    this.setMessage("Loading inventory…");
+    this.setBusy(true);
+
+    try {
+      this.primaryCollectionGuid = await this.resolvePrimaryCollectionGuid();
+      const [availableItems, inventoryRows] = await Promise.all([
+        this.loadAvailableItems(),
+        this.loadInventoryRows(),
+      ]);
+
+      this.populateItemSelect(availableItems);
+      this.ensureInventoryTable().setData(inventoryRows);
+      this.setMessage("");
+    } catch (error) {
+      this.setMessage(error.message, "error");
+    } finally {
+      this.setBusy(false);
+    }
+  }
+
+  async nextContentPosition(collectionGuid) {
+    const contentsData = await this.requestJson(
+      `${this.apiBase()}/item-collections/${collectionGuid}/contents`,
+    );
+    if (!contentsData) {
+      return 0;
+    }
+
+    let maxPosition = -1;
+    for (const content of contentsData.contents || []) {
+      if (typeof content.position === "number" && content.position > maxPosition) {
+        maxPosition = content.position;
+      }
+    }
+    return maxPosition + 1;
+  }
+
+  async handlePickUp() {
+    const itemGuid = this.elements.$itemSelect?.val();
+    if (!itemGuid) {
+      this.setMessage("Select an item to pick up.", "error");
+      return;
+    }
+
+    if (!this.primaryCollectionGuid) {
+      this.setMessage("This character has no inventory collection.", "error");
+      return;
+    }
+
+    this.setBusy(true);
+    this.setMessage("Picking up item…");
+
+    try {
+      const position = await this.nextContentPosition(this.primaryCollectionGuid);
+      await this.requestJson(
+        `${this.apiBase()}/item-collections/${this.primaryCollectionGuid}/contents`,
+        {
+          method: "POST",
+          body: JSON.stringify({ itemGuid, position }),
+        },
+      );
+      await this.refresh();
+      this.setMessage("Item picked up.", "success");
+    } catch (error) {
+      this.setMessage(error.message, "error");
+      this.setBusy(false);
+    }
+  }
+
+  async handleDrop(row) {
+    if (!window.confirm(`Drop ${row.name || "this item"}?`)) {
+      return;
+    }
+
+    this.setBusy(true);
+    this.setMessage("Dropping item…");
+
+    try {
+      await this.requestJson(
+        `${this.apiBase()}/item-collections/${row.collectionGuid}/contents/${row.contentGuid}`,
+        { method: "DELETE" },
+      );
+      await this.refresh();
+      this.setMessage("Item dropped.", "success");
+    } catch (error) {
+      this.setMessage(error.message, "error");
+      this.setBusy(false);
+    }
+  }
+
+  /**
+   * @param {string} instanceGuid
+   * @param {Object} row
+   */
+  async show(instanceGuid, row) {
+    this.instanceGuid = instanceGuid;
+    this.characterGuid = row.guid;
+    this.characterName = row.displayName || "Character";
+    this.setTitle(`Manage Inventory — ${this.characterName}`);
+
+    this.prepareShow();
+    this.ensureInventoryTable();
+    super.show();
+    await this.refresh();
+  }
+
+  onHide() {
+    this.instanceGuid = null;
+    this.characterGuid = null;
+    this.characterName = "";
+    this.primaryCollectionGuid = null;
+    this.setMessage("");
+    this.elements.$itemSelect?.empty();
+    this.inventoryTable?.setData([]);
+  }
+}
+
 class CharacterManagement {
   static defaultId = "genrpg-character-management";
 
@@ -445,6 +874,14 @@ class CharacterManagement {
     return CharacterManagement._manageCharacterModal;
   }
 
+  static getManageInventoryModal() {
+    if (!CharacterManagement._manageInventoryModal) {
+      CharacterManagement._manageInventoryModal = new ManageInventoryModal();
+      CharacterManagement._manageInventoryModal.init();
+    }
+    return CharacterManagement._manageInventoryModal;
+  }
+
   ensureTable() {
     if (this.table) {
       return this.table;
@@ -497,6 +934,18 @@ class CharacterManagement {
                   row,
                   () => this.loadCharacters(),
                 );
+              }),
+            );
+            $container.append(
+              $("<button>", {
+                type: "button",
+                class: "secondary-button character-actions__btn",
+                title: "Manage Inventory",
+                "aria-label": "Manage Inventory",
+                text: "🎒",
+              }).on("click", (event) => {
+                event.stopPropagation();
+                void CharacterManagement.getManageInventoryModal().show(this.instanceGuid, row);
               }),
             );
             $container.append(

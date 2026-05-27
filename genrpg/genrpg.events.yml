@@ -16,4 +16,8 @@ events:
   - name: CharacterPostDeleteEvent
     module: events/characterEvents.js
 
-subscribers: []
+subscribers:
+  - module: subscribers/characterInventorySubscriber.js
+    listens:
+      - event: CharacterPostCreateEvent
+        method: onCharacterPostCreate
