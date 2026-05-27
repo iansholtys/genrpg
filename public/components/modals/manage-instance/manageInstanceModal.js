@@ -1,6 +1,5 @@
-import { getElements } from "../../../js/elements.js";
 import { requestJson } from "../../../js/api.js";
-import { setMessage } from "../../../js/utils.js";
+import { notify } from "../../../js/utils.js";
 import { loadApp } from "../../../js/app.js";
 import { loadRoles } from "../../../js/roles.js";
 import {
@@ -80,12 +79,6 @@ class ManageInstanceModal extends Modal {
   }
 
   buildEditPanel() {
-    this.elements.$instanceMessage = $("<div>", {
-      id: "manageInstanceMessage",
-      class: "message",
-      role: "status",
-    });
-
     this.elements.$instanceNameInput = $("<input>", {
       type: "text",
       name: "instanceName",
@@ -147,7 +140,6 @@ class ManageInstanceModal extends Modal {
         $("<legend>", { text: "Packages" }),
         this.elements.$instancePackageList,
       ),
-      this.elements.$instanceMessage,
       this.elements.$instanceSubmitButton,
     );
 
@@ -182,16 +174,9 @@ class ManageInstanceModal extends Modal {
       $("<button>", { type: "submit", text: "Assign Role" }),
     );
 
-    this.elements.$addUserMessage = $("<div>", {
-      id: "addUserMessage",
-      class: "message",
-      role: "status",
-    });
-
     this.elements.$instanceUsersList = $("<div>", { id: "instanceUsersList" });
 
     return this.elements.$addUserRoleForm
-      .add(this.elements.$addUserMessage)
       .add($("<hr>"))
       .add($("<h3>", { text: "Current Users" }))
       .add(this.elements.$instanceUsersList);
@@ -208,12 +193,6 @@ class ManageInstanceModal extends Modal {
       id: "deleteInstanceConfirmInput",
       autocomplete: "off",
       placeholder: "Instance name",
-    });
-
-    this.elements.$deleteInstanceMessage = $("<div>", {
-      id: "deleteInstanceMessage",
-      class: "message",
-      role: "status",
     });
 
     this.elements.$confirmDeleteInstanceButton = $("<button>", {
@@ -241,7 +220,6 @@ class ManageInstanceModal extends Modal {
           this.elements.$deleteInstanceConfirmInput,
         ),
       )
-      .add(this.elements.$deleteInstanceMessage)
       .add(this.elements.$confirmDeleteInstanceButton);
   }
 
@@ -437,22 +415,6 @@ class ManageInstanceModal extends Modal {
     this.scheduleAliasAvailabilityCheck();
   }
 
-  setFormMessage(message, tone = "neutral") {
-    setMessage(this.elements.$instanceMessage, message, tone);
-  }
-
-  setAddUserMessage(message, tone = "neutral") {
-    if (this.elements.$addUserMessage) {
-      setMessage(this.elements.$addUserMessage, message, tone);
-    }
-  }
-
-  setDeleteMessage(message, tone = "neutral") {
-    if (this.elements.$deleteInstanceMessage) {
-      setMessage(this.elements.$deleteInstanceMessage, message, tone);
-    }
-  }
-
   setPackagesFieldEnabled(enabled) {
     this.elements.$instancePackageList.find('input[name="package"]').each(function () {
       const isGenrpg = this.dataset.machineName === "genrpg";
@@ -473,14 +435,12 @@ class ManageInstanceModal extends Modal {
     this.usersTabLoaded = false;
     this.instanceUsersTable = null;
     this.elements.$addUserRoleForm?.[0]?.reset();
-    this.setAddUserMessage("");
     this.elements.$instanceUsersList?.empty();
   }
 
   resetDeleteTab() {
     this.elements.$deleteInstanceConfirmInput?.val("");
     this.elements.$confirmDeleteInstanceButton?.prop("disabled", true).text("Delete Instance");
-    this.setDeleteMessage("");
   }
 
   buildInstanceUsersTable(users) {
@@ -530,12 +490,8 @@ class ManageInstanceModal extends Modal {
       this.buildInstanceUsersTable(data?.users || []);
     } catch (err) {
       this.instanceUsersTable = null;
-      this.elements.$instanceUsersList.empty().append(
-        $("<p>", {
-          class: "empty-state",
-          text: `Failed to load users: ${err.message}`,
-        }),
-      );
+      this.elements.$instanceUsersList.empty();
+      notify(err.message, "error");
     }
   }
 
@@ -587,7 +543,6 @@ class ManageInstanceModal extends Modal {
       this.elements.$instanceForm?.[0]?.reset();
     }
 
-    this.setFormMessage("");
     this.resetUsersTab();
     this.resetDeleteTab();
 
@@ -665,10 +620,10 @@ class ManageInstanceModal extends Modal {
           body: JSON.stringify(body),
         });
         this.hide();
-        setMessage(getElements().$message, "Instance updated.", "success");
+        notify("Instance updated.", "success");
         await loadApp();
       } catch (error) {
-        this.setFormMessage(error.message, "error");
+        notify(error.message, "error");
         $btn.prop("disabled", false).text("Save Changes");
         this.updateSubmitDisabled();
       }
@@ -677,7 +632,7 @@ class ManageInstanceModal extends Modal {
 
     const selectedPackages = getSelectedPackages(this.elements.$instancePackageList);
     if (!selectedPackages.length) {
-      this.setFormMessage("Select at least one package.", "error");
+      notify("Select at least one package.", "error");
       $btn.prop("disabled", false);
       return;
     }
@@ -698,10 +653,10 @@ class ManageInstanceModal extends Modal {
         body: JSON.stringify(body),
       });
       this.hide();
-      setMessage(getElements().$message, "Instance created.", "success");
+      notify("Instance created.", "success");
       await loadApp();
     } catch (error) {
-      this.setFormMessage(error.message, "error");
+      notify(error.message, "error");
       $btn.prop("disabled", false).text("Create Instance");
       this.updateSubmitDisabled();
     }
@@ -718,7 +673,7 @@ class ManageInstanceModal extends Modal {
     const roleId = Number(formData.get("roleId"));
 
     if (!userGuid || !roleId) {
-      this.setAddUserMessage("Select a user and a role.", "error");
+      notify("Select a user and a role.", "error");
       return;
     }
 
@@ -727,11 +682,11 @@ class ManageInstanceModal extends Modal {
         method: "PUT",
         body: JSON.stringify({ roleId }),
       });
-      this.setAddUserMessage("Role assigned.", "success");
+      notify("Role assigned.", "success");
       event.currentTarget.reset();
       await this.loadInstanceUsers();
     } catch (error) {
-      this.setAddUserMessage(error.message, "error");
+      notify(error.message, "error");
     }
   }
 
@@ -749,11 +704,11 @@ class ManageInstanceModal extends Modal {
       await requestJson(`/api/genrpg/instances/${guid}/users/${userGuid}`, {
         method: "DELETE",
       });
-      this.setAddUserMessage("User removed.", "success");
+      notify("User removed.", "success");
       await this.loadInstanceUsers();
     } catch (error) {
       $btn.prop("disabled", false).text("Remove");
-      this.setAddUserMessage(error.message, "error");
+      notify(error.message, "error");
     }
   }
 
@@ -772,10 +727,10 @@ class ManageInstanceModal extends Modal {
         body: JSON.stringify({ confirmName: name }),
       });
       this.hide();
-      setMessage(getElements().$message, "Instance deleted.", "success");
+      notify("Instance deleted.", "success");
       await loadApp();
     } catch (error) {
-      this.setDeleteMessage(error.message, "error");
+      notify(error.message, "error");
       $btn.text("Delete Instance");
       this.updateConfirmButton();
     }

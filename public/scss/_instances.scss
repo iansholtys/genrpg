@@ -1,20 +1,5 @@
 @use "variables" as *;
 
-.instances-home {
-  .message {
-    min-height: 1.5rem;
-    margin-bottom: 0.75rem;
-
-    &[data-tone="error"] {
-      color: var(--danger);
-    }
-
-    &[data-tone="success"] {
-      color: var(--accent-strong);
-    }
-  }
-}
-
 .instance-tile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

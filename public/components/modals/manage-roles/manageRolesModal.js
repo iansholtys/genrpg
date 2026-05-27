@@ -1,6 +1,6 @@
 import { state } from "../../../js/state.js";
 import { requestJson } from "../../../js/api.js";
-import { setMessage } from "../../../js/utils.js";
+import { notify } from "../../../js/utils.js";
 import { loadRoles } from "../../../js/roles.js";
 
 const Modal = window.Modal;
@@ -84,16 +84,9 @@ class ManageRolesModal extends Modal {
       ),
     );
 
-    this.elements.$roleFormMessage = $("<div>", {
-      id: "roleFormMessage",
-      class: "message",
-      role: "status",
-    });
-
     this.elements.$rolesList = $("<div>", { id: "rolesList" });
 
     return this.elements.$roleForm
-      .add(this.elements.$roleFormMessage)
       .add($("<hr>"))
       .add($("<h3>", { text: "Existing Roles" }))
       .add(this.elements.$rolesList);
@@ -107,16 +100,11 @@ class ManageRolesModal extends Modal {
     this.elements.$rolesList.on("click", ".delete-role-btn", (event) => this.onDeleteRole(event));
   }
 
-  setRoleMessage(message, tone = "neutral") {
-    setMessage(this.elements.$roleFormMessage, message, tone);
-  }
-
   resetRoleForm() {
     this.elements.$roleForm[0].reset();
     this.elements.$roleFormId.val("");
     this.elements.$roleFormSubmitButton.text("Create Role");
     this.elements.$roleFormCancelButton.prop("hidden", true);
-    this.setRoleMessage("");
   }
 
   async loadPermissions() {
@@ -230,7 +218,6 @@ class ManageRolesModal extends Modal {
     };
 
     this.elements.$roleFormSubmitButton.prop("disabled", true);
-    this.setRoleMessage("Saving...", "neutral");
 
     try {
       if (isUpdate) {
@@ -238,19 +225,19 @@ class ManageRolesModal extends Modal {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-        this.setRoleMessage("Role updated.", "success");
+        notify("Role updated.", "success");
       } else {
         await requestJson("/api/genrpg/roles", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        this.setRoleMessage("Role created.", "success");
+        notify("Role created.", "success");
       }
 
       this.resetRoleForm();
       await this.reloadRolesData();
     } catch (error) {
-      this.setRoleMessage(error.message, "error");
+      notify(error.message, "error");
     } finally {
       this.elements.$roleFormSubmitButton.prop("disabled", false);
     }
@@ -269,7 +256,6 @@ class ManageRolesModal extends Modal {
 
     this.elements.$roleFormSubmitButton.text("Update Role");
     this.elements.$roleFormCancelButton.prop("hidden", false);
-    this.setRoleMessage("");
     this.elements.$roleForm[0].scrollIntoView({ behavior: "smooth" });
   }
 
@@ -281,11 +267,11 @@ class ManageRolesModal extends Modal {
     $btn.prop("disabled", true).text("Deleting...");
     try {
       await requestJson(`/api/genrpg/roles/${roleId}`, { method: "DELETE" });
-      this.setRoleMessage("Role deleted.", "success");
+      notify("Role deleted.", "success");
       await this.reloadRolesData();
     } catch (error) {
       $btn.prop("disabled", false).text("Delete");
-      this.setRoleMessage(error.message, "error");
+      notify(error.message, "error");
     }
   }
 }

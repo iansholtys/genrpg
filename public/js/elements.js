@@ -5,7 +5,6 @@ export function getElements() {
     elements = {
       $instances: $("#instances"),
       $instancesHome: $(".instances-home"),
-      $message: $("#message"),
       $userLabel: $("#userLabel"),
       $administrationSection: $("#administrationSection"),
       $updateBanner: $("#updateBanner"),

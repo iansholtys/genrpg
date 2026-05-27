@@ -1,6 +1,5 @@
-import { getElements } from "../../../js/elements.js";
 import { requestJson } from "../../../js/api.js";
-import { setMessage } from "../../../js/utils.js";
+import { notify, setMessage } from "../../../js/utils.js";
 import { loadApp } from "../../../js/app.js";
 
 const Modal = window.Modal;
@@ -299,7 +298,10 @@ class ManagePackagesModal extends Modal {
       });
       $btn.text("Updated!");
       if (result.updateWarning) {
-        alert(`Package updated, but database migrations failed: ${result.updateWarning}`);
+        notify(
+          `Package updated, but database migrations failed: ${result.updateWarning}`,
+          "warning",
+        );
       }
       showConfigurationIssues(result.configurationIssues, { tone: "error" });
       setTimeout(async () => {
@@ -308,7 +310,7 @@ class ManagePackagesModal extends Modal {
       }, 1000);
     } catch (error) {
       $btn.prop("disabled", false).text("Error");
-      alert("Failed to update: " + error.message);
+      notify(`Failed to update: ${error.message}`, "error");
     }
   }
 
@@ -324,7 +326,10 @@ class ManagePackagesModal extends Modal {
         body: JSON.stringify({ machineName }),
       });
       if (result.updateWarning) {
-        alert(`Package installed, but database setup reported a problem: ${result.updateWarning}`);
+        notify(
+          `Package installed, but database setup reported a problem: ${result.updateWarning}`,
+          "warning",
+        );
       }
       $btn.text("Installed!");
       setTimeout(async () => {
@@ -333,7 +338,7 @@ class ManagePackagesModal extends Modal {
       }, 1000);
     } catch (error) {
       $btn.prop("disabled", false).text("Install");
-      alert("Failed to install: " + error.message);
+      notify(`Failed to install: ${error.message}`, "error");
     }
   }
 
@@ -357,7 +362,7 @@ class ManagePackagesModal extends Modal {
         body: JSON.stringify({ machineName }),
       });
       if (result.updateWarning) {
-        alert(`Reinstall finished with warnings: ${result.updateWarning}`);
+        notify(`Reinstall finished with warnings: ${result.updateWarning}`, "warning");
       }
       $btn.text("Done!");
       setTimeout(async () => {
@@ -366,7 +371,7 @@ class ManagePackagesModal extends Modal {
       }, 1000);
     } catch (error) {
       $btn.prop("disabled", false).text("Reinstall");
-      alert("Failed to reinstall: " + error.message);
+      notify(`Failed to reinstall: ${error.message}`, "error");
     }
   }
 }
@@ -377,8 +382,7 @@ function showConfigurationIssues(issues, { tone = "error" } = {}) {
   if (!issues?.length) {
     return;
   }
-  setMessage(
-    getElements().$message,
+  notify(
     `Package configuration needs attention: ${(issues || []).join(" ")}`,
     tone,
   );

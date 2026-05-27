@@ -1,6 +1,6 @@
 import { state } from "../../../js/state.js";
 import { requestJson } from "../../../js/api.js";
-import { setMessage } from "../../../js/utils.js";
+import { notify } from "../../../js/utils.js";
 
 const Modal = window.Modal;
 
@@ -17,15 +17,9 @@ class ManageGlobalUsersModal extends Modal {
   }
 
   getContent() {
-    this.elements.$globalUsersMessage = $("<div>", {
-      id: "globalUsersMessage",
-      class: "message",
-      role: "status",
-    });
-
     this.elements.$globalUsersList = $("<div>", { id: "globalUsersList" });
 
-    return this.elements.$globalUsersMessage.add(this.elements.$globalUsersList);
+    return this.elements.$globalUsersList;
   }
 
   bindEvents() {
@@ -36,10 +30,6 @@ class ManageGlobalUsersModal extends Modal {
     this.elements.$globalUsersList.on("click", ".delete-global-user-btn", (event) =>
       this.onDeleteUser(event),
     );
-  }
-
-  setGlobalUserMessage(message, tone = "neutral") {
-    setMessage(this.elements.$globalUsersMessage, message, tone);
   }
 
   buildGlobalUsersTable(users) {
@@ -104,13 +94,12 @@ class ManageGlobalUsersModal extends Modal {
       const data = await requestJson("/api/genrpg/users");
       this.buildGlobalUsersTable(data?.users || []);
     } catch (error) {
-      this.setGlobalUserMessage(error.message, "error");
+      notify(error.message, "error");
     }
   }
 
   async show() {
     this.createModalElement();
-    this.setGlobalUserMessage("");
     this.bindEvents();
     super.show();
     await this.loadGlobalUsers();
@@ -132,14 +121,14 @@ class ManageGlobalUsersModal extends Modal {
         method: "PUT",
         body: JSON.stringify({ admin: newAdminState }),
       });
-      this.setGlobalUserMessage(
+      notify(
         `User ${newAdminState ? "promoted to admin" : "demoted to regular user"}.`,
         "success",
       );
       await this.loadGlobalUsers();
     } catch (error) {
       $btn.prop("disabled", false).text(currentlyAdmin ? "Demote" : "Promote");
-      this.setGlobalUserMessage(error.message, "error");
+      notify(error.message, "error");
     }
   }
 
@@ -157,11 +146,11 @@ class ManageGlobalUsersModal extends Modal {
     $btn.prop("disabled", true).text("Deleting...");
     try {
       await requestJson(`/api/genrpg/users/${userGuid}`, { method: "DELETE" });
-      this.setGlobalUserMessage("User deleted successfully.", "success");
+      notify("User deleted successfully.", "success");
       await this.loadGlobalUsers();
     } catch (error) {
       $btn.prop("disabled", false).text("Delete");
-      this.setGlobalUserMessage(error.message, "error");
+      notify(error.message, "error");
     }
   }
 }
