@@ -1,6 +1,6 @@
 import { getElements } from "../../../js/elements.js";
 import { requestJson } from "../../../js/api.js";
-import { escapeHtml, setMessage } from "../../../js/utils.js";
+import { setMessage } from "../../../js/utils.js";
 import { loadApp } from "../../../js/app.js";
 
 const Modal = window.Modal;
@@ -182,8 +182,11 @@ class ManagePackagesModal extends Modal {
       showConfigurationIssues(data?.configurationIssues);
     } catch (err) {
       this.gitPackagesTable = null;
-      this.elements.$gitPackagesList.html(
-        `<p class="empty-state">Failed to load packages: ${escapeHtml(err.message)}</p>`,
+      this.elements.$gitPackagesList.empty().append(
+        $("<p>", {
+          class: "empty-state",
+          text: `Failed to load packages: ${err.message}`,
+        }),
       );
     }
   }

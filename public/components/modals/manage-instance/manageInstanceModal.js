@@ -1,6 +1,6 @@
 import { getElements } from "../../../js/elements.js";
 import { requestJson } from "../../../js/api.js";
-import { escapeHtml, setMessage } from "../../../js/utils.js";
+import { setMessage } from "../../../js/utils.js";
 import { loadApp } from "../../../js/app.js";
 import { loadRoles } from "../../../js/roles.js";
 import {
@@ -493,7 +493,7 @@ class ManageInstanceModal extends Modal {
         defaultSort: { field: "displayName" },
         columns: [
           { title: "Name", field: "displayName", searchable: true },
-          { title: "Email", field: "email", searchable: true },
+          { title: "Email", searchable: true },
           { title: "Role", field: "roleName" },
           {
             title: "Actions",
@@ -530,8 +530,11 @@ class ManageInstanceModal extends Modal {
       this.buildInstanceUsersTable(data?.users || []);
     } catch (err) {
       this.instanceUsersTable = null;
-      this.elements.$instanceUsersList.html(
-        `<p class="empty-state">Failed to load users: ${escapeHtml(err.message)}</p>`,
+      this.elements.$instanceUsersList.empty().append(
+        $("<p>", {
+          class: "empty-state",
+          text: `Failed to load users: ${err.message}`,
+        }),
       );
     }
   }

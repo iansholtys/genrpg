@@ -363,18 +363,6 @@ class ManageInventoryModal extends Modal {
     return data;
   }
 
-  static escapeHtml(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (character) => {
-      return {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;",
-      }[character];
-    });
-  }
-
   static formatWeight(weight) {
     if (weight === null || weight === undefined || weight === "") {
       return "—";
@@ -470,24 +458,16 @@ class ManageInventoryModal extends Modal {
       searchPlaceholder: "Search inventory…",
       defaultSort: { field: "name" },
       columns: [
-        {
-          title: "Name",
-          field: "name",
-          searchable: true,
-          renderFunction: (value) => ManageInventoryModal.escapeHtml(value || ""),
-        },
+        { title: "Name", searchable: true },
         {
           title: "Description",
-          field: "description",
           searchable: true,
           sortable: false,
-          renderFunction: (value) => ManageInventoryModal.escapeHtml(value || "—"),
+          valueFunction: (_row, value) => value || "—",
         },
         {
           title: "Weight",
-          field: "weight",
-          renderFunction: (value) =>
-            ManageInventoryModal.escapeHtml(ManageInventoryModal.formatWeight(value)),
+          valueFunction: (_row, value) => ManageInventoryModal.formatWeight(value),
         },
         {
           title: "Actions",
@@ -769,18 +749,6 @@ class CharacterManagement {
     this.elements = {};
   }
 
-  static escapeHtml(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (character) => {
-      return {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;",
-      }[character];
-    });
-  }
-
   static appearancePreview(text, maxLength = 200) {
     const value = String(text ?? "");
     if (value.length <= maxLength) {
@@ -893,25 +861,16 @@ class CharacterManagement {
       searchPlaceholder: "Search characters…",
       defaultSort: { field: "displayName" },
       columns: [
-        {
-          title: "Display Name",
-          field: "displayName",
-          searchable: true,
-          renderFunction: (value) => CharacterManagement.escapeHtml(value || ""),
-        },
+        { title: "Display Name", searchable: true },
         {
           title: "Pronouns",
-          field: "pronouns",
           searchable: true,
-          renderFunction: (value) => CharacterManagement.escapeHtml(value || "—"),
+          valueFunction: (_row, value) => value || "—",
         },
         {
           title: "Appearance",
-          field: "appearance",
           searchable: true,
-          valueFunction: (row) => row.appearance || "",
-          renderFunction: (value) =>
-            CharacterManagement.escapeHtml(CharacterManagement.appearancePreview(value)),
+          valueFunction: (_row, value) => CharacterManagement.appearancePreview(value || ""),
         },
         {
           title: "Actions",

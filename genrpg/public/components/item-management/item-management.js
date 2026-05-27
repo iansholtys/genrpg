@@ -368,18 +368,6 @@ class ItemManagement {
     this.elements = {};
   }
 
-  static escapeHtml(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (character) => {
-      return {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;",
-      }[character];
-    });
-  }
-
   static formatWeight(value) {
     if (value === null || value === undefined) {
       return "—";
@@ -468,30 +456,22 @@ class ItemManagement {
       searchPlaceholder: "Search items…",
       defaultSort: { field: "effectiveName" },
       columns: [
-        {
-          title: "Name",
-          field: "effectiveName",
-          searchable: true,
-          renderFunction: (value) => ItemManagement.escapeHtml(value || ""),
-        },
+        { title: "Name", field: "effectiveName", searchable: true },
         {
           title: "Description",
           field: "effectiveDescription",
           searchable: true,
-          valueFunction: (row) => row.effectiveDescription || "",
-          renderFunction: (value) => ItemManagement.escapeHtml(value || ""),
+          valueFunction: (_row, value) => value || "",
         },
         {
           title: "Weight",
           field: "effectiveWeight",
-          renderFunction: (value) =>
-            ItemManagement.escapeHtml(ItemManagement.formatWeight(value)),
+          valueFunction: (_row, value) => ItemManagement.formatWeight(value),
         },
         {
           title: "Template",
-          valueFunction: (row) => row.itemTemplate?.name || "",
           searchable: true,
-          renderFunction: (value) => ItemManagement.escapeHtml(value || "—"),
+          valueFunction: (row) => row.itemTemplate?.name || "—",
         },
         {
           title: "Actions",

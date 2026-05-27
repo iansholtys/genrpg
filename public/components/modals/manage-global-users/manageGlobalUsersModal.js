@@ -55,7 +55,7 @@ class ManageGlobalUsersModal extends Modal {
           { title: "Email", searchable: true },
           {
             title: "Admin",
-            valueFunction: (user) => (user.admin ? "Yes" : "No"),
+            valueFunction: (_user, value) => (value ? "Yes" : "No"),
           },
           {
             title: "Actions",

@@ -289,18 +289,6 @@ class ItemTemplateManagement {
     this.elements = {};
   }
 
-  static escapeHtml(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (character) => {
-      return {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;",
-      }[character];
-    });
-  }
-
   static formatWeight(value) {
     if (value === null || value === undefined) {
       return "—";
@@ -393,13 +381,11 @@ class ItemTemplateManagement {
         {
           title: "Description",
           searchable: true,
-          valueFunction: (row) => row.description || "",
-          renderFunction: (value) => ItemTemplateManagement.escapeHtml(value || ""),
+          valueFunction: (_row, value) => value || "",
         },
         {
           title: "Weight",
-          renderFunction: (value) =>
-            ItemTemplateManagement.escapeHtml(ItemTemplateManagement.formatWeight(value)),
+          valueFunction: (_row, value) => ItemTemplateManagement.formatWeight(value),
         },
         {
           title: "Actions",
