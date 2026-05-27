@@ -388,4 +388,30 @@ module.exports = {
         FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();
     `);
   },
+
+  7: async (client) => {
+    await client.query(`
+      WITH chars_needing_inventory AS (
+        SELECT
+          c.guid AS character_guid,
+          c.instance_guid,
+          gen_random_uuid() AS collection_guid
+        FROM genrpg.characters c
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM genrpg.inventories i
+          WHERE i.character_guid = c.guid
+        )
+      ),
+      inserted_collections AS (
+        INSERT INTO genrpg.item_collections (guid, instance_guid, type, name)
+        SELECT collection_guid, instance_guid, 'inventory', NULL
+        FROM chars_needing_inventory
+        RETURNING guid
+      )
+      INSERT INTO genrpg.inventories (guid, instance_guid, collection_guid, character_guid)
+      SELECT gen_random_uuid(), instance_guid, collection_guid, character_guid
+      FROM chars_needing_inventory;
+    `);
+  },
 };
