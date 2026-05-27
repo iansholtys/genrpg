@@ -9,16 +9,6 @@
 .item-template-management__heading {
   margin: 0;
 }
-.item-template-management__message {
-  min-height: 1.25rem;
-  font-size: 0.9rem;
-}
-.item-template-management__message[data-tone=error] {
-  color: var(--danger, #c0392b);
-}
-.item-template-management__message[data-tone=success] {
-  color: var(--accent-strong, #2d6a4f);
-}
 .item-template-management__table {
   margin-top: 0.5rem;
 }
@@ -48,14 +38,6 @@
 .manage-item-template-modal .item-template-modal__form label {
   display: grid;
   gap: 0.35rem;
-}
-.manage-item-template-modal .item-template-modal__message {
-  min-height: 1.25rem;
-  margin: 0;
-  font-size: 0.9rem;
-}
-.manage-item-template-modal .item-template-modal__message[data-tone=error] {
-  color: var(--danger, #c0392b);
 }
 .manage-item-template-modal .item-template-modal__actions {
   display: flex;

@@ -9,16 +9,6 @@
 .item-management__heading {
   margin: 0;
 }
-.item-management__message {
-  min-height: 1.25rem;
-  font-size: 0.9rem;
-}
-.item-management__message[data-tone=error] {
-  color: var(--danger, #c0392b);
-}
-.item-management__message[data-tone=success] {
-  color: var(--accent-strong, #2d6a4f);
-}
 .item-management__table {
   margin-top: 0.5rem;
 }
@@ -53,14 +43,6 @@
   margin: 0;
   font-size: 0.85rem;
   color: var(--text-muted, #666);
-}
-.manage-item-modal .item-modal__message {
-  min-height: 1.25rem;
-  margin: 0;
-  font-size: 0.9rem;
-}
-.manage-item-modal .item-modal__message[data-tone=error] {
-  color: var(--danger, #c0392b);
 }
 .manage-item-modal .item-modal__actions {
   display: flex;

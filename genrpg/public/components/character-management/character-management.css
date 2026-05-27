@@ -6,17 +6,6 @@
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
-.character-management__message {
-  min-height: 1.25rem;
-  margin: 0 0 0.75rem;
-  font-size: 0.9rem;
-}
-.character-management__message[data-tone=error] {
-  color: var(--danger, #c0392b);
-}
-.character-management__message[data-tone=success] {
-  color: var(--accent-strong, #2d6a4f);
-}
 .character-management__table {
   margin-top: 0.25rem;
 }
@@ -42,17 +31,6 @@
 .manage-inventory-modal__body {
   display: grid;
   gap: 1rem;
-}
-.manage-inventory-modal__message {
-  min-height: 1.25rem;
-  margin: 0;
-  font-size: 0.9rem;
-}
-.manage-inventory-modal__message[data-tone=error] {
-  color: var(--danger, #c0392b);
-}
-.manage-inventory-modal__message[data-tone=success] {
-  color: var(--accent-strong, #2d6a4f);
 }
 .manage-inventory-modal__pickup {
   display: flex;
@@ -99,14 +77,6 @@
 .manage-character-modal .character-form__fields label {
   display: grid;
   gap: 0.35rem;
-}
-.manage-character-modal .character-form__message {
-  min-height: 1.25rem;
-  margin: 0;
-  font-size: 0.9rem;
-}
-.manage-character-modal .character-form__message[data-tone=error] {
-  color: var(--danger, #c0392b);
 }
 .manage-character-modal .character-form__actions {
   display: flex;

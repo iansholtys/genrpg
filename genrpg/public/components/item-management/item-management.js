@@ -54,11 +54,6 @@ class ManageItemModal extends Modal {
   }
 
   getContent() {
-    this.elements.$message = $("<p>", {
-      class: "item-modal__message message",
-      role: "status",
-    });
-
     this.elements.$templateSelect = $("<select>", {
       name: "itemTemplateGuid",
       required: true,
@@ -90,7 +85,6 @@ class ManageItemModal extends Modal {
         $("<span>", { text: "Weight" }),
         $("<input>", { name: "weight", type: "number", step: "any", min: "0" }),
       ),
-      this.elements.$message,
     );
 
     this.elements.$cancelButton = $("<button>", {
@@ -183,22 +177,8 @@ class ManageItemModal extends Modal {
     }
   }
 
-  setFormMessage(text, tone) {
-    const $message = this.elements.$message;
-    if (!$message?.length) {
-      return;
-    }
-    $message.text(text || "");
-    if (tone) {
-      $message.attr("data-tone", tone);
-    } else {
-      $message.removeAttr("data-tone");
-    }
-  }
-
   resetForm() {
     this.elements.$form?.[0]?.reset();
-    this.setFormMessage("");
     this.populateTemplateSelect(null);
   }
 
@@ -247,12 +227,12 @@ class ManageItemModal extends Modal {
     const payload = this.readFormPayload();
 
     if (!payload.itemTemplateGuid) {
-      this.setFormMessage("Template is required.", "error");
+      window.services?.notifications?.error("Template is required.");
       return;
     }
 
     if (!this.templates.length) {
-      this.setFormMessage("Create an item template before adding items.", "error");
+      window.services?.notifications?.error("Create an item template before adding items.");
       return;
     }
 
@@ -284,7 +264,7 @@ class ManageItemModal extends Modal {
       this.populateTemplateSelect(null);
       this.elements.$form.find('[name="itemTemplateGuid"]').trigger("focus");
     } catch (error) {
-      this.setFormMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
     } finally {
       this.setSaving(false);
     }
@@ -402,19 +382,6 @@ class ItemManagement {
     return data;
   }
 
-  setMessage(text, tone) {
-    const $message = this.elements.$message;
-    if (!$message) {
-      return;
-    }
-    $message.text(text || "");
-    if (tone) {
-      $message.attr("data-tone", tone);
-    } else {
-      $message.removeAttr("data-tone");
-    }
-  }
-
   async loadItems() {
     const data = await this.requestJson(this.apiBase());
     if (!data) {
@@ -430,10 +397,10 @@ class ItemManagement {
 
     try {
       await this.requestJson(`${this.apiBase()}/${item.guid}`, { method: "DELETE" });
-      this.setMessage("Item deleted.", "success");
+      window.services?.notifications?.success("Item deleted.");
       await this.loadItems();
     } catch (error) {
-      this.setMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
     }
   }
 
@@ -541,17 +508,11 @@ class ItemManagement {
       $addButton,
     );
 
-    const $message = $("<p>", {
-      class: "item-management__message",
-      role: "status",
-    });
-
     const $tableHost = $("<div>", { class: "item-management__table" });
-    $root.append($header, $message, $tableHost);
+    $root.append($header, $tableHost);
 
     this.elements.$root = $root;
     this.elements.$addButton = $addButton;
-    this.elements.$message = $message;
     this.elements.$tableHost = $tableHost;
 
     return $root;
@@ -584,7 +545,7 @@ class ItemManagement {
     this.isMounted = true;
 
     this.loadItems().catch((error) => {
-      this.setMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
     });
 
     return this.elements.$root;

@@ -12,19 +12,6 @@
     margin: 0;
   }
 
-  &__message {
-    min-height: 1.25rem;
-    font-size: 0.9rem;
-
-    &[data-tone="error"] {
-      color: var(--danger, #c0392b);
-    }
-
-    &[data-tone="success"] {
-      color: var(--accent-strong, #2d6a4f);
-    }
-  }
-
   &__table {
     margin-top: 0.5rem;
 
@@ -66,16 +53,6 @@
       margin: 0;
       font-size: 0.85rem;
       color: var(--text-muted, #666);
-    }
-
-    &__message {
-      min-height: 1.25rem;
-      margin: 0;
-      font-size: 0.9rem;
-
-      &[data-tone="error"] {
-        color: var(--danger, #c0392b);
-      }
     }
 
     &__actions {

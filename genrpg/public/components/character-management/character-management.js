@@ -83,7 +83,6 @@ class ManageCharacterModal extends Modal {
   }
 
   getContent() {
-    this.elements.$message = $("<div>", { class: "character-form__message message", role: "status" });
     this.elements.$createSubmit = $("<button>", {
       type: "submit",
       class: "primary-button",
@@ -100,7 +99,7 @@ class ManageCharacterModal extends Modal {
       text: "Cancel",
     });
 
-    this.elements.$form = $("<form>", { class: "character-form" }).append(this.elements.$message);
+    this.elements.$form = $("<form>", { class: "character-form" });
 
     for (const schema of this.metadata.schemas || []) {
       const $fields = $("<div>", { class: "character-form__fields" });
@@ -147,22 +146,8 @@ class ManageCharacterModal extends Modal {
     }
   }
 
-  setFormMessage(text, tone) {
-    const $message = this.elements.$message;
-    if (!$message?.length) {
-      return;
-    }
-    $message.text(text || "");
-    if (tone) {
-      $message.attr("data-tone", tone);
-    } else {
-      $message.removeAttr("data-tone");
-    }
-  }
-
   resetForm() {
     this.elements.$form?.[0]?.reset();
-    this.setFormMessage("");
   }
 
   gatherPayload() {
@@ -197,7 +182,6 @@ class ManageCharacterModal extends Modal {
 
   async handleSubmit() {
     this.setSaving(true);
-    this.setFormMessage(this.isEditMode() ? "Saving character..." : "Creating character...");
 
     try {
       const payload = this.gatherPayload();
@@ -219,7 +203,7 @@ class ManageCharacterModal extends Modal {
 
       this.hide();
     } catch (error) {
-      this.setFormMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
     } finally {
       this.setSaving(false);
     }
@@ -371,11 +355,6 @@ class ManageInventoryModal extends Modal {
   }
 
   getContent() {
-    this.elements.$message = $("<p>", {
-      class: "manage-inventory-modal__message",
-      role: "status",
-    });
-
     this.elements.$itemSelect = $("<select>", {
       id: "manage-inventory-item-select",
       name: "itemGuid",
@@ -413,7 +392,6 @@ class ManageInventoryModal extends Modal {
     this.elements.$closeButton.on("click" + this.eventNs, () => this.hide());
 
     return $("<div>", { class: "manage-inventory-modal__body" }).append(
-      this.elements.$message,
       this.elements.$pickUpForm,
       $("<h3>", { class: "manage-inventory-modal__heading", text: "Carried items" }),
       this.elements.$inventoryTableHost,
@@ -425,19 +403,6 @@ class ManageInventoryModal extends Modal {
     if (!this.domExists) {
       this.createModalElement();
       this.bindEvents();
-    }
-  }
-
-  setMessage(text, tone) {
-    const $message = this.elements.$message;
-    if (!$message?.length) {
-      return;
-    }
-    $message.text(text || "");
-    if (tone) {
-      $message.attr("data-tone", tone);
-    } else {
-      $message.removeAttr("data-tone");
     }
   }
 
@@ -610,7 +575,6 @@ class ManageInventoryModal extends Modal {
   }
 
   async refresh() {
-    this.setMessage("Loading inventory…");
     this.setBusy(true);
 
     try {
@@ -622,9 +586,8 @@ class ManageInventoryModal extends Modal {
 
       this.populateItemSelect(availableItems);
       this.ensureInventoryTable().setData(inventoryRows);
-      this.setMessage("");
     } catch (error) {
-      this.setMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
     } finally {
       this.setBusy(false);
     }
@@ -650,17 +613,16 @@ class ManageInventoryModal extends Modal {
   async handlePickUp() {
     const itemGuid = this.elements.$itemSelect?.val();
     if (!itemGuid) {
-      this.setMessage("Select an item to pick up.", "error");
+      window.services?.notifications?.error("Select an item to pick up.");
       return;
     }
 
     if (!this.primaryCollectionGuid) {
-      this.setMessage("This character has no inventory collection.", "error");
+      window.services?.notifications?.error("This character has no inventory collection.");
       return;
     }
 
     this.setBusy(true);
-    this.setMessage("Picking up item…");
 
     try {
       const position = await this.nextContentPosition(this.primaryCollectionGuid);
@@ -672,9 +634,9 @@ class ManageInventoryModal extends Modal {
         },
       );
       await this.refresh();
-      this.setMessage("Item picked up.", "success");
+      window.services?.notifications?.success("Item picked up.");
     } catch (error) {
-      this.setMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
       this.setBusy(false);
     }
   }
@@ -685,7 +647,6 @@ class ManageInventoryModal extends Modal {
     }
 
     this.setBusy(true);
-    this.setMessage("Dropping item…");
 
     try {
       await this.requestJson(
@@ -693,9 +654,9 @@ class ManageInventoryModal extends Modal {
         { method: "DELETE" },
       );
       await this.refresh();
-      this.setMessage("Item dropped.", "success");
+      window.services?.notifications?.success("Item dropped.");
     } catch (error) {
-      this.setMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
       this.setBusy(false);
     }
   }
@@ -721,7 +682,6 @@ class ManageInventoryModal extends Modal {
     this.characterGuid = null;
     this.characterName = "";
     this.primaryCollectionGuid = null;
-    this.setMessage("");
     this.elements.$itemSelect?.empty();
     this.inventoryTable?.setData([]);
   }
@@ -795,19 +755,6 @@ class CharacterManagement {
     return data;
   }
 
-  setMessage(text, tone) {
-    const $message = this.elements.$message;
-    if (!$message) {
-      return;
-    }
-    $message.text(text || "");
-    if (tone) {
-      $message.attr("data-tone", tone);
-    } else {
-      $message.removeAttr("data-tone");
-    }
-  }
-
   async loadCharacters() {
     const data = await this.requestJson(this.apiBase());
     if (!data) {
@@ -827,10 +774,10 @@ class CharacterManagement {
 
     try {
       await this.requestJson(`${this.apiBase()}/${row.guid}`, { method: "DELETE" });
-      this.setMessage("Character deleted.", "success");
+      window.services?.notifications?.success("Character deleted.");
       await this.loadCharacters();
     } catch (error) {
-      this.setMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
     }
   }
 
@@ -949,18 +896,12 @@ class CharacterManagement {
     });
     $toolbar.append($addButton);
 
-    const $message = $("<p>", {
-      class: "character-management__message",
-      role: "status",
-    });
-
     const $tableHost = $("<div>", { class: "character-management__table" });
-    $root.append($toolbar, $message, $tableHost);
+    $root.append($toolbar, $tableHost);
 
     this.elements.$root = $root;
     this.elements.$toolbar = $toolbar;
     this.elements.$addButton = $addButton;
-    this.elements.$message = $message;
     this.elements.$tableHost = $tableHost;
 
     return $root;
@@ -993,7 +934,7 @@ class CharacterManagement {
     this.isMounted = true;
 
     this.loadCharacters().catch((error) => {
-      this.setMessage(error.message, "error");
+      window.services?.notifications?.error(error.message);
     });
 
     return this.elements.$root;

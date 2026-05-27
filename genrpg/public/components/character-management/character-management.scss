@@ -8,20 +8,6 @@
     margin-bottom: 1rem;
   }
 
-  &__message {
-    min-height: 1.25rem;
-    margin: 0 0 0.75rem;
-    font-size: 0.9rem;
-  
-    &[data-tone="error"] {
-      color: var(--danger, #c0392b);
-    }
-  
-    &[data-tone="success"] {
-      color: var(--accent-strong, #2d6a4f);
-    }
-  }
-  
   &__table {
     margin-top: 0.25rem;
   
@@ -51,20 +37,6 @@
   &__body {
     display: grid;
     gap: 1rem;
-  }
-
-  &__message {
-    min-height: 1.25rem;
-    margin: 0;
-    font-size: 0.9rem;
-
-    &[data-tone="error"] {
-      color: var(--danger, #c0392b);
-    }
-
-    &[data-tone="success"] {
-      color: var(--accent-strong, #2d6a4f);
-    }
   }
 
   &__pickup {
@@ -122,16 +94,6 @@
       label {
         display: grid;
         gap: 0.35rem;
-      }
-    }
-
-    &__message {
-      min-height: 1.25rem;
-      margin: 0;
-      font-size: 0.9rem;
-
-      &[data-tone="error"] {
-        color: var(--danger, #c0392b);
       }
     }
 
