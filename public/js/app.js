@@ -1,6 +1,6 @@
 import { getElements } from "./elements.js";
 import { requestJson } from "./api.js";
-import { setMessage } from "./utils.js";
+import { notify } from "./utils.js";
 import { setupPackageEvents } from "./packages.js";
 import { setupInstanceEvents, applyInitialRoute } from "./instances.js";
 import { setupRoleEvents } from "./roles.js";
@@ -12,7 +12,6 @@ import {
 } from "./landing.js";
 
 export async function loadApp() {
-  const elements = getElements();
   try {
     const { user } = await requestJson("/api/genrpg/me");
     applyCurrentUser(user);
@@ -23,12 +22,23 @@ export async function loadApp() {
 
     await applyInitialRoute();
   } catch (error) {
-    setMessage(elements.$message, error.message, "error");
+    notify(error.message, "error");
   }
+}
+
+function initNotifications() {
+  window.services = window.services || {};
+  if (!window.services.notifications) {
+    window.services.notifications = new Notifications();
+    $("body").append(window.services.notifications.init());
+  }
+  return window.services.notifications;
 }
 
 // Initialize application
 $(function () {
+  initNotifications();
+
   // Ensure elements are cached
   getElements();
 

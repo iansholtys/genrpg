@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
-import { escapeHtml, setMessage } from "./utils.js";
+import { escapeHtml, notify } from "./utils.js";
 import { getElements } from "./elements.js";
 import { openManagePackagesModal } from "../components/modals/manage-packages/managePackagesModal.js";
 
@@ -289,9 +289,7 @@ export function showConfigurationIssues(issues, { tone = "error" } = {}) {
     return;
   }
 
-  const elements = getElements();
-  setMessage(
-    elements.$message,
+  notify(
     `Package configuration needs attention: ${formatConfigurationIssues(issues)}`,
     tone,
   );
@@ -332,10 +330,10 @@ export async function applyUpdates() {
       body: JSON.stringify({ update: true }),
     });
     hideUpdateBanner();
-    setMessage(elements.$message, "Package updates applied.", "success");
+    notify("Package updates applied.", "success");
     await checkForUpdates();
   } catch (error) {
-    setMessage(elements.$message, error.message, "error");
+    notify(error.message, "error");
   } finally {
     elements.$applyUpdatesButton.prop("disabled", false);
   }

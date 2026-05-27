@@ -1,7 +1,7 @@
 import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
-import { setMessage } from "./utils.js";
+import { notify } from "./utils.js";
 import {
   openCreateInstanceModal,
   openManageInstanceModal,
@@ -283,7 +283,6 @@ function clearEnteringState() {
 }
 
 async function rejectRoute(token, message) {
-  const elements = getElements();
   if (isStaleRoute(token)) {
     return;
   }
@@ -296,7 +295,7 @@ async function rejectRoute(token, message) {
   const { ensureLandingPageLoaded } = await import("./landing.js");
   await ensureLandingPageLoaded();
   if (message) {
-    setMessage(elements.$message, message, "error");
+    notify(message, "error");
   }
 }
 
@@ -422,7 +421,7 @@ async function applyRoute({ boot = null } = {}) {
       if (isStaleRoute(token)) {
         return;
       }
-      setMessage(elements.$message, error.message, "error");
+      notify(error.message, "error");
       await rejectRoute(token);
       return;
     }

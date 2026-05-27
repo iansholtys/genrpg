@@ -1,0 +1,84 @@
+// Default theme tokens for the Notifications component. Host apps can compile
+// this file, copy values into their own styles, or override variables on
+// `.notifications-component` / `.notifications-item`.
+
+.notifications-component {
+  --notification-z-index: 9999;
+  --notification-offset-x: 20px;
+  --notification-offset-y: 20px;
+  --notification-offset-x-sm: 10px;
+  --notification-offset-y-sm: 10px;
+  --notification-stack-gap: 10px;
+  --notification-min-width: 300px;
+  --notification-max-width: 400px;
+}
+
+.notifications-item {
+  --notification-radius: 8px;
+  --notification-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  --notification-shadow-hover: 0 6px 25px rgba(0, 0, 0, 0.2);
+  --notification-bg: #fff;
+  --notification-bg-dark: rgba(255, 255, 255, 0.1);
+  --notification-bg-hover-dark: rgba(255, 255, 255, 0.15);
+  --notification-border-width: 1px;
+  --notification-border-color: rgba(0, 0, 0, 0.1);
+  --notification-border-color-dark: rgba(255, 255, 255, 0.2);
+  --notification-border-hover-color-dark: rgba(255, 255, 255, 0.3);
+  --notification-accent-border-width: 4px;
+
+  --notification-enter-duration: 0.3s;
+  --notification-interaction-duration: 0.1s;
+  --notification-easing: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --notification-accent: var(--notification-info-accent);
+  --notification-close-hover-light: var(--notification-close-hover-bg);
+  --notification-close-hover-dark: var(--notification-close-hover-bg-dark);
+  --notification-overlay-gradient: var(--notification-overlay-gradient-default);
+
+  --notification-content-padding: 16px 20px;
+  --notification-message-size: 0.95rem;
+  --notification-message-gap: 12px;
+  --notification-message-weight: 500;
+
+  --notification-close-size: 20px;
+  --notification-close-hit-size: 24px;
+  --notification-close-transition: 0.2s;
+  --notification-close-color: #6c757d;
+  --notification-close-hover-color: #343a40;
+  --notification-close-hover-bg: #f8f9fa;
+  --notification-close-hover-bg-dark: rgba(255, 255, 255, 0.2);
+  --notification-close-color-dark: rgba(255, 255, 255, 0.8);
+  --notification-overlay-gradient-default: none;
+
+  --notification-info-accent: #667eea;
+  --notification-info-close-hover-bg: #e3f2fd;
+  --notification-info-close-hover-bg-dark: rgba(102, 126, 234, 0.2);
+  --notification-info-overlay: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+
+  --notification-success-accent: #28a745;
+  --notification-success-close-hover-bg: #e8f5e8;
+  --notification-success-close-hover-bg-dark: rgba(40, 167, 69, 0.2);
+  --notification-success-overlay: linear-gradient(135deg, rgba(40, 167, 69, 0.1) 0%, rgba(25, 135, 84, 0.1) 100%);
+
+  --notification-warning-accent: #ffc107;
+  --notification-warning-close-hover-bg: #fff8e1;
+  --notification-warning-close-hover-bg-dark: rgba(255, 193, 7, 0.2);
+  --notification-warning-overlay: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%);
+
+  --notification-error-accent: #dc3545;
+  --notification-error-close-hover-bg: #ffebee;
+  --notification-error-close-hover-bg-dark: rgba(220, 53, 69, 0.2);
+  --notification-error-overlay: linear-gradient(135deg, rgba(220, 53, 69, 0.1) 0%, rgba(214, 51, 132, 0.1) 100%);
+}
+
+html[data-theme='dark'] .notifications-item {
+  --notification-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --notification-shadow-hover: 0 6px 25px rgba(0, 0, 0, 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme='auto'] .notifications-item {
+    --notification-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    --notification-shadow-hover: 0 6px 25px rgba(0, 0, 0, 0.45);
+  }
+}

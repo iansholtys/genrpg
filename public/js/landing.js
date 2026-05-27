@@ -1,7 +1,6 @@
 import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
-import { setMessage } from "./utils.js";
 import {
   renderPackages,
   showConfigurationIssues,
@@ -38,7 +37,6 @@ export function applyCurrentUser(user) {
 }
 
 export async function loadLandingPage() {
-  const elements = getElements();
   const [{ instances }, packagePayload] = await Promise.all([
     requestJson("/api/genrpg/instances"),
     requestJson("/api/genrpg/packages"),
@@ -52,7 +50,6 @@ export async function loadLandingPage() {
 
   renderPackages(packages);
   renderInstances(instances);
-  setMessage(elements.$message, "");
   showConfigurationIssues(configurationIssues);
   await checkForUpdates();
 
