@@ -184,7 +184,7 @@ class ManageItemModal extends Modal {
 
   fillForm(item) {
     const $form = this.elements.$form;
-    this.populateTemplateSelect(item.item_template_guid);
+    this.populateTemplateSelect(item.itemTemplateGuid);
     $form.find('[name="name"]').val(item.name || "");
     $form.find('[name="description"]').val(item.description || "");
     $form.find('[name="weight"]').val(

@@ -307,6 +307,5 @@ if (require.main === module) {
 
 module.exports = {
   applySchemaVersions,
-  discoverSchemaVersions,
   reapplyPackageSchemaVersions,
 };

@@ -42,7 +42,10 @@ Styling is written in SCSS for brevity and consistency before being compiled int
   - Build CSS: `npm run build:css`
   - Watch for changes: `npm run watch:css`
 
-### 4. Docker & Infrastructure
+### 4. Entity API layer
+Instance-scoped CRUD (items, characters, inventory, etc.) uses a shared entity layer under `src/entities/`, `src/services/`, and `src/storage/`. See [docs/entity-api.md](docs/entity-api.md) for the handler contract, permission map, and how to add new entity types.
+
+### 5. Docker & Infrastructure
 - The application is containerized using `docker-compose.yml` and a `Dockerfile`.
 - The `app` service depends on the `postgres` service.
 - The `Dockerfile` includes `git` to support the Git-based package management system.
@@ -57,3 +60,4 @@ Styling is written in SCSS for brevity and consistency before being compiled int
 4. **Table Timestamp Columns:** All database tables must include `create_datetime timestamptz NOT NULL DEFAULT now()` and `update_datetime timestamptz NOT NULL DEFAULT now()` columns, with an associated `BEFORE UPDATE` trigger using `genrpg.set_update_datetime()`.
 5. **No Tailwind:** Do not introduce TailwindCSS unless explicitly requested.
 6. **Node/Express Idioms:** Stick to the existing vanilla JS and Express patterns found in `src/server.js` and other routes.
+7. **Instance-scoped APIs:** For new resources, add entity and storage modules; orchestrate CRUD in the API router using `assertInstancePermissions` from [`src/api/instanceContext.js`](src/api/instanceContext.js) and `withTransaction` from [`src/api/items.js`](src/api/items.js). Throw `NotFoundError`, `PermissionError`, `BadRequestError`, or `ValidationError` as appropriate; use `HttpError` only for other HTTP statuses. Keep SQL in storage.

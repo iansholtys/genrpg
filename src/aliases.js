@@ -361,13 +361,9 @@ async function sendAppHtml(res, boot) {
 
 module.exports = {
   normalizeAlias,
-  normalizeRequestPath,
-  validateAlias,
   slugifyInstanceUrlSegment,
   isProperlySlugified,
   instanceAliasFromSegment,
-  defaultInstanceAlias,
-  defaultInstancePath,
   lookupAlias,
   isAliasAvailable,
   lookupCanonicalAliasForPath,
@@ -378,7 +374,6 @@ module.exports = {
   createCustomInstanceAlias,
   deleteAliasesForInstance,
   lookupCustomInstanceUrlSegment,
-  deleteCustomInstanceAlias,
   syncCustomInstanceAlias,
   sendAppHtml,
 };

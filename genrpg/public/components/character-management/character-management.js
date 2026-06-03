@@ -480,8 +480,8 @@ class ManageInventoryModal extends Modal {
           return;
         }
         for (const content of contentsData.contents || []) {
-          if (content.item_guid) {
-            contained.add(content.item_guid);
+          if (content.itemGuid) {
+            contained.add(content.itemGuid);
           }
         }
       }),
@@ -503,7 +503,7 @@ class ManageInventoryModal extends Modal {
       return null;
     }
 
-    return inventories[0].collection_guid;
+    return inventories[0].collectionGuid;
   }
 
   async loadAvailableItems() {
@@ -548,23 +548,23 @@ class ManageInventoryModal extends Modal {
 
     for (const inventory of inventories) {
       const contentsData = await this.requestJson(
-        `${this.apiBase()}/item-collections/${inventory.collection_guid}/contents`,
+        `${this.apiBase()}/item-collections/${inventory.collectionGuid}/contents`,
       );
       if (!contentsData) {
         continue;
       }
 
       for (const content of contentsData.contents || []) {
-        if (!content.item_guid) {
+        if (!content.itemGuid) {
           continue;
         }
 
-        const item = itemsByGuid.get(content.item_guid);
+        const item = itemsByGuid.get(content.itemGuid);
         rows.push({
           contentGuid: content.guid,
-          collectionGuid: inventory.collection_guid,
-          itemGuid: content.item_guid,
-          name: item?.effectiveName || item?.name || content.item_guid,
+          collectionGuid: inventory.collectionGuid,
+          itemGuid: content.itemGuid,
+          name: item?.effectiveName || item?.name || content.itemGuid,
           description: item?.effectiveDescription ?? item?.description ?? "",
           weight: item?.effectiveWeight ?? item?.weight ?? null,
         });

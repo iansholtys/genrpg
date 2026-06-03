@@ -550,18 +550,11 @@ function validatePackageSelection(selectedMachineNames, packages) {
 module.exports = {
   PackageLoadError,
   REPO_ROOT,
-  STATIC_PKG_PREFIX,
-  CORE_PACKAGE_MACHINE_NAME,
   packageRootDir,
-  assertValidPackageConfiguration,
   loadPackages,
-  loadPackagesWithAssets,
   invalidatePackageCache,
-  refreshPackageCache,
   parsePackageCsv,
-  formatPackageCsv,
   validatePackageSelection,
-  resolveInstanceAssets,
   resolveInstanceAssetsForRequest,
   expandPackageSelectionForAssets,
 };

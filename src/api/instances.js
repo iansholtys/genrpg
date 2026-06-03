@@ -3,6 +3,11 @@ const express = require("express");
 const { pool } = require("../db/pool");
 const { isGlobalAdmin } = require("../auth");
 const {
+  loadAccessibleInstance,
+  getUserInstanceRole,
+  userHasPermission,
+} = require("../services/permissionService");
+const {
   PackageLoadError,
   loadPackages,
   parsePackageCsv,
@@ -20,75 +25,22 @@ const {
 
 const instancesRouter = express.Router();
 
-async function loadAccessibleInstance(instanceGuid, user) {
-  const isAdmin = await isGlobalAdmin(user.guid);
-  const result = await pool.query(
-    `
-      SELECT
-        i.guid,
-        i.name,
-        i.description,
-        i.packages
-      FROM genrpg.instances i
-      LEFT JOIN genrpg.instance_user_roles iur
-        ON iur.instance_guid = i.guid
-        AND iur.user_guid = $1
-      WHERE i.guid = $2
-        AND ($3::boolean OR iur.user_guid IS NOT NULL)
-    `,
-    [user.guid, instanceGuid, isAdmin],
-  );
-
-  return result.rows[0] || null;
-}
-
-async function getUserInstanceRole(instanceGuid, userGuid) {
-  const result = await pool.query(
-    `
-      SELECT r.name AS role_name
-      FROM genrpg.instance_user_roles iur
-      JOIN genrpg.roles r ON r.id = iur.role_id
-      WHERE iur.instance_guid = $1 AND iur.user_guid = $2
-    `,
-    [instanceGuid, userGuid],
-  );
-  return result.rows[0]?.role_name || null;
-}
-
-async function getUserInstancePermissions(instanceGuid, userGuid) {
-  const result = await pool.query(
-    `
-      SELECT DISTINCT p.name
-      FROM genrpg.instance_user_roles iur
-      JOIN genrpg.role_permissions rp ON rp.role_id = iur.role_id
-      JOIN genrpg.permissions p ON p.id = rp.permission_id
-      WHERE iur.instance_guid = $1 AND iur.user_guid = $2
-    `,
-    [instanceGuid, userGuid],
-  );
-  return new Set(result.rows.map((r) => r.name));
-}
-
-async function canUserManageInstance(instanceGuid, user, requiredPermission) {
-  if (await isGlobalAdmin(user.guid)) return true;
-  const permissions = await getUserInstancePermissions(instanceGuid, user.guid);
-  return permissions.has(requiredPermission);
-}
-
 // Resolves instance package assets from the in-memory package cache (no per-request YAML I/O).
 instancesRouter.get("/instances/:guid/assets", async (req, res, next) => {
   try {
     const instanceGuid = req.params.guid;
     const user = req.session.user;
 
-    const instance = await loadAccessibleInstance(instanceGuid, user);
+    const instance = await loadAccessibleInstance(instanceGuid, user, {
+      fields: ["guid", "name", "description", "packages"],
+    });
     if (!instance) {
       res.status(404).json({ error: "Instance not found" });
       return;
     }
 
     // Must have the run permission to load game assets
-    const canRun = await canUserManageInstance(instanceGuid, user, "instance.run");
+    const canRun = await userHasPermission(user.guid, instanceGuid, "instance.run");
     if (!canRun) {
       res.status(403).json({ error: "You do not have permission to run this instance" });
       return;
@@ -298,13 +250,15 @@ instancesRouter.put("/instances/:guid", async (req, res, next) => {
       return;
     }
 
-    const canEdit = await canUserManageInstance(instanceGuid, user, "instance.edit");
+    const canEdit = await userHasPermission(user.guid, instanceGuid, "instance.edit");
     if (!canEdit) {
       res.status(403).json({ error: "You do not have permission to edit this instance" });
       return;
     }
 
-    const instance = await loadAccessibleInstance(instanceGuid, user);
+    const instance = await loadAccessibleInstance(instanceGuid, user, {
+      fields: ["guid", "name", "description", "packages"],
+    });
     if (!instance) {
       res.status(404).json({ error: "Instance not found" });
       return;
@@ -359,7 +313,9 @@ instancesRouter.get("/instances/:guid/users", async (req, res, next) => {
     const instanceGuid = req.params.guid;
 
     // Must have access to the instance
-    const instance = await loadAccessibleInstance(instanceGuid, user);
+    const instance = await loadAccessibleInstance(instanceGuid, user, {
+      fields: ["guid", "name", "description", "packages"],
+    });
     if (!instance) {
       res.status(404).json({ error: "Instance not found" });
       return;
@@ -408,7 +364,7 @@ instancesRouter.put("/instances/:guid/users/:userGuid", async (req, res, next) =
     }
 
     // Check manage_users permission
-    const canManage = await canUserManageInstance(instanceGuid, user, "instance.manage_users");
+    const canManage = await userHasPermission(user.guid, instanceGuid, "instance.manage_users");
     if (!canManage) {
       res.status(403).json({ error: "You do not have permission to manage users on this instance" });
       return;
@@ -458,7 +414,7 @@ instancesRouter.delete("/instances/:guid/users/:userGuid", async (req, res, next
     const { guid: instanceGuid, userGuid: targetUserGuid } = req.params;
 
     // Check manage_users permission
-    const canManage = await canUserManageInstance(instanceGuid, user, "instance.manage_users");
+    const canManage = await userHasPermission(user.guid, instanceGuid, "instance.manage_users");
     if (!canManage) {
       res.status(403).json({ error: "You do not have permission to manage users on this instance" });
       return;
@@ -493,14 +449,16 @@ instancesRouter.delete("/instances/:guid", async (req, res, next) => {
     const { confirmName } = req.body;
 
     // Check delete permission
-    const canDelete = await canUserManageInstance(instanceGuid, user, "instance.delete");
+    const canDelete = await userHasPermission(user.guid, instanceGuid, "instance.delete");
     if (!canDelete) {
       res.status(403).json({ error: "You do not have permission to delete this instance" });
       return;
     }
 
     // Verify the instance exists and get name for confirmation
-    const instance = await loadAccessibleInstance(instanceGuid, user);
+    const instance = await loadAccessibleInstance(instanceGuid, user, {
+      fields: ["guid", "name", "description", "packages"],
+    });
     if (!instance) {
       res.status(404).json({ error: "Instance not found" });
       return;
