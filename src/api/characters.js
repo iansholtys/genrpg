@@ -1,834 +1,95 @@
-const crypto = require("node:crypto");
 const express = require("express");
-
-const { isGlobalAdmin } = require("../auth");
-const { pool } = require("../db/pool");
+const { NotFoundError } = require("../errors/NotFoundError");
+const { CharacterEntity, INSTANCE_FIELDS } = require("../entities/characterEntity");
 const {
-  CharacterPreCreateEvent,
-  CharacterPostCreateEvent,
-  CharacterPreUpdateEvent,
-  CharacterPostUpdateEvent,
-  CharacterPreDeleteEvent,
-  CharacterPostDeleteEvent,
-  CharacterPreGetEvent,
-  CharacterPostGetEvent,
-  getEventDispatcher,
-} = require("../events");
-const {
-  expandPackageSelectionForAssets,
-  loadPackages,
-  parsePackageCsv,
-} = require("../packages");
+  PERMISSION_VIEW,
+  PERMISSION_EDIT,
+  assertInstancePermissions,
+} = require("./instanceContext");
+const { handleRouteError } = require("../lib/httpResponse");
 
 const charactersRouter = express.Router();
-const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
-const MANAGED_COLUMNS = new Set([
-  "guid",
-  "character_guid",
-  "instance_guid",
-  "user_guid",
-  "create_datetime",
-  "update_datetime",
-]);
-const LABEL_COLUMNS = ["name", "display_name", "full_name", "guid"];
 
-async function loadAccessibleInstance(instanceGuid, user) {
-  const isAdmin = await isGlobalAdmin(user.guid);
-  const result = await pool.query(
-    `
-      SELECT i.guid, i.packages
-      FROM genrpg.instances i
-      LEFT JOIN genrpg.instance_user_roles iur
-        ON iur.instance_guid = i.guid
-        AND iur.user_guid = $1
-      WHERE i.guid = $2
-        AND ($3::boolean OR iur.user_guid IS NOT NULL)
-    `,
-    [user.guid, instanceGuid, isAdmin],
-  );
-
-  return result.rows[0] || null;
+function assertCharacterPermissions(req, permission) {
+  return assertInstancePermissions(req, permission, { fields: INSTANCE_FIELDS });
 }
-
-async function getUserInstancePermissions(instanceGuid, userGuid) {
-  const result = await pool.query(
-    `
-      SELECT DISTINCT p.name
-      FROM genrpg.instance_user_roles iur
-      JOIN genrpg.role_permissions rp ON rp.role_id = iur.role_id
-      JOIN genrpg.permissions p ON p.id = rp.permission_id
-      WHERE iur.instance_guid = $1 AND iur.user_guid = $2
-    `,
-    [instanceGuid, userGuid],
-  );
-  return new Set(result.rows.map((row) => row.name));
-}
-
-async function requireInstancePermission(req, res, instanceGuid, permissionName) {
-  const user = req.session.user;
-  const instance = await loadAccessibleInstance(instanceGuid, user);
-  if (!instance) {
-    res.status(404).json({ error: "Instance not found" });
-    return null;
-  }
-
-  if (await isGlobalAdmin(user.guid)) {
-    return instance;
-  }
-
-  const permissions = await getUserInstancePermissions(instanceGuid, user.guid);
-  if (!permissions.has(permissionName)) {
-    res.status(403).json({ error: "You do not have permission to perform this action" });
-    return null;
-  }
-
-  return instance;
-}
-
-function quoteIdentifier(identifier) {
-  if (!IDENTIFIER_PATTERN.test(identifier)) {
-    throw new Error(`Invalid database identifier: ${identifier}`);
-  }
-
-  return `"${identifier}"`;
-}
-
-function quoteColumn(identifier) {
-  if (!/^[a-z_][a-z0-9_]*$/.test(identifier)) {
-    throw new Error(`Invalid database column: ${identifier}`);
-  }
-
-  return `"${identifier}"`;
-}
-
-function isNonEmptyValue(value) {
-  return value !== null && value !== undefined && value !== "";
-}
-
-function inferInputType(column) {
-  if (column.foreignKey) return "select";
-  if (column.dataType === "boolean") return "checkbox";
-  if (["integer", "bigint", "smallint", "numeric", "real", "double precision"].includes(column.dataType)) {
-    return "number";
-  }
-  if (column.dataType === "date") return "date";
-  if (column.dataType.includes("timestamp")) return "datetime-local";
-  if (column.dataType === "text") return "textarea";
-  return "text";
-}
-
-async function loadPackageLabels() {
-  const { packages } = await loadPackages({ strict: false });
-  return new Map(packages.map((pkg) => [pkg.machineName, pkg.name]));
-}
-
-async function loadCharacterSchemas(packageNames) {
-  const schemas = [...new Set(["genrpg", ...packageNames])];
-  const invalidSchema = schemas.find((schema) => !IDENTIFIER_PATTERN.test(schema));
-  if (invalidSchema) {
-    throw new Error(`Invalid package schema name: ${invalidSchema}`);
-  }
-
-  const result = await pool.query(
-    `
-      SELECT t.table_schema,
-        EXISTS (
-          SELECT 1
-          FROM information_schema.columns c
-          WHERE c.table_schema = t.table_schema
-            AND c.table_name = t.table_name
-            AND c.column_name = 'character_guid'
-        ) AS has_character_guid
-      FROM information_schema.tables t
-      WHERE t.table_schema = ANY($1::text[])
-        AND t.table_name = 'characters'
-        AND t.table_type = 'BASE TABLE'
-      ORDER BY t.table_schema ASC
-    `,
-    [schemas],
-  );
-
-  const found = result.rows.map((row) => ({
-    schema: row.table_schema,
-    hasCharacterGuid: row.has_character_guid,
-  }));
-  if (!found.some((row) => row.schema === "genrpg")) {
-    throw new Error("Core characters table does not exist");
-  }
-
-  return found.filter((row) => row.schema === "genrpg" || row.hasCharacterGuid);
-}
-
-async function loadCharacterColumns(schemas) {
-  const result = await pool.query(
-    `
-      SELECT
-        table_schema,
-        column_name,
-        ordinal_position,
-        column_default,
-        is_nullable,
-        data_type,
-        udt_name
-      FROM information_schema.columns
-      WHERE table_schema = ANY($1::text[])
-        AND table_name = 'characters'
-      ORDER BY table_schema ASC, ordinal_position ASC
-    `,
-    [schemas],
-  );
-
-  const columnsBySchema = new Map();
-  for (const row of result.rows) {
-    if (!columnsBySchema.has(row.table_schema)) columnsBySchema.set(row.table_schema, []);
-    columnsBySchema.get(row.table_schema).push({
-      name: row.column_name,
-      ordinalPosition: row.ordinal_position,
-      hasDefault: row.column_default !== null,
-      nullable: row.is_nullable === "YES",
-      required: row.is_nullable === "NO" && row.column_default === null,
-      dataType: row.data_type === "USER-DEFINED" ? row.udt_name : row.data_type,
-      default: row.column_default,
-    });
-  }
-
-  return columnsBySchema;
-}
-
-async function loadCharacterForeignKeys(schemas) {
-  const result = await pool.query(
-    `
-      SELECT
-        kcu.table_schema,
-        kcu.column_name,
-        ccu.table_schema AS referenced_schema,
-        ccu.table_name AS referenced_table,
-        ccu.column_name AS referenced_column
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu
-        ON kcu.constraint_schema = tc.constraint_schema
-        AND kcu.constraint_name = tc.constraint_name
-      JOIN information_schema.constraint_column_usage ccu
-        ON ccu.constraint_schema = tc.constraint_schema
-        AND ccu.constraint_name = tc.constraint_name
-      WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND kcu.table_schema = ANY($1::text[])
-        AND kcu.table_name = 'characters'
-    `,
-    [schemas],
-  );
-
-  const foreignKeys = new Map();
-  for (const row of result.rows) {
-    foreignKeys.set(`${row.table_schema}.${row.column_name}`, {
-      schema: row.referenced_schema,
-      table: row.referenced_table,
-      column: row.referenced_column,
-    });
-  }
-
-  return foreignKeys;
-}
-
-async function loadLabelColumn(referencedSchema, referencedTable) {
-  const result = await pool.query(
-    `
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = $1 AND table_name = $2
-    `,
-    [referencedSchema, referencedTable],
-  );
-  const available = new Set(result.rows.map((row) => row.column_name));
-  return LABEL_COLUMNS.find((column) => available.has(column)) || null;
-}
-
-async function loadForeignKeyOptions(foreignKey) {
-  if (
-    !IDENTIFIER_PATTERN.test(foreignKey.schema) ||
-    !IDENTIFIER_PATTERN.test(foreignKey.table) ||
-    !/^[a-z_][a-z0-9_]*$/.test(foreignKey.column)
-  ) {
-    return [];
-  }
-
-  const labelColumn = await loadLabelColumn(foreignKey.schema, foreignKey.table);
-  if (!labelColumn) return [];
-
-  const result = await pool.query(
-    `
-      SELECT ${quoteColumn(foreignKey.column)}::text AS value,
-        ${quoteColumn(labelColumn)}::text AS label
-      FROM ${quoteIdentifier(foreignKey.schema)}.${quoteIdentifier(foreignKey.table)}
-      ORDER BY ${quoteColumn(labelColumn)} ASC NULLS LAST
-      LIMIT 500
-    `,
-  );
-
-  return result.rows.map((row) => ({ value: row.value, label: row.label || row.value }));
-}
-
-async function buildCharacterFormMetadata(packageNames) {
-  const schemaRows = await loadCharacterSchemas(packageNames);
-  const schemas = schemaRows.map((row) => row.schema);
-  const [labels, columnsBySchema, foreignKeys] = await Promise.all([
-    loadPackageLabels(),
-    loadCharacterColumns(schemas),
-    loadCharacterForeignKeys(schemas),
-  ]);
-
-  const formSchemas = [];
-  for (const schema of schemas) {
-    const columns = columnsBySchema.get(schema) || [];
-    const formColumns = [];
-
-    for (const column of columns) {
-      if (MANAGED_COLUMNS.has(column.name)) continue;
-
-      const foreignKey = foreignKeys.get(`${schema}.${column.name}`) || null;
-      const normalizedColumn = {
-        ...column,
-        label: column.name.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()),
-        required: column.required,
-        foreignKey,
-      };
-      normalizedColumn.inputType = inferInputType(normalizedColumn);
-      if (foreignKey) {
-        normalizedColumn.options = await loadForeignKeyOptions(foreignKey);
-      }
-      formColumns.push(normalizedColumn);
-    }
-
-    formSchemas.push({
-      schema,
-      label: labels.get(schema) || (schema === "genrpg" ? "GenRPG" : schema),
-      table: "characters",
-      columns: formColumns,
-    });
-  }
-
-  return { schemas: formSchemas };
-}
-
-function buildCharactersQuery(schemas, { byCharacterGuid = false } = {}) {
-  const packageSchemas = schemas.filter((schema) => schema !== "genrpg");
-  const joins = packageSchemas.map((schema, index) => {
-    const alias = `c${index + 1}`;
-    return `LEFT JOIN ${quoteIdentifier(schema)}.characters ${alias} ON ${alias}.character_guid = c0.guid`;
-  });
-
-  const packageColumns = packageSchemas.map((schema, index) => {
-    const alias = `c${index + 1}`;
-    return `'${schema}', CASE WHEN ${alias}.character_guid IS NULL THEN NULL ELSE row_to_json(${alias}) END`;
-  });
-
-  const jsonArgs = [
-    `'genrpg', row_to_json(c0)`,
-    ...packageColumns,
-  ].join(",\n            ");
-  const characterFilter = byCharacterGuid ? "AND c0.guid = $2" : "";
-
-  return `
-    SELECT
-      c0.guid,
-      c0.instance_guid,
-      json_build_object(
-            ${jsonArgs}
-      ) AS packages
-    FROM genrpg.characters c0
-    ${joins.join("\n    ")}
-    WHERE c0.instance_guid = $1
-      ${characterFilter}
-    ORDER BY c0.display_name ASC NULLS LAST, c0.create_datetime ASC
-  `;
-}
-
-async function loadCharacterRows(instanceGuid, packageNames, characterGuid = null) {
-  const schemaRows = await loadCharacterSchemas(packageNames);
-  const schemas = schemaRows.map((row) => row.schema);
-  const params = characterGuid ? [instanceGuid, characterGuid] : [instanceGuid];
-  const result = await pool.query(
-    buildCharactersQuery(schemas, { byCharacterGuid: Boolean(characterGuid) }),
-    params,
-  );
-
-  return result.rows.map((row) => ({
-    guid: row.guid,
-    instance_guid: row.instance_guid,
-    packages: row.packages,
-    extensions: {},
-  }));
-}
-
-async function resolveInstancePackageNames(instancePackages) {
-  const { packages } = await loadPackages({ strict: true });
-  return expandPackageSelectionForAssets(parsePackageCsv(instancePackages), packages);
-}
-
-function buildCharacterDispatchContext(instanceGuid, packageNames, user) {
-  return {
-    instanceGuid,
-    instancePackageNames: packageNames,
-    user,
-    pool,
-  };
-}
-
-async function dispatchCharacterGetEvents(characters, context) {
-  const dispatcher = await getEventDispatcher();
-  const packageNames = context.instancePackageNames;
-  const eventContext = {
-    characters,
-    instanceGuid: context.instanceGuid,
-    instancePackageNames: packageNames,
-    user: context.user,
-    pool,
-  };
-
-  const pre = new CharacterPreGetEvent(eventContext);
-  await dispatcher.dispatch(pre, packageNames);
-
-  const post = new CharacterPostGetEvent({
-    ...eventContext,
-    characters: pre.characters,
-  });
-  await dispatcher.dispatch(post, packageNames);
-  return post.characters;
-}
-
-function getWritableColumns(columnsBySchema, schema) {
-  return (columnsBySchema.get(schema) || []).filter((column) => !MANAGED_COLUMNS.has(column.name));
-}
-
-function collectSubmittedValues(payload, writableColumns) {
-  const values = {};
-  const allowed = new Set(writableColumns.map((column) => column.name));
-  for (const [name, value] of Object.entries(payload || {})) {
-    if (allowed.has(name) && isNonEmptyValue(value)) {
-      values[name] = value;
-    }
-  }
-  return values;
-}
-
-function buildInsertQuery(schema, table, values) {
-  const columns = Object.keys(values);
-  if (!columns.length) {
-    throw new Error(`No values supplied for ${schema}.${table}`);
-  }
-
-  const columnSql = columns.map(quoteColumn).join(", ");
-  const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
-  return {
-    sql: `INSERT INTO ${quoteIdentifier(schema)}.${quoteIdentifier(table)} (${columnSql}) VALUES (${placeholders})`,
-    params: columns.map((column) => values[column]),
-  };
-}
-
-function buildUpdateQuery(schema, table, values, whereColumn, whereValue) {
-  const columns = Object.keys(values);
-  if (!columns.length) {
-    return null;
-  }
-
-  const setSql = columns.map((column, index) => `${quoteColumn(column)} = $${index + 1}`).join(", ");
-  const params = columns.map((column) => values[column]);
-  params.push(whereValue);
-
-  return {
-    sql: `
-      UPDATE ${quoteIdentifier(schema)}.${quoteIdentifier(table)}
-      SET ${setSql}
-      WHERE ${quoteColumn(whereColumn)} = $${columns.length + 1}
-    `,
-    params,
-  };
-}
-
-function packagePayloadSectionHasValues(packageData) {
-  return Boolean(packageData && typeof packageData === "object" && Object.keys(packageData).length);
-}
-
-async function characterExistsInInstance(instanceGuid, characterGuid) {
-  const result = await pool.query(
-    `
-      SELECT guid
-      FROM genrpg.characters
-      WHERE guid = $1 AND instance_guid = $2
-    `,
-    [characterGuid, instanceGuid],
-  );
-  return result.rows.length > 0;
-}
-
-async function createCharacter(instanceGuid, userGuid, instancePackages, payload) {
-  const characterGuid = crypto.randomUUID();
-  const schemaRows = await loadCharacterSchemas(instancePackages);
-  const schemas = schemaRows.map((row) => row.schema);
-  const columnsBySchema = await loadCharacterColumns(schemas);
-  const packagesPayload = payload?.packages && typeof payload.packages === "object"
-    ? payload.packages
-    : {};
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    const coreValues = {
-      guid: characterGuid,
-      instance_guid: instanceGuid,
-      user_guid: userGuid,
-      ...collectSubmittedValues(packagesPayload.genrpg, getWritableColumns(columnsBySchema, "genrpg")),
-    };
-    const coreInsert = buildInsertQuery("genrpg", "characters", coreValues);
-    await client.query(coreInsert.sql, coreInsert.params);
-
-    for (const schema of schemas.filter((entry) => entry !== "genrpg")) {
-      const packageData = packagesPayload[schema];
-      if (!packagePayloadSectionHasValues(packageData)) {
-        continue;
-      }
-
-      const packageValues = collectSubmittedValues(
-        packageData,
-        getWritableColumns(columnsBySchema, schema),
-      );
-      if (!Object.keys(packageValues).length) {
-        continue;
-      }
-
-      const columns = columnsBySchema.get(schema) || [];
-      const guidColumn = columns.find((column) => column.name === "guid");
-      const insertValues = { character_guid: characterGuid, ...packageValues };
-      if (guidColumn?.required && !guidColumn.hasDefault) {
-        insertValues.guid = crypto.randomUUID();
-      }
-
-      const packageInsert = buildInsertQuery(schema, "characters", insertValues);
-      await client.query(packageInsert.sql, packageInsert.params);
-    }
-
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-
-  return characterGuid;
-}
-
-async function updateCharacter(instanceGuid, characterGuid, instancePackages, payload) {
-  const schemaRows = await loadCharacterSchemas(instancePackages);
-  const schemas = schemaRows.map((row) => row.schema);
-  const columnsBySchema = await loadCharacterColumns(schemas);
-  const packagesPayload = payload?.packages && typeof payload.packages === "object"
-    ? payload.packages
-    : {};
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    const coreValues = collectSubmittedValues(
-      packagesPayload.genrpg,
-      getWritableColumns(columnsBySchema, "genrpg"),
-    );
-    if (Object.keys(coreValues).length) {
-      const coreUpdate = buildUpdateQuery("genrpg", "characters", coreValues, "guid", characterGuid);
-      await client.query(coreUpdate.sql, coreUpdate.params);
-    }
-
-    for (const schema of schemas.filter((entry) => entry !== "genrpg")) {
-      const packageData = packagesPayload[schema];
-      if (!packagePayloadSectionHasValues(packageData)) {
-        continue;
-      }
-
-      const packageValues = collectSubmittedValues(
-        packageData,
-        getWritableColumns(columnsBySchema, schema),
-      );
-      if (!Object.keys(packageValues).length) {
-        continue;
-      }
-
-      const columns = columnsBySchema.get(schema) || [];
-      const guidColumn = columns.find((column) => column.name === "guid");
-      const packageUpdate = buildUpdateQuery(
-        schema,
-        "characters",
-        packageValues,
-        "character_guid",
-        characterGuid,
-      );
-      const updateResult = await client.query(packageUpdate.sql, packageUpdate.params);
-
-      if (updateResult.rowCount === 0) {
-        const insertValues = { character_guid: characterGuid, ...packageValues };
-        if (guidColumn?.required && !guidColumn.hasDefault) {
-          insertValues.guid = crypto.randomUUID();
-        }
-        const packageInsert = buildInsertQuery(schema, "characters", insertValues);
-        await client.query(packageInsert.sql, packageInsert.params);
-      }
-    }
-
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-async function deleteCharacter(instanceGuid, characterGuid, instancePackages) {
-  const schemaRows = await loadCharacterSchemas(instancePackages);
-  const schemas = schemaRows.map((row) => row.schema);
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    for (const schema of schemas.filter((entry) => entry !== "genrpg")) {
-      await client.query(
-        `
-          DELETE FROM ${quoteIdentifier(schema)}.${quoteIdentifier("characters")}
-          WHERE ${quoteColumn("character_guid")} = $1
-        `,
-        [characterGuid],
-      );
-    }
-
-    const coreResult = await client.query(
-      `
-        DELETE FROM genrpg.characters
-        WHERE guid = $1 AND instance_guid = $2
-        RETURNING guid
-      `,
-      [characterGuid, instanceGuid],
-    );
-
-    if (!coreResult.rows.length) {
-      await client.query("ROLLBACK");
-      return false;
-    }
-
-    await client.query("COMMIT");
-    return true;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
 charactersRouter.get("/instances/:instanceGuid/characters/form", async (req, res, next) => {
   try {
-    const { instanceGuid } = req.params;
-    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.run");
-    if (!instance) return;
-
-    const packageNames = await resolveInstancePackageNames(instance.packages);
-    const metadata = await buildCharacterFormMetadata(packageNames);
+    const context = await assertCharacterPermissions(req, PERMISSION_VIEW);
+    const metadata = await CharacterEntity.getFormSchema(context);
     res.json(metadata);
   } catch (error) {
-    next(error);
+    handleRouteError(res, error, next);
   }
 });
 
 charactersRouter.get("/instances/:instanceGuid/characters", async (req, res, next) => {
   try {
-    const { instanceGuid } = req.params;
-    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.run");
-    if (!instance) return;
-
-    const packageNames = await resolveInstancePackageNames(instance.packages);
-    let characters = await loadCharacterRows(instanceGuid, packageNames);
-    characters = await dispatchCharacterGetEvents(
-      characters,
-      buildCharacterDispatchContext(instanceGuid, packageNames, req.session.user),
-    );
+    const context = await assertCharacterPermissions(req, PERMISSION_VIEW);
+    const characters = await CharacterEntity.list(context);
     res.json({ characters });
   } catch (error) {
-    next(error);
+    handleRouteError(res, error, next);
   }
 });
 
 charactersRouter.get("/instances/:instanceGuid/characters/:characterGuid", async (req, res, next) => {
   try {
-    const { instanceGuid, characterGuid } = req.params;
-    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.run");
-    if (!instance) return;
-
-    const packageNames = await resolveInstancePackageNames(instance.packages);
-    let characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
-    if (!characters.length) {
-      res.status(404).json({ error: "Character not found" });
-      return;
+    const context = await assertCharacterPermissions(req, PERMISSION_VIEW);
+    const character = await CharacterEntity.load(context, req.params.characterGuid);
+    if (!character) {
+      throw new NotFoundError("Character not found");
     }
-
-    characters = await dispatchCharacterGetEvents(
-      characters,
-      buildCharacterDispatchContext(instanceGuid, packageNames, req.session.user),
-    );
-
-    if (!characters.length) {
-      res.status(404).json({ error: "Character not found" });
-      return;
-    }
-
-    res.json({ character: characters[0] });
+    res.json({ character });
   } catch (error) {
-    next(error);
+    handleRouteError(res, error, next);
   }
 });
 
 charactersRouter.post("/instances/:instanceGuid/characters", async (req, res, next) => {
   try {
-    const { instanceGuid } = req.params;
-    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.edit");
-    if (!instance) return;
-
-    const packageNames = await resolveInstancePackageNames(instance.packages);
-    const dispatcher = await getEventDispatcher();
-    const createContext = buildCharacterDispatchContext(
-      instanceGuid,
-      packageNames,
-      req.session.user,
-    );
-
-    const pre = new CharacterPreCreateEvent({
-      ...createContext,
-      payload: req.body,
-    });
-    await dispatcher.dispatch(pre, packageNames);
-    if (pre.errors.length) {
-      res.status(400).json({ error: pre.errors[0], errors: pre.errors });
-      return;
-    }
-
-    const characterGuid = await createCharacter(
-      instanceGuid,
-      req.session.user.guid,
-      packageNames,
-      pre.payload,
-    );
-    let characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
-
-    const post = new CharacterPostCreateEvent({
-      ...createContext,
-      characters,
-      characterGuid,
-      payload: pre.payload,
-    });
-    await dispatcher.dispatch(post, packageNames);
-    characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
-
-    characters = await dispatchCharacterGetEvents(characters, createContext);
-    res.status(201).json({ character: characters[0] });
+    const context = await assertCharacterPermissions(req, PERMISSION_EDIT);
+    const character = await CharacterEntity.create(context, req.body);
+    res.status(201).json({ character });
   } catch (error) {
-    next(error);
+    handleRouteError(res, error, next);
   }
 });
 
-charactersRouter.patch("/instances/:instanceGuid/characters/:characterGuid", async (req, res, next) => {
-  try {
-    const { instanceGuid, characterGuid } = req.params;
-    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.edit");
-    if (!instance) return;
-
-    if (!(await characterExistsInInstance(instanceGuid, characterGuid))) {
-      res.status(404).json({ error: "Character not found" });
-      return;
+charactersRouter.patch(
+  "/instances/:instanceGuid/characters/:characterGuid",
+  async (req, res, next) => {
+    try {
+      const context = await assertCharacterPermissions(req, PERMISSION_EDIT);
+      const character = await CharacterEntity.update(
+        context,
+        req.params.characterGuid,
+        req.body,
+      );
+      if (!character) {
+        throw new NotFoundError("Character not found");
+      }
+      res.json({ character });
+    } catch (error) {
+      handleRouteError(res, error, next);
     }
+  },
+);
 
-    const packageNames = await resolveInstancePackageNames(instance.packages);
-    const dispatcher = await getEventDispatcher();
-    const updateContext = buildCharacterDispatchContext(
-      instanceGuid,
-      packageNames,
-      req.session.user,
-    );
-
-    const pre = new CharacterPreUpdateEvent({
-      ...updateContext,
-      characterGuid,
-      payload: req.body,
-    });
-    await dispatcher.dispatch(pre, packageNames);
-    if (pre.errors.length) {
-      res.status(400).json({ error: pre.errors[0], errors: pre.errors });
-      return;
+charactersRouter.delete(
+  "/instances/:instanceGuid/characters/:characterGuid",
+  async (req, res, next) => {
+    try {
+      const context = await assertCharacterPermissions(req, PERMISSION_EDIT);
+      const deleted = await CharacterEntity.delete(context, req.params.characterGuid);
+      if (!deleted) {
+        throw new NotFoundError("Character not found");
+      }
+      res.status(204).send();
+    } catch (error) {
+      handleRouteError(res, error, next);
     }
-
-    await updateCharacter(instanceGuid, characterGuid, packageNames, pre.payload);
-    let characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
-
-    const post = new CharacterPostUpdateEvent({
-      ...updateContext,
-      characters,
-      characterGuid,
-      payload: pre.payload,
-    });
-    await dispatcher.dispatch(post, packageNames);
-    characters = await loadCharacterRows(instanceGuid, packageNames, characterGuid);
-
-    characters = await dispatchCharacterGetEvents(characters, updateContext);
-    res.json({ character: characters[0] });
-  } catch (error) {
-    next(error);
-  }
-});
-
-charactersRouter.delete("/instances/:instanceGuid/characters/:characterGuid", async (req, res, next) => {
-  try {
-    const { instanceGuid, characterGuid } = req.params;
-    const instance = await requireInstancePermission(req, res, instanceGuid, "instance.edit");
-    if (!instance) return;
-
-    if (!(await characterExistsInInstance(instanceGuid, characterGuid))) {
-      res.status(404).json({ error: "Character not found" });
-      return;
-    }
-
-    const packageNames = await resolveInstancePackageNames(instance.packages);
-    const dispatcher = await getEventDispatcher();
-    const deleteContext = buildCharacterDispatchContext(
-      instanceGuid,
-      packageNames,
-      req.session.user,
-    );
-
-    const pre = new CharacterPreDeleteEvent({
-      ...deleteContext,
-      characterGuid,
-    });
-    await dispatcher.dispatch(pre, packageNames);
-    if (pre.errors.length) {
-      res.status(400).json({ error: pre.errors[0], errors: pre.errors });
-      return;
-    }
-
-    const deleted = await deleteCharacter(instanceGuid, characterGuid, packageNames);
-    if (!deleted) {
-      res.status(404).json({ error: "Character not found" });
-      return;
-    }
-
-    const post = new CharacterPostDeleteEvent({
-      ...deleteContext,
-      characterGuid,
-    });
-    await dispatcher.dispatch(post, packageNames);
-
-    res.status(204).send();
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 module.exports = charactersRouter;
