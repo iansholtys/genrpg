@@ -110,6 +110,40 @@ async function runVersionStep(client, updatesModule, version) {
   await step(client);
 }
 
+async function runMaintenanceSteps(pool, machineName, packagePath) {
+  const updatesModule = await loadUpdatesModule(machineName, packagePath);
+  const steps = updatesModule.maintenance;
+  if (!Array.isArray(steps) || !steps.length) {
+    return false;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const step of steps) {
+      if (typeof step === "function") {
+        await step(client);
+      }
+    }
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function packageNeedsMaintenance(client, pkg) {
+  const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
+  if (typeof updatesModule.needsMaintenance !== "function") {
+    return false;
+  }
+
+  return updatesModule.needsMaintenance(client);
+}
+
 async function applyPackageUpdatesForMachine(pool, machineName) {
   const { packages } = await loadPackages({ strict: false });
   const pkg = packages.find((entry) => entry.machineName === machineName);
@@ -121,6 +155,8 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
     pool,
     packageName: machineName,
   });
+
+  const maintenanceRan = await runMaintenanceSteps(pool, pkg.machineName, pkg.path);
 
   if (pkg.machineName) {
     const client = await pool.connect();
@@ -134,7 +170,11 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
   const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
   const latestVersion = getLatestVersion(updatesModule);
   if (!latestVersion) {
-    return { applied: schemaApplied.applied };
+    return {
+      applied: maintenanceRan
+        ? [...schemaApplied.applied, { machineName: pkg.machineName, maintenance: true }]
+        : schemaApplied.applied,
+    };
   }
 
   let currentVersion = 0;
@@ -147,7 +187,11 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
   }
 
   if (currentVersion >= latestVersion) {
-    return { applied: schemaApplied.applied };
+    return {
+      applied: maintenanceRan
+        ? [...schemaApplied.applied, { machineName: pkg.machineName, maintenance: true }]
+        : schemaApplied.applied,
+    };
   }
 
   for (let version = currentVersion + 1; version <= latestVersion; version += 1) {
@@ -186,15 +230,19 @@ async function buildUpdateStatus(client) {
     const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
     const latestVersion = getLatestVersion(updatesModule);
     const currentVersion = appliedVersions.get(pkg.machineName) ?? 0;
+    const maintenanceNeeded = await packageNeedsMaintenance(client, pkg);
 
     statuses.push({
       machineName: pkg.machineName,
       currentVersion,
       latestVersion,
+      maintenanceNeeded,
     });
   }
 
-  const updatesNeeded = statuses.some((status) => status.currentVersion < status.latestVersion);
+  const updatesNeeded = statuses.some(
+    (status) => status.currentVersion < status.latestVersion || status.maintenanceNeeded,
+  );
   return { updatesNeeded, packages: statuses };
 }
 
@@ -237,7 +285,14 @@ async function applyPackageUpdates(pool) {
       readClient.release();
     }
 
-    if (currentVersion >= latestVersion) continue;
+    const maintenanceRan = await runMaintenanceSteps(pool, pkg.machineName, pkg.path);
+
+    if (currentVersion >= latestVersion) {
+      if (maintenanceRan) {
+        applied.push({ machineName: pkg.machineName, maintenance: true });
+      }
+      continue;
+    }
 
     for (let version = currentVersion + 1; version <= latestVersion; version += 1) {
       const client = await pool.connect();

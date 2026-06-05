@@ -1,7 +1,7 @@
 import { getElements } from "./elements.js";
 import { requestJson } from "./api.js";
 import { notify } from "./utils.js";
-import { setupPackageEvents } from "./packages.js";
+import { setupPackageEvents, checkForUpdates } from "./packages.js";
 import { setupInstanceEvents, applyInitialRoute } from "./instances.js";
 import { setupRoleEvents } from "./roles.js";
 import { setupUserEvents } from "./users.js";
@@ -18,6 +18,8 @@ export async function loadApp() {
 
     if (isLandingUrl()) {
       await loadLandingPage();
+    } else if (user?.admin) {
+      await checkForUpdates();
     }
 
     await applyInitialRoute();

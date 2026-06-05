@@ -27,19 +27,16 @@ const execAsync = promisify(exec);
 
 const packagesRouter = express.Router();
 
-async function registerPackageVersion(machineName, packagePath) {
-  const { loadUpdatesModule, getLatestVersion } = require("../updates");
-  const updatesModule = await loadUpdatesModule(machineName, packagePath);
-  const latestVersion = getLatestVersion(updatesModule);
+async function registerPackageVersion(machineName) {
   const registerClient = await pool.connect();
   try {
     await registerClient.query(
       `
         INSERT INTO genrpg.packages (package, version)
-        VALUES ($1, $2)
-        ON CONFLICT (package) DO UPDATE SET version = EXCLUDED.version
+        VALUES ($1, 0)
+        ON CONFLICT (package) DO NOTHING
       `,
-      [machineName, latestVersion],
+      [machineName],
     );
   } finally {
     registerClient.release();
@@ -67,7 +64,30 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
     updateWarning = error.message || "Failed to apply package database updates";
   }
 
-  await registerPackageVersion(machineName, packagePath);
+  await registerPackageVersion(machineName);
+
+  if (!updateWarning) {
+    const { loadUpdatesModule, getLatestVersion } = require("../updates");
+    const updatesModule = await loadUpdatesModule(machineName, packagePath);
+    const latestVersion = getLatestVersion(updatesModule);
+    if (latestVersion) {
+      const versionClient = await pool.connect();
+      try {
+        const applied = await versionClient.query(
+          `SELECT version FROM genrpg.packages WHERE package = $1`,
+          [machineName],
+        );
+        const currentVersion = applied.rows[0]?.version ?? 0;
+        if (currentVersion < latestVersion) {
+          updateWarning =
+            "Package database update steps did not reach the latest version. Use the Update banner on the home page.";
+        }
+      } finally {
+        versionClient.release();
+      }
+    }
+  }
+
   return { updateWarning };
 }
 

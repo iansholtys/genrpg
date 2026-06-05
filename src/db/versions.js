@@ -303,27 +303,21 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
     }
 
     if (freshlyInstalledPackages.size > 0) {
-      const { loadUpdatesModule, getLatestVersion } = require("../updates");
       for (const packageName of freshlyInstalledPackages) {
-        const pkg = packages.find((p) => p.machineName === packageName);
-        if (pkg) {
-          try {
-            const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
-            const latestVersion = getLatestVersion(updatesModule);
-            await client.query(
-              `
+        try {
+          await client.query(
+            `
               INSERT INTO genrpg.packages (package, version)
-              VALUES ($1, $2)
-              ON CONFLICT (package) DO UPDATE SET version = EXCLUDED.version
+              VALUES ($1, 0)
+              ON CONFLICT (package) DO NOTHING
             `,
-              [packageName, latestVersion],
-            );
-          } catch (error) {
-            console.error(
-              `Failed to initialize version for freshly installed package ${packageName}:`,
-              error,
-            );
-          }
+            [packageName],
+          );
+        } catch (error) {
+          console.error(
+            `Failed to initialize version for freshly installed package ${packageName}:`,
+            error,
+          );
         }
       }
     }
