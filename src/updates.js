@@ -42,8 +42,6 @@ async function loadUpdatesModule(machineName, packagePath) {
   return typeof loaded === "function" && loaded.default ? loaded.default : loaded;
 }
 
-const UPDATE_STEP_KEY_PATTERN = /^\s+(\d+)\s*:/gm;
-
 function getLatestVersion(updatesModule) {
   if (!updatesModule || typeof updatesModule !== "object") return 0;
 
@@ -53,43 +51,6 @@ function getLatestVersion(updatesModule) {
 
   if (!versions.length) return 0;
   return Math.max(...versions);
-}
-
-async function getLatestVersionFromDisk(machineName, packagePath) {
-  const updatesPath = getUpdatesPath(machineName, packagePath);
-
-  let content;
-  try {
-    content = await fs.readFile(updatesPath, "utf8");
-  } catch {
-    return 0;
-  }
-
-  const versions = [...content.matchAll(UPDATE_STEP_KEY_PATTERN)]
-    .map((match) => Number(match[1]))
-    .filter((value) => Number.isInteger(value) && value > 0);
-
-  if (!versions.length) return 0;
-  return Math.max(...versions);
-}
-
-async function resolveLatestPackageVersion(machineName, packagePath) {
-  const updatesModule = await loadUpdatesModule(machineName, packagePath);
-  const fromModule = getLatestVersion(updatesModule);
-  const fromDisk = await getLatestVersionFromDisk(machineName, packagePath);
-  return Math.max(fromModule, fromDisk);
-}
-
-async function getPackageUpdateDiagnostics(machineName, packagePath) {
-  const updatesPath = getUpdatesPath(machineName, packagePath);
-  const updatesModule = await loadUpdatesModule(machineName, packagePath);
-
-  return {
-    updatesPath: path.relative(REPO_ROOT, updatesPath),
-    latestVersionDisk: await getLatestVersionFromDisk(machineName, packagePath),
-    latestVersionModule: getLatestVersion(updatesModule),
-    latestVersion: await resolveLatestPackageVersion(machineName, packagePath),
-  };
 }
 
 function sortPackagesByDependencies(packages) {
@@ -175,7 +136,8 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
     }
   }
 
-  const latestVersion = await resolveLatestPackageVersion(pkg.machineName, pkg.path);
+  const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
+  const latestVersion = getLatestVersion(updatesModule);
   if (!latestVersion) {
     return { applied: schemaApplied.applied };
   }
@@ -192,8 +154,6 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
   if (currentVersion >= latestVersion) {
     return { applied: schemaApplied.applied };
   }
-
-  const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
 
   for (let version = currentVersion + 1; version <= latestVersion; version += 1) {
     const client = await pool.connect();
@@ -228,16 +188,14 @@ async function buildUpdateStatus(client) {
   const statuses = [];
 
   for (const pkg of packages) {
-    const diagnostics = await getPackageUpdateDiagnostics(pkg.machineName, pkg.path);
+    const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
+    const latestVersion = getLatestVersion(updatesModule);
     const currentVersion = appliedVersions.get(pkg.machineName) ?? 0;
 
     statuses.push({
       machineName: pkg.machineName,
       currentVersion,
-      latestVersion: diagnostics.latestVersion,
-      latestVersionDisk: diagnostics.latestVersionDisk,
-      latestVersionModule: diagnostics.latestVersionModule,
-      updatesPath: diagnostics.updatesPath,
+      latestVersion,
     });
   }
 
@@ -273,7 +231,8 @@ async function applyPackageUpdates(pool) {
       }
     }
 
-    const latestVersion = await resolveLatestPackageVersion(pkg.machineName, pkg.path);
+    const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
+    const latestVersion = getLatestVersion(updatesModule);
     if (!latestVersion) continue;
 
     let currentVersion = 0;
@@ -288,8 +247,6 @@ async function applyPackageUpdates(pool) {
     if (currentVersion >= latestVersion) {
       continue;
     }
-
-    const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
 
     for (let version = currentVersion + 1; version <= latestVersion; version += 1) {
       const client = await pool.connect();
@@ -321,9 +278,6 @@ module.exports = {
   checkPackageUpdates,
   applyPackageUpdates,
   applyPackageUpdatesForMachine,
-  getPackageUpdateDiagnostics,
   loadUpdatesModule,
   getLatestVersion,
-  getLatestVersionFromDisk,
-  resolveLatestPackageVersion,
 };
