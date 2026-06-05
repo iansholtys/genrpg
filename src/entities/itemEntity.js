@@ -39,6 +39,27 @@ function formFieldFromSpec(key, spec, overrides = {}) {
   return field;
 }
 
+/** Temporary debug shape for API responses — remove once extension fields round-trip reliably. */
+function fieldSpecForSchema(key, spec, entity) {
+  const entry = {
+    label: spec.label || key,
+    type: spec.type,
+    required: !!spec.required,
+  };
+
+  if (spec.extension) {
+    entry.extension = true;
+    entry.schema = spec.schema;
+    entry.column = spec.column;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(entity, key)) {
+    entry.value = entity[key];
+  }
+
+  return entry;
+}
+
 class ItemEntity extends BaseEntity {
   static key = "item";
 
@@ -136,9 +157,21 @@ class ItemEntity extends BaseEntity {
       payload[key] = this[key];
     }
 
-    if (Object.keys(this.packageData).length) {
-      payload.packageData = this.packageData;
+    const packageData = this.packageData || {};
+    if (Object.keys(packageData).length) {
+      payload.packageData = packageData;
     }
+
+    payload.schema = {
+      packageNames: this.packageNames,
+      extensionFieldKeys: Object.keys(this.extensionFieldSpecs),
+      fields: Object.fromEntries(
+        Object.entries(this.effectiveFields).map(([key, spec]) => [
+          key,
+          fieldSpecForSchema(key, spec, this),
+        ]),
+      ),
+    };
 
     return payload;
   }
