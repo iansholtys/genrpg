@@ -35,7 +35,17 @@
   display: grid;
   gap: 0.75rem;
 }
-.manage-item-modal .item-modal__form label {
+.manage-item-modal .item-modal__fieldset {
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 0.35rem;
+  padding: 0.75rem 1rem;
+  margin: 0;
+}
+.manage-item-modal .item-modal__fields {
+  display: grid;
+  gap: 0.75rem;
+}
+.manage-item-modal .item-modal__fields label {
   display: grid;
   gap: 0.35rem;
 }

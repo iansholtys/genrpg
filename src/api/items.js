@@ -8,9 +8,20 @@ const {
   assertInstancePermissions,
 } = require("./instanceContext");
 const { handleRouteError } = require("../lib/httpResponse");
+const { ItemEntity } = require("../entities/itemEntity");
 const ItemStorage = require("../storage/itemStorage");
 
 const itemsRouter = express.Router();
+
+itemsRouter.get("/instances/:instanceGuid/items/form", async (req, res, next) => {
+  try {
+    const context = await assertInstancePermissions(req, PERMISSION_VIEW);
+    const metadata = await ItemEntity.getFormSchema(context);
+    res.json(metadata);
+  } catch (error) {
+    handleRouteError(res, error, next);
+  }
+});
 
 itemsRouter.get("/instances/:instanceGuid/items", async (req, res, next) => {
   try {

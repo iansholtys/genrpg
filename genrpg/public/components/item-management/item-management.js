@@ -13,17 +13,13 @@ class ManageItemModal extends Modal {
 
     this.instanceGuid = null;
     this.itemGuid = null;
-    this.templates = [];
+    this.metadata = null;
     this.onChanged = null;
     this.eventNs = ".manage-item-modal";
   }
 
   apiBase() {
     return `/api/genrpg/instances/${this.instanceGuid}/items`;
-  }
-
-  templatesApiBase() {
-    return `/api/genrpg/instances/${this.instanceGuid}/item-templates`;
   }
 
   async requestJson(url, options) {
@@ -53,39 +49,91 @@ class ManageItemModal extends Modal {
     return Boolean(this.itemGuid);
   }
 
-  getContent() {
-    this.elements.$templateSelect = $("<select>", {
-      name: "itemTemplateGuid",
-      required: true,
-    }).append($("<option>", { value: "", text: "Select a template", disabled: true, selected: true }));
+  findField(key) {
+    for (const group of this.metadata?.groups || []) {
+      const field = (group.fields || []).find((entry) => entry.key === key);
+      if (field) {
+        return field;
+      }
+    }
+    return null;
+  }
 
-    this.elements.$form = $("<form>", { class: "item-modal__form" }).append(
-      $("<label>").append(
-        $("<span>", { text: "Template" }),
-        this.elements.$templateSelect,
-      ),
-      $("<p>", {
-        class: "item-modal__hint",
-        text: "Optional overrides — leave blank to use the template value.",
-      }),
-      $("<label>").append(
-        $("<span>", { text: "Name" }),
-        $("<input>", {
-          name: "name",
-          type: "text",
-          maxlength: 120,
-          autocomplete: "off",
+  buildField(field) {
+    const id = `item-field-${field.key}`;
+    const common = {
+      id,
+      name: field.key,
+    };
+    let $input;
+
+    if (field.inputType === "textarea") {
+      $input = $("<textarea>", { ...common, rows: 2, maxlength: 2000 });
+    } else if (field.inputType === "select") {
+      $input = $("<select>", common).append(
+        $("<option>", {
+          value: "",
+          text: field.required ? "Select one" : "None",
+          disabled: field.required,
+          selected: true,
         }),
-      ),
-      $("<label>").append(
-        $("<span>", { text: "Description" }),
-        $("<textarea>", { name: "description", rows: 2, maxlength: 2000 }),
-      ),
-      $("<label>").append(
-        $("<span>", { text: "Weight" }),
-        $("<input>", { name: "weight", type: "number", step: "any", min: "0" }),
-      ),
+      );
+      for (const option of field.options || []) {
+        $input.append($("<option>", { value: option.value, text: option.label }));
+      }
+    } else if (field.inputType === "checkbox") {
+      $input = $("<input>", { ...common, type: "checkbox", value: "true" });
+    } else {
+      const attrs = { ...common, type: field.inputType || "text" };
+      if (field.inputType === "number") {
+        attrs.step = field.step || "any";
+        if (field.key === "weight") {
+          attrs.min = "0";
+        }
+      }
+      if (field.key === "name") {
+        attrs.maxlength = 120;
+        attrs.autocomplete = "off";
+      }
+      $input = $("<input>", attrs);
+    }
+
+    if (field.required) {
+      $input.prop("required", true);
+    }
+
+    return $("<label>", { for: id }).append(
+      $("<span>", { text: field.label || field.key }),
+      $input,
     );
+  }
+
+  getContent() {
+    this.elements.$form = $("<form>", { class: "item-modal__form" });
+
+    for (const group of this.metadata?.groups || []) {
+      const $fields = $("<div>", { class: "item-modal__fields" });
+      for (const field of group.fields || []) {
+        $fields.append(this.buildField(field));
+        if (group.id === "core" && field.key === "itemTemplateGuid") {
+          $fields.append(
+            $("<p>", {
+              class: "item-modal__hint",
+              text: "Optional overrides — leave blank to use the template value.",
+            }),
+          );
+        }
+      }
+
+      this.elements.$form.append(
+        $("<fieldset>", { class: "item-modal__fieldset" }).append(
+          $("<legend>", { text: group.label || group.id }),
+          $fields.children().length
+            ? $fields
+            : $("<p>", { class: "empty-state", text: "No editable fields." }),
+        ),
+      );
+    }
 
     this.elements.$cancelButton = $("<button>", {
       type: "button",
@@ -133,33 +181,6 @@ class ManageItemModal extends Modal {
     return this.elements.$form;
   }
 
-  populateTemplateSelect(selectedGuid) {
-    const $select = this.elements.$templateSelect;
-    $select.empty();
-    $select.append($("<option>", { value: "", text: "Select a template", disabled: true }));
-
-    if (!this.templates.length) {
-      $select.append($("<option>", { value: "", text: "No templates available", disabled: true }));
-      $select.prop("disabled", true);
-      return;
-    }
-
-    $select.prop("disabled", false);
-    for (const template of this.templates) {
-      $select.append(
-        $("<option>", {
-          value: template.guid,
-          text: template.name || template.guid,
-          selected: template.guid === selectedGuid,
-        }),
-      );
-    }
-
-    if (selectedGuid) {
-      $select.val(selectedGuid);
-    }
-  }
-
   configureActions() {
     if (!this.elements.$saveButton?.length) {
       return;
@@ -179,32 +200,64 @@ class ManageItemModal extends Modal {
 
   resetForm() {
     this.elements.$form?.[0]?.reset();
-    this.populateTemplateSelect(null);
   }
 
   fillForm(item) {
-    const $form = this.elements.$form;
-    this.populateTemplateSelect(item.itemTemplateGuid);
-    $form.find('[name="name"]').val(item.name || "");
-    $form.find('[name="description"]').val(item.description || "");
-    $form.find('[name="weight"]').val(
-      item.weight === null || item.weight === undefined ? "" : item.weight,
-    );
+    for (const group of this.metadata?.groups || []) {
+      for (const field of group.fields || []) {
+        const $input = this.elements.$form.find(`[name="${field.key}"]`);
+        if (!$input.length) {
+          continue;
+        }
+
+        const value = item[field.key];
+        if (field.inputType === "checkbox") {
+          $input.prop("checked", Boolean(value));
+          continue;
+        }
+
+        if (value === null || value === undefined) {
+          $input.val("");
+          continue;
+        }
+
+        $input.val(String(value));
+      }
+    }
   }
 
   readFormPayload() {
-    const formData = new FormData(this.elements.$form[0]);
-    const weightRaw = formData.get("weight");
-    const nameRaw = formData.get("name");
-    const descriptionRaw = formData.get("description");
+    const payload = {};
 
-    return {
-      itemTemplateGuid: String(formData.get("itemTemplateGuid") || "").trim(),
-      name: nameRaw === "" || nameRaw === null ? null : String(nameRaw).trim(),
-      description:
-        descriptionRaw === "" || descriptionRaw === null ? null : String(descriptionRaw),
-      weight: weightRaw === "" ? null : weightRaw,
-    };
+    for (const group of this.metadata?.groups || []) {
+      for (const field of group.fields || []) {
+        const $input = this.elements.$form.find(`[name="${field.key}"]`);
+        if (!$input.length) {
+          continue;
+        }
+
+        if (field.inputType === "checkbox") {
+          if ($input.prop("checked")) {
+            payload[field.key] = true;
+          }
+          continue;
+        }
+
+        const raw = $input.val();
+        if (raw === null || raw === undefined || raw === "") {
+          payload[field.key] = field.key === "itemTemplateGuid" ? "" : null;
+          continue;
+        }
+
+        payload[field.key] = raw;
+      }
+    }
+
+    if (payload.itemTemplateGuid !== undefined) {
+      payload.itemTemplateGuid = String(payload.itemTemplateGuid || "").trim();
+    }
+
+    return payload;
   }
 
   setSaving(disabled) {
@@ -214,24 +267,25 @@ class ManageItemModal extends Modal {
     this.elements.$cancelButton.prop("disabled", disabled);
   }
 
-  async loadTemplates() {
-    const data = await this.requestJson(this.templatesApiBase());
+  async loadFormMetadata() {
+    const data = await this.requestJson(`${this.apiBase()}/form`);
     if (!data) {
       return false;
     }
-    this.templates = data.itemTemplates || [];
+    this.metadata = data;
     return true;
   }
 
   async handleSave({ closeAfter }) {
     const payload = this.readFormPayload();
+    const templateField = this.findField("itemTemplateGuid");
 
     if (!payload.itemTemplateGuid) {
       window.services?.notifications?.error("Template is required.");
       return;
     }
 
-    if (!this.templates.length) {
+    if (templateField && !(templateField.options || []).length) {
       window.services?.notifications?.error("Create an item template before adding items.");
       return;
     }
@@ -261,7 +315,6 @@ class ManageItemModal extends Modal {
       }
 
       this.resetForm();
-      this.populateTemplateSelect(null);
       this.elements.$form.find('[name="itemTemplateGuid"]').trigger("focus");
     } catch (error) {
       window.services?.notifications?.error(error.message);
@@ -278,19 +331,18 @@ class ManageItemModal extends Modal {
     this.instanceGuid = instanceGuid;
     this.itemGuid = null;
     this.onChanged = onChanged;
-    this.prepareShow();
     this.setTitle("Create Item");
-    this.resetForm();
 
-    const loaded = await this.loadTemplates();
+    const loaded = await this.loadFormMetadata();
     if (!loaded) {
       return;
     }
 
-    this.populateTemplateSelect(null);
+    this.prepareShow();
+    this.resetForm();
     this.configureActions();
     super.show();
-    this.elements.$templateSelect.trigger("focus");
+    this.elements.$form.find('[name="itemTemplateGuid"]').trigger("focus");
   }
 
   /**
@@ -302,26 +354,26 @@ class ManageItemModal extends Modal {
     this.instanceGuid = instanceGuid;
     this.itemGuid = item.guid;
     this.onChanged = onChanged;
-    this.prepareShow();
     this.setTitle(`Edit — ${item.effectiveName || "Item"}`);
-    this.resetForm();
 
-    const loaded = await this.loadTemplates();
+    const loaded = await this.loadFormMetadata();
     if (!loaded) {
       return;
     }
 
+    this.prepareShow();
+    this.resetForm();
     this.fillForm(item);
     this.configureActions();
     super.show();
-    this.elements.$templateSelect.trigger("focus");
+    this.elements.$form.find('[name="itemTemplateGuid"]').trigger("focus");
   }
 
   onHide() {
     this.resetForm();
     this.instanceGuid = null;
     this.itemGuid = null;
-    this.templates = [];
+    this.metadata = null;
     this.onChanged = null;
   }
 }
@@ -343,12 +395,20 @@ class ItemManagement {
     this.id = options.id || ItemManagement.defaultId;
     this.eventNs = ".item-management-" + this.id;
 
+    this.formMetadata = null;
     this.table = null;
     this.isMounted = false;
     this.elements = {};
   }
 
   static formatWeight(value) {
+    if (value === null || value === undefined) {
+      return "—";
+    }
+    return String(value);
+  }
+
+  static formatFieldValue(value) {
     if (value === null || value === undefined) {
       return "—";
     }
@@ -380,6 +440,97 @@ class ItemManagement {
     }
 
     return data;
+  }
+
+  async loadFormMetadata() {
+    const data = await this.requestJson(`${this.apiBase()}/form`);
+    if (!data) {
+      return false;
+    }
+    this.formMetadata = data;
+    return true;
+  }
+
+  getExtensionColumns() {
+    const columns = [];
+
+    for (const group of this.formMetadata?.groups || []) {
+      if (group.id === "core") {
+        continue;
+      }
+
+      for (const field of group.fields || []) {
+        columns.push({
+          title: field.label || field.key,
+          field: field.key,
+          searchable: field.type === "text",
+          valueFunction: (_row, value) => ItemManagement.formatFieldValue(value),
+        });
+      }
+    }
+
+    return columns;
+  }
+
+  buildTableColumns() {
+    return [
+      { title: "Name", field: "effectiveName", searchable: true },
+      {
+        title: "Description",
+        field: "effectiveDescription",
+        searchable: true,
+        valueFunction: (_row, value) => value || "",
+      },
+      {
+        title: "Weight",
+        field: "effectiveWeight",
+        valueFunction: (_row, value) => ItemManagement.formatWeight(value),
+      },
+      {
+        title: "Template",
+        searchable: true,
+        valueFunction: (row) => row.itemTemplate?.name || "—",
+      },
+      ...this.getExtensionColumns(),
+      {
+        title: "Actions",
+        sortable: false,
+        headerClass: "actions-cell",
+        cellClass: "actions-cell",
+        renderFunction: (_value, row) => {
+          const $container = $("<div>", { class: "item-actions" });
+          $container.append(
+            $("<button>", {
+              type: "button",
+              class: "secondary-button item-actions__btn",
+              title: "Edit",
+              "aria-label": "Edit",
+              text: "✏️",
+            }).on("click", (event) => {
+              event.stopPropagation();
+              void ItemManagement.getManageItemModal().showEdit(
+                this.instanceGuid,
+                row,
+                () => this.loadItems(),
+              );
+            }),
+          );
+          $container.append(
+            $("<button>", {
+              type: "button",
+              class: "danger-button-outline item-actions__btn",
+              title: "Delete",
+              "aria-label": "Delete",
+              text: "🗑️",
+            }).on("click", (event) => {
+              event.stopPropagation();
+              void this.deleteItem(row);
+            }),
+          );
+          return $container;
+        },
+      },
+    ];
   }
 
   async loadItems() {
@@ -422,63 +573,7 @@ class ItemManagement {
       rowCount: { show: true, nounSingular: "item", nounPlural: "items" },
       searchPlaceholder: "Search items…",
       defaultSort: { field: "effectiveName" },
-      columns: [
-        { title: "Name", field: "effectiveName", searchable: true },
-        {
-          title: "Description",
-          field: "effectiveDescription",
-          searchable: true,
-          valueFunction: (_row, value) => value || "",
-        },
-        {
-          title: "Weight",
-          field: "effectiveWeight",
-          valueFunction: (_row, value) => ItemManagement.formatWeight(value),
-        },
-        {
-          title: "Template",
-          searchable: true,
-          valueFunction: (row) => row.itemTemplate?.name || "—",
-        },
-        {
-          title: "Actions",
-          sortable: false,
-          headerClass: "actions-cell",
-          cellClass: "actions-cell",
-          renderFunction: (_value, row) => {
-            const $container = $("<div>", { class: "item-actions" });
-            $container.append(
-              $("<button>", {
-                type: "button",
-                class: "secondary-button item-actions__btn",
-                title: "Edit",
-                "aria-label": "Edit",
-                text: "✏️",
-              }).on("click", (event) => {
-                event.stopPropagation();
-                void ItemManagement.getManageItemModal().showEdit(
-                  this.instanceGuid,
-                  row,
-                  () => this.loadItems(),
-                );
-              }),
-            );
-            $container.append(
-              $("<button>", {
-                type: "button",
-                class: "danger-button-outline item-actions__btn",
-                title: "Delete",
-                "aria-label": "Delete",
-                text: "🗑️",
-              }).on("click", (event) => {
-                event.stopPropagation();
-                void this.deleteItem(row);
-              }),
-            );
-            return $container;
-          },
-        },
-      ],
+      columns: this.buildTableColumns(),
       emptyState: {
         message: "No items",
         icon: "",
@@ -531,6 +626,16 @@ class ItemManagement {
     this.elements.$addButton?.off(this.eventNs);
   }
 
+  async bootstrap() {
+    try {
+      await this.loadFormMetadata();
+      this.ensureTable();
+      await this.loadItems();
+    } catch (error) {
+      window.services?.notifications?.error(error.message);
+    }
+  }
+
   /**
    * @returns {JQuery}
    */
@@ -540,13 +645,9 @@ class ItemManagement {
     }
 
     this.buildRoot();
-    this.ensureTable();
     this.bindEvents();
     this.isMounted = true;
-
-    this.loadItems().catch((error) => {
-      window.services?.notifications?.error(error.message);
-    });
+    void this.bootstrap();
 
     return this.elements.$root;
   }
@@ -559,6 +660,7 @@ class ItemManagement {
     this.unbindEvents();
     this.elements.$root?.remove();
 
+    this.formMetadata = null;
     this.table = null;
     this.isMounted = false;
     this.elements = {};
