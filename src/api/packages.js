@@ -21,6 +21,8 @@ const {
   applyPackageUpdates,
   applyPackageUpdatesForMachine,
   checkPackageUpdates,
+  getPackageUpdateDiagnostics,
+  resolveLatestPackageVersion,
 } = require("../updates");
 
 const execAsync = promisify(exec);
@@ -67,9 +69,7 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
   await registerPackageVersion(machineName);
 
   if (!updateWarning) {
-    const { loadUpdatesModule, getLatestVersion } = require("../updates");
-    const updatesModule = await loadUpdatesModule(machineName, packagePath);
-    const latestVersion = getLatestVersion(updatesModule);
+    const latestVersion = await resolveLatestPackageVersion(machineName, packagePath);
     if (latestVersion) {
       const versionClient = await pool.connect();
       try {
@@ -293,16 +293,23 @@ packagesRouter.post("/packages/git/pull", requireAdmin, async (req, res, next) =
     const preview = await previewGitPackage(url);
     const targetDir = path.join(__dirname, "..", "..", "packages", preview.machineName);
     
+    let gitHead = null;
     try {
       await fs.access(targetDir);
-      // Exists. Pull updates.
       await execAsync(`git remote set-url origin "${url}"`, { cwd: targetDir });
-      await execAsync(`git pull`, { cwd: targetDir });
-    } catch {
-      // Doesn't exist. Clone.
+      await execAsync("git fetch origin", { cwd: targetDir });
+      await execAsync("git pull --ff-only", { cwd: targetDir });
+      const { stdout } = await execAsync("git rev-parse --short HEAD", { cwd: targetDir });
+      gitHead = stdout.trim();
+    } catch (accessError) {
+      if (accessError?.code !== "ENOENT") {
+        throw accessError;
+      }
       await execAsync(`git clone "${url}" "${targetDir}"`);
+      const { stdout } = await execAsync("git rev-parse --short HEAD", { cwd: targetDir });
+      gitHead = stdout.trim();
     }
-    
+
     invalidatePackageCache();
 
     let updateWarning = null;
@@ -314,12 +321,16 @@ packagesRouter.post("/packages/git/pull", requireAdmin, async (req, res, next) =
       updateWarning = error.message || "Failed to apply package database updates";
     }
 
+    const packagePath = path.posix.join("packages", preview.machineName);
+    const packageUpdate = await getPackageUpdateDiagnostics(preview.machineName, packagePath);
     const { configurationIssues } = await loadPackages({ strict: false });
 
     res.json({
       success: true,
       configurationIssues,
       updateWarning,
+      gitHead,
+      packageUpdate,
     });
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to pull package" });
