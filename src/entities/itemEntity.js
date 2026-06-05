@@ -1,6 +1,7 @@
 const { BaseEntity } = require("./baseEntity");
 const { ItemTemplateEntity } = require("./itemTemplateEntity");
 const { loadPackages } = require("../packages");
+const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
 
 function inputTypeForField(key, spec) {
   switch (spec.type) {
@@ -73,11 +74,14 @@ class ItemEntity extends BaseEntity {
   }
 
   static async getFormSchema(context) {
-    const ItemStorage = require("../storage/itemStorage");
     const ItemTemplateStorage = require("../storage/itemTemplateStorage");
 
-    const storage = ItemStorage.forInstance(context.instance);
-    const extensionFieldSpecs = await storage.getExtensionFieldSpecs();
+    const packageNames = context.instance.packageNames ?? [];
+    const extensionFieldSpecs = mergeExtensionFieldSpecs(
+      ItemEntity.key,
+      packageNames,
+      Object.keys(ItemEntity.fields),
+    );
     const templates = await ItemTemplateStorage.forInstance(context.instance).list();
     const { packages } = await loadPackages({ strict: false });
     const packageLabels = new Map(packages.map((pkg) => [pkg.machineName, pkg.name]));

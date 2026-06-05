@@ -191,11 +191,23 @@ class ManageItemModal extends Modal {
     this.elements.$editSaveButton.prop("hidden", !isEdit);
   }
 
+  rebuildFormContent() {
+    if (!this.domExists || !this.metadata) {
+      return;
+    }
+
+    this.elements.$form?.off(this.eventNs);
+    this.fillBody(this.getContent());
+  }
+
   prepareShow() {
     if (!this.domExists) {
       this.createModalElement();
       this.bindEvents();
+      return;
     }
+
+    this.rebuildFormContent();
   }
 
   resetForm() {
