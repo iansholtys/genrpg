@@ -1,4 +1,5 @@
 const { mergeExtensionFieldSpecs } = require("./entityExtensionIndex");
+const { ValidationError } = require("../errors/ValidationError");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
 
@@ -174,12 +175,12 @@ async function buildExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys =
 function collectExtensionValues(entity, extensionFieldSpecs) {
   const valuesBySchema = new Map();
 
-  for (const spec of Object.values(extensionFieldSpecs)) {
-    if (!(spec.property in entity)) {
+  for (const [property, spec] of Object.entries(extensionFieldSpecs)) {
+    if (!Object.prototype.hasOwnProperty.call(entity, property)) {
       continue;
     }
 
-    const value = entity[spec.property];
+    const value = entity[property];
     if (!isNonEmptyValue(value)) {
       continue;
     }
@@ -236,15 +237,22 @@ async function saveExtensionRows(entityKey, packageNames, parentGuid, entity, qu
   }
 
   const schemaRows = await loadExtensionSchemas(config, packageNames);
-  const schemas = schemaRows
-    .map((row) => row.schema)
-    .filter((schema) => schema !== config.coreSchema);
-  const columnsBySchema = await loadExtensionColumns(config, schemas);
+  const activeSchemas = new Set(
+    schemaRows
+      .map((row) => row.schema)
+      .filter((schema) => schema !== config.coreSchema),
+  );
+  const columnsBySchema = await loadExtensionColumns(config, [...activeSchemas]);
 
-  for (const schema of schemas) {
-    const columnValues = valuesBySchema.get(schema);
-    if (!columnValues || !Object.keys(columnValues).length) {
+  for (const [schema, columnValues] of valuesBySchema) {
+    if (!Object.keys(columnValues).length) {
       continue;
+    }
+
+    if (!activeSchemas.has(schema)) {
+      throw new ValidationError([
+        `Cannot save package fields for "${schema}": apply package updates so ${schema}.${config.coreTable} exists.`,
+      ]);
     }
 
     const packageUpdate = buildUpdateQuery(
@@ -290,10 +298,16 @@ async function deleteExtensionRows(entityKey, packageNames, parentGuid, queryFn)
 
 async function buildExtensionJoinSql(entityKey, packageNames, coreTableAlias) {
   const config = getExtensionConfig(entityKey);
+  const merged = mergeExtensionFieldSpecs(entityKey, packageNames, []);
+  const extensionSchemas = [
+    ...new Set(Object.values(merged).map((spec) => spec.schema)),
+  ];
   const schemaRows = await loadExtensionSchemas(config, packageNames);
   const schemas = schemaRows
     .map((row) => row.schema)
-    .filter((schema) => schema !== config.coreSchema);
+    .filter(
+      (schema) => schema !== config.coreSchema && extensionSchemas.includes(schema),
+    );
 
   const joins = [];
   const jsonParts = [];
@@ -316,12 +330,21 @@ async function buildExtensionJoinSql(entityKey, packageNames, coreTableAlias) {
 }
 
 function packageDataFromRow(packageExtensions) {
-  if (!packageExtensions || typeof packageExtensions !== "object") {
+  let parsed = packageExtensions;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return {};
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") {
     return {};
   }
 
   const packageData = {};
-  for (const [schema, row] of Object.entries(packageExtensions)) {
+  for (const [schema, row] of Object.entries(parsed)) {
     if (!row || typeof row !== "object") {
       continue;
     }
@@ -332,10 +355,10 @@ function packageDataFromRow(packageExtensions) {
 
 function flattenPackageDataForEntity(packageData, extensionFieldSpecs) {
   const values = {};
-  for (const spec of Object.values(extensionFieldSpecs)) {
+  for (const [property, spec] of Object.entries(extensionFieldSpecs)) {
     const raw = packageData[spec.schema]?.[spec.column];
     if (raw !== undefined) {
-      values[spec.property] = raw;
+      values[property] = raw;
     }
   }
   return values;

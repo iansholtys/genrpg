@@ -139,7 +139,9 @@ class ItemStorage extends BaseStorage {
         packageData: reloaded.packageData,
       });
       for (const key of Object.keys(entity.extensionFieldSpecs)) {
-        entity[key] = reloaded[key];
+        if (key in reloaded) {
+          entity[key] = reloaded[key];
+        }
       }
     }
     return entity;
