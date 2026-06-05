@@ -33,6 +33,11 @@ async function loadUpdatesModule(machineName, packagePath) {
   }
 
   const modulePath = path.resolve(updatesPath);
+  try {
+    delete require.cache[require.resolve(modulePath)];
+  } catch {
+    // Module was not loaded yet; nothing to clear.
+  }
   const loaded = require(modulePath);
   return typeof loaded === "function" && loaded.default ? loaded.default : loaded;
 }
