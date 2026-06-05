@@ -4,10 +4,21 @@ class BaseEntity {
   /**
    * Input field definitions keyed by property name.
    * Each spec: `{ label?, type, default?, required?, refs? }`
-   * Types: `text`, `guid`, `number`, `integer`.
+   * Types: `text`, `guid`, `number`, `integer`, `boolean`.
    * `refs`: required on `guid` fields — entity class with `static getStorage()` for existence checks.
+   *
+   * Package extension fields (when {@link BaseEntity.key} is set) are merged at runtime from
+   * package entities.yml modules via {@link BaseEntity#extensionFieldSpecs}. Storage must pass
+   * extension values as top-level constructor options; {@link BaseEntity#packageData} is read-only
+   * metadata from the database, not used to hydrate input fields.
    */
   static fields = {};
+
+  /**
+   * Entity identifier for package extensions and persistence.
+   * @type {string | null}
+   */
+  static key = null;
 
   /**
    * @returns {typeof import("../storage/baseStorage").BaseStorage}
@@ -19,17 +30,32 @@ class BaseEntity {
   /** @type {string[]} Loaded from storage; not applied by {@link BaseEntity#set}. */
   static readOnlyFields = [];
 
-  constructor({ instanceGuid, guid, isNew = false, storage = null } = {}) {
+  constructor({
+    instanceGuid,
+    guid,
+    isNew = false,
+    storage = null,
+    packageNames = [],
+    extensionFieldSpecs = null,
+    packageData = null,
+  } = {}) {
     this.instanceGuid = instanceGuid;
     this.guid = guid;
     this.isNew = isNew;
     this.storage = storage;
     this.validated = false;
+    this.packageNames = packageNames;
+    this.extensionFieldSpecs = extensionFieldSpecs || {};
+    this.packageData = packageData || {};
+    this.effectiveFields = {
+      ...this.constructor.fields,
+      ...this.extensionFieldSpecs,
+    };
   }
 
-  /** @type {string[]} Keys applied by {@link BaseEntity#set} (derived from {@link BaseEntity.fields}). */
-  static get inputFields() {
-    return Object.keys(this.fields);
+  /** @type {string[]} Keys applied by {@link BaseEntity#set}. */
+  get inputFields() {
+    return Object.keys(this.effectiveFields);
   }
 
   assertHasStorage() {
@@ -51,8 +77,9 @@ class BaseEntity {
   }
 
   initFields(options = {}) {
-    for (const [key, spec] of Object.entries(this.constructor.fields)) {
-      this[key] = options[key] !== undefined ? options[key] : EntityFieldTypes.defaultFor(spec);
+    for (const [key, spec] of Object.entries(this.effectiveFields)) {
+      const raw = options[key] !== undefined ? options[key] : EntityFieldTypes.defaultFor(spec);
+      this[key] = this.coerceField(key, raw, spec);
     }
     for (const key of this.constructor.readOnlyFields) {
       this[key] = options[key] !== undefined ? options[key] : null;
@@ -65,21 +92,21 @@ class BaseEntity {
   }
 
   applyFieldValues(values) {
-    for (const [key, spec] of Object.entries(this.constructor.fields)) {
+    for (const [key, spec] of Object.entries(this.effectiveFields)) {
       if (key in values) {
-        this[key] = this.coerceField(key, values[key]);
+        this[key] = this.coerceField(key, values[key], spec);
       }
     }
   }
 
-  coerceField(key, value) {
-    const spec = this.constructor.fields[key];
-    return EntityFieldTypes.coerce(value, { ...spec, key });
+  coerceField(key, value, spec = null) {
+    const fieldSpec = spec || this.effectiveFields[key];
+    return EntityFieldTypes.coerce(value, { ...fieldSpec, key });
   }
 
   filterInput(input = {}) {
     const values = {};
-    for (const key of this.constructor.inputFields) {
+    for (const key of this.inputFields) {
       if (input[key] !== undefined) {
         values[key] = input[key];
       }
@@ -88,9 +115,14 @@ class BaseEntity {
   }
 
   async collectValidationErrors() {
-    const context = { instanceGuid: this.instanceGuid };
+    const context = {
+      instance: {
+        guid: this.instanceGuid,
+        packageNames: this.packageNames,
+      },
+    };
     const messages = await Promise.all(
-      Object.entries(this.constructor.fields).map(async ([key, spec]) =>
+      Object.entries(this.effectiveFields).map(async ([key, spec]) =>
         EntityFieldTypes.validate(this[key], { ...spec, key }, context),
       ),
     );
@@ -155,6 +187,13 @@ class EntityFieldTypes {
       return !required;
     }
     return Number.isInteger(value);
+  }
+
+  static isBoolean(value, required = false) {
+    if (!this.isSet(value)) {
+      return !required;
+    }
+    return typeof value === "boolean";
   }
 
   static coerceString(value, required = false) {
@@ -229,6 +268,30 @@ class EntityFieldTypes {
     return null;
   }
 
+  static validateBoolean(value, spec) {
+    const required = this.isRequired(spec);
+    if (!this.isBoolean(value, required)) {
+      return `${this.fieldLabel(spec)} must be a boolean`;
+    }
+    return null;
+  }
+
+  static coerceBoolean(value, required = false) {
+    if (value === null || value === undefined || value === "") {
+      return required ? value : null;
+    }
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (value === "true" || value === "1" || value === 1) {
+      return true;
+    }
+    if (value === "false" || value === "0" || value === 0) {
+      return false;
+    }
+    return value;
+  }
+
   static async validateGuid(value, spec, context) {
     if (!this.isSet(value) || value === "") {
       if (this.isRequired(spec)) {
@@ -243,7 +306,7 @@ class EntityFieldTypes {
       return `${this.fieldLabel(spec)} must declare refs`;
     }
     const storageClass = spec.refs.getStorage();
-    const exists = await storageClass.forInstance(context.instanceGuid).exists(value);
+    const exists = await storageClass.forInstance(context.instance).exists(value);
     if (!exists) {
       return `${this.fieldLabel(spec)} not found for this instance`;
     }
@@ -289,6 +352,16 @@ class EntityFieldTypes {
       },
       validate(value, spec) {
         return EntityFieldTypes.validateInteger(value, spec);
+      },
+    },
+    boolean: {
+      default: null,
+      coerce(value, spec) {
+        const required = EntityFieldTypes.isRequired(spec);
+        return EntityFieldTypes.coerceBoolean(value, required);
+      },
+      validate(value, spec) {
+        return EntityFieldTypes.validateBoolean(value, spec);
       },
     },
   };

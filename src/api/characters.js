@@ -1,6 +1,6 @@
 const express = require("express");
 const { NotFoundError } = require("../errors/NotFoundError");
-const { CharacterEntity, INSTANCE_FIELDS } = require("../entities/characterEntity");
+const { CharacterEntity } = require("../entities/characterEntity");
 const {
   PERMISSION_VIEW,
   PERMISSION_EDIT,
@@ -10,12 +10,9 @@ const { handleRouteError } = require("../lib/httpResponse");
 
 const charactersRouter = express.Router();
 
-function assertCharacterPermissions(req, permission) {
-  return assertInstancePermissions(req, permission, { fields: INSTANCE_FIELDS });
-}
 charactersRouter.get("/instances/:instanceGuid/characters/form", async (req, res, next) => {
   try {
-    const context = await assertCharacterPermissions(req, PERMISSION_VIEW);
+    const context = await assertInstancePermissions(req, PERMISSION_VIEW);
     const metadata = await CharacterEntity.getFormSchema(context);
     res.json(metadata);
   } catch (error) {
@@ -25,7 +22,7 @@ charactersRouter.get("/instances/:instanceGuid/characters/form", async (req, res
 
 charactersRouter.get("/instances/:instanceGuid/characters", async (req, res, next) => {
   try {
-    const context = await assertCharacterPermissions(req, PERMISSION_VIEW);
+    const context = await assertInstancePermissions(req, PERMISSION_VIEW);
     const characters = await CharacterEntity.list(context);
     res.json({ characters });
   } catch (error) {
@@ -35,7 +32,7 @@ charactersRouter.get("/instances/:instanceGuid/characters", async (req, res, nex
 
 charactersRouter.get("/instances/:instanceGuid/characters/:characterGuid", async (req, res, next) => {
   try {
-    const context = await assertCharacterPermissions(req, PERMISSION_VIEW);
+    const context = await assertInstancePermissions(req, PERMISSION_VIEW);
     const character = await CharacterEntity.load(context, req.params.characterGuid);
     if (!character) {
       throw new NotFoundError("Character not found");
@@ -48,7 +45,7 @@ charactersRouter.get("/instances/:instanceGuid/characters/:characterGuid", async
 
 charactersRouter.post("/instances/:instanceGuid/characters", async (req, res, next) => {
   try {
-    const context = await assertCharacterPermissions(req, PERMISSION_EDIT);
+    const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const character = await CharacterEntity.create(context, req.body);
     res.status(201).json({ character });
   } catch (error) {
@@ -60,7 +57,7 @@ charactersRouter.patch(
   "/instances/:instanceGuid/characters/:characterGuid",
   async (req, res, next) => {
     try {
-      const context = await assertCharacterPermissions(req, PERMISSION_EDIT);
+      const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       const character = await CharacterEntity.update(
         context,
         req.params.characterGuid,
@@ -80,7 +77,7 @@ charactersRouter.delete(
   "/instances/:instanceGuid/characters/:characterGuid",
   async (req, res, next) => {
     try {
-      const context = await assertCharacterPermissions(req, PERMISSION_EDIT);
+      const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       const deleted = await CharacterEntity.delete(context, req.params.characterGuid);
       if (!deleted) {
         throw new NotFoundError("Character not found");

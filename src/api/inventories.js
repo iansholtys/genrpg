@@ -41,7 +41,7 @@ inventoriesRouter.get("/instances/:instanceGuid/inventories", async (req, res, n
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
     const filters = parseInventoryListQuery(req.query);
-    const entities = await InventoryStorage.forInstance(context.instanceGuid).list(filters);
+    const entities = await InventoryStorage.forInstance(context.instance).list(filters);
     res.json({ inventories: entities.map((entity) => entity.toJSON()) });
   } catch (error) {
     handleRouteError(res, error, next);
@@ -51,7 +51,7 @@ inventoriesRouter.get("/instances/:instanceGuid/inventories", async (req, res, n
 inventoriesRouter.get("/instances/:instanceGuid/inventories/:inventoryGuid", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-    const entity = await InventoryStorage.forInstance(context.instanceGuid).load(
+    const entity = await InventoryStorage.forInstance(context.instance).load(
       req.params.inventoryGuid,
     );
     if (!entity) {
@@ -67,7 +67,7 @@ inventoriesRouter.post("/instances/:instanceGuid/inventories", async (req, res, 
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const inventory = await withTransaction(async () => {
-      const entity = InventoryStorage.forInstance(context.instanceGuid).create();
+      const entity = InventoryStorage.forInstance(context.instance).create();
       entity.set(req.body);
       const validationErrors = await entity.validate();
       if (validationErrors.length) {
@@ -86,7 +86,7 @@ inventoriesRouter.put("/instances/:instanceGuid/inventories/:inventoryGuid", asy
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const inventory = await withTransaction(async () => {
-      const entity = await InventoryStorage.forInstance(context.instanceGuid).load(
+      const entity = await InventoryStorage.forInstance(context.instance).load(
         req.params.inventoryGuid,
       );
       if (!entity) {
@@ -115,7 +115,7 @@ inventoriesRouter.delete(
     try {
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       await withTransaction(async () => {
-        const deleted = await InventoryStorage.forInstance(context.instanceGuid).delete(
+        const deleted = await InventoryStorage.forInstance(context.instance).delete(
           req.params.inventoryGuid,
         );
         if (!deleted) {

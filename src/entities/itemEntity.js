@@ -2,6 +2,8 @@ const { BaseEntity } = require("./baseEntity");
 const { ItemTemplateEntity } = require("./itemTemplateEntity");
 
 class ItemEntity extends BaseEntity {
+  static key = "item";
+
   static getStorage() {
     return require("../storage/itemStorage");
   }
@@ -25,6 +27,7 @@ class ItemEntity extends BaseEntity {
     "effectiveName",
     "effectiveDescription",
     "effectiveWeight",
+    "packageData",
   ];
 
   constructor(options = {}) {
@@ -33,7 +36,7 @@ class ItemEntity extends BaseEntity {
   }
 
   toJSON() {
-    return {
+    const payload = {
       guid: this.guid,
       instanceGuid: this.instanceGuid,
       itemTemplateGuid: this.itemTemplateGuid,
@@ -47,6 +50,16 @@ class ItemEntity extends BaseEntity {
       effectiveDescription: this.effectiveDescription,
       effectiveWeight: this.effectiveWeight,
     };
+
+    for (const key of Object.keys(this.extensionFieldSpecs)) {
+      payload[key] = this[key];
+    }
+
+    if (Object.keys(this.packageData).length) {
+      payload.packageData = this.packageData;
+    }
+
+    return payload;
   }
 }
 

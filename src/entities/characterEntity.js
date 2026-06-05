@@ -11,19 +11,7 @@ const {
   CharacterPostGetEvent,
 } = require("../../genrpg/events/characterEvents");
 const { getEventDispatcher } = require("../events/packageEvents");
-const {
-  expandPackageSelectionForAssets,
-  loadPackages,
-  parsePackageCsv,
-} = require("../packages");
 const CharacterStorage = require("../storage/characterStorage");
-
-const INSTANCE_FIELDS = ["guid", "packages"];
-
-async function resolveInstancePackageNames(instancePackages) {
-  const { packages } = await loadPackages({ strict: true });
-  return expandPackageSelectionForAssets(parsePackageCsv(instancePackages), packages);
-}
 
 function buildCharacterDispatchContext(instanceGuid, packageNames, user) {
   return {
@@ -67,22 +55,17 @@ class CharacterEntity {
     return require("../storage/characterStorage");
   }
 
-  static async resolvePackageNames(context) {
-    return resolveInstancePackageNames(context.instance.packages);
-  }
-
   static buildDispatchContext(context, packageNames) {
-    return buildCharacterDispatchContext(context.instanceGuid, packageNames, context.user);
+    return buildCharacterDispatchContext(context.instance.guid, packageNames, context.user);
   }
 
   static async getFormSchema(context) {
-    const packageNames = await CharacterEntity.resolvePackageNames(context);
-    return CharacterStorage.loadFormMetadata(packageNames);
+    return CharacterStorage.loadFormMetadata(context.instance.packageNames);
   }
 
   static async list(context) {
-    const packageNames = await CharacterEntity.resolvePackageNames(context);
-    const storage = CharacterStorage.forInstance(context.instanceGuid);
+    const { packageNames } = context.instance;
+    const storage = CharacterStorage.forInstance(context.instance);
     let characters = await storage.list(packageNames);
     return dispatchCharacterGetEvents(
       characters,
@@ -91,8 +74,8 @@ class CharacterEntity {
   }
 
   static async load(context, id) {
-    const packageNames = await CharacterEntity.resolvePackageNames(context);
-    const storage = CharacterStorage.forInstance(context.instanceGuid);
+    const { packageNames } = context.instance;
+    const storage = CharacterStorage.forInstance(context.instance);
     let characters = await storage.list(packageNames, id);
     if (!characters.length) {
       return null;
@@ -111,8 +94,8 @@ class CharacterEntity {
   }
 
   static async create(context, input) {
-    const packageNames = await CharacterEntity.resolvePackageNames(context);
-    const storage = CharacterStorage.forInstance(context.instanceGuid);
+    const { packageNames } = context.instance;
+    const storage = CharacterStorage.forInstance(context.instance);
     const dispatcher = await getEventDispatcher();
     const dispatchContext = CharacterEntity.buildDispatchContext(context, packageNames);
 
@@ -139,12 +122,12 @@ class CharacterEntity {
   }
 
   static async update(context, id, input) {
-    const storage = CharacterStorage.forInstance(context.instanceGuid);
+    const storage = CharacterStorage.forInstance(context.instance);
     if (!(await storage.exists(id))) {
       return null;
     }
 
-    const packageNames = await CharacterEntity.resolvePackageNames(context);
+    const { packageNames } = context.instance;
     const dispatcher = await getEventDispatcher();
     const dispatchContext = CharacterEntity.buildDispatchContext(context, packageNames);
 
@@ -172,12 +155,12 @@ class CharacterEntity {
   }
 
   static async delete(context, id) {
-    const storage = CharacterStorage.forInstance(context.instanceGuid);
+    const storage = CharacterStorage.forInstance(context.instance);
     if (!(await storage.exists(id))) {
       return false;
     }
 
-    const packageNames = await CharacterEntity.resolvePackageNames(context);
+    const { packageNames } = context.instance;
     const dispatcher = await getEventDispatcher();
     const dispatchContext = CharacterEntity.buildDispatchContext(context, packageNames);
 
@@ -204,5 +187,4 @@ class CharacterEntity {
 
 module.exports = {
   CharacterEntity,
-  INSTANCE_FIELDS,
 };

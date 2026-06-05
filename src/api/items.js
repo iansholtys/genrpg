@@ -11,10 +11,11 @@ const { handleRouteError } = require("../lib/httpResponse");
 const ItemStorage = require("../storage/itemStorage");
 
 const itemsRouter = express.Router();
+
 itemsRouter.get("/instances/:instanceGuid/items", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-    const entities = await ItemStorage.forInstance(context.instanceGuid).list();
+    const entities = await ItemStorage.forInstance(context.instance).list();
     res.json({ items: entities.map((entity) => entity.toJSON()) });
   } catch (error) {
     handleRouteError(res, error, next);
@@ -24,7 +25,7 @@ itemsRouter.get("/instances/:instanceGuid/items", async (req, res, next) => {
 itemsRouter.get("/instances/:instanceGuid/items/:itemGuid", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-    const entity = await ItemStorage.forInstance(context.instanceGuid).load(req.params.itemGuid);
+    const entity = await ItemStorage.forInstance(context.instance).load(req.params.itemGuid);
     if (!entity) {
       throw new NotFoundError("Item not found");
     }
@@ -38,8 +39,8 @@ itemsRouter.post("/instances/:instanceGuid/items", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const item = await withTransaction(async () => {
-      const bound = ItemStorage.forInstance(context.instanceGuid);
-      const entity = bound.create();
+      const storage = ItemStorage.forInstance(context.instance);
+      const entity = await storage.create();
       entity.set(req.body);
       const validationErrors = await entity.validate();
       if (validationErrors.length) {
@@ -58,8 +59,8 @@ itemsRouter.put("/instances/:instanceGuid/items/:itemGuid", async (req, res, nex
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const item = await withTransaction(async () => {
-      const bound = ItemStorage.forInstance(context.instanceGuid);
-      const entity = await bound.load(req.params.itemGuid);
+      const storage = ItemStorage.forInstance(context.instance);
+      const entity = await storage.load(req.params.itemGuid);
       if (!entity) {
         throw new NotFoundError("Item not found");
       }
@@ -84,7 +85,7 @@ itemsRouter.delete("/instances/:instanceGuid/items/:itemGuid", async (req, res, 
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     await withTransaction(async () => {
-      const deleted = await ItemStorage.forInstance(context.instanceGuid).delete(req.params.itemGuid);
+      const deleted = await ItemStorage.forInstance(context.instance).delete(req.params.itemGuid);
       if (!deleted) {
         throw new NotFoundError("Item not found");
       }

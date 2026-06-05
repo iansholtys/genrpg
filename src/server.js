@@ -7,7 +7,7 @@ const { pool } = require("./db/pool");
 const { applySchemaVersions } = require("./db/versions");
 const { applyPackageUpdates } = require("./updates");
 const { refreshPackageSubscribers } = require("./events/packageEvents");
-const { REPO_ROOT } = require("./packages");
+const { REPO_ROOT, refreshPackageCache } = require("./packages");
 
 const { ensureAuthenticated } = require("./auth");
 const { resolveRequestPath, sendAppHtml } = require("./aliases");
@@ -146,6 +146,7 @@ async function main() {
   }
 
   await refreshPackageSubscribers({ force: true });
+  await refreshPackageCache();
 
   app.listen(PORT, () => {
     console.log(`GenRPG listening on port ${PORT}`);

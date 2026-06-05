@@ -6,7 +6,8 @@ const { getTransactionClient } = require("../db/transactionContext");
  * Base class for GenRPG storage modules.
  *
  * Storage sits below entity handlers and owns SQL plus row mapping. Obtain an
- * instance-scoped storage object via `StorageClass.forInstance(instanceGuid)`.
+ * instance-scoped storage object via `StorageClass.forInstance(source)`, where
+ * `instance` is a binding object `{ guid, packageNames? }` from request context.
  *
  * Queries use the active transaction client from AsyncLocalStorage when inside
  * `withTransaction()`; otherwise they use the connection pool.
@@ -47,15 +48,20 @@ class BaseStorage {
     return `${schema}.${table}`;
   }
 
-  constructor(instanceGuid) {
+  constructor(instanceGuid, packageNames = []) {
     if (!instanceGuid) {
       throw new Error("instanceGuid is required for storage modules");
     }
     this.instanceGuid = instanceGuid;
+    this.packageNames = packageNames;
   }
 
-  static forInstance(instanceGuid) {
-    return new this(instanceGuid);
+  static forInstance(instance) {
+    if (!instance.guid) {
+      throw new Error("instance guid is required for storage modules");
+    }
+
+    return new this(instance.guid, instance.packageNames ?? []);
   }
 
   get pool() {

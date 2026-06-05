@@ -3,6 +3,11 @@
  */
 const { pool } = require("../db/pool");
 const { isGlobalAdmin } = require("../auth");
+const {
+  expandPackageSelectionForAssets,
+  loadPackages,
+  parsePackageCsv,
+} = require("../packages");
 const DEFAULT_INSTANCE_FIELDS = ["i.guid"];
 
 function buildInstanceSelect(fields) {
@@ -77,13 +82,20 @@ async function buildContext(user, instanceGuid, { fields } = {}) {
     return null;
   }
 
+  if (instance.packages !== undefined) {
+    const { packages } = await loadPackages({ strict: true });
+    instance.packageNames = expandPackageSelectionForAssets(
+      parsePackageCsv(instance.packages),
+      packages,
+    );
+  }
+
   const permissions = isGlobalAdminUser
     ? null
-    : await getInstancePermissions(instanceGuid, user.guid);
+    : await getInstancePermissions(instance.guid, user.guid);
 
   return {
     user,
-    instanceGuid,
     instance,
     permissions,
     isGlobalAdmin: isGlobalAdminUser,

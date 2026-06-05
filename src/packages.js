@@ -465,6 +465,8 @@ async function resolveInstanceAssetsForRequest(selectedMachineNames, packages) {
 async function refreshPackageCache() {
   packageCache = await discoverPackages();
   packagesWithAssetsCache = null;
+  const { refreshEntityExtensionIndex } = require("./lib/entityExtensionIndex");
+  await refreshEntityExtensionIndex(packageCache.packages);
   return packageCache;
 }
 
@@ -495,6 +497,12 @@ async function loadPackagesWithAssets() {
 function invalidatePackageCache() {
   packageCache = null;
   packagesWithAssetsCache = null;
+  try {
+    const { invalidateEntityExtensionIndex } = require("./lib/entityExtensionIndex");
+    invalidateEntityExtensionIndex();
+  } catch {
+    // entity extension index may not be loaded yet during early startup
+  }
   try {
     const { invalidatePackageSubscribers } = require("./events/packageEvents");
     invalidatePackageSubscribers();
@@ -552,6 +560,7 @@ module.exports = {
   REPO_ROOT,
   packageRootDir,
   loadPackages,
+  refreshPackageCache,
   invalidatePackageCache,
   parsePackageCsv,
   validatePackageSelection,

@@ -1,36 +1,63 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemEntity } = require("../entities/itemEntity");
+const {
+  buildExtensionFieldSpecs,
+  buildExtensionJoinSql,
+  saveExtensionRows,
+  deleteExtensionRows,
+  packageDataFromRow,
+  flattenPackageDataForEntity,
+} = require("../lib/entityExtensions");
 const ItemTemplateStorage = require("./itemTemplateStorage");
 
 class ItemStorage extends BaseStorage {
   static schema = "genrpg";
   static table = "items";
 
-  create() {
+  constructor(instanceGuid, packageNames = []) {
+    super(instanceGuid, packageNames);
+    this._extensionFieldSpecsCache = null;
+  }
+
+  async getExtensionFieldSpecs() {
+    if (!this._extensionFieldSpecsCache) {
+      this._extensionFieldSpecsCache = await buildExtensionFieldSpecs(
+        ItemEntity.key,
+        this.packageNames,
+        Object.keys(ItemEntity.fields),
+      );
+    }
+    return this._extensionFieldSpecsCache;
+  }
+
+  async create() {
+    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
     return new ItemEntity({
       instanceGuid: this.instanceGuid,
       guid: this.newGuid(),
       isNew: true,
       storage: this,
+      packageNames: this.packageNames,
+      extensionFieldSpecs,
     });
   }
 
   async list() {
+    const { sql } = await this.buildItemSelect();
     const result = await this.query(
-      `
-        ${this.buildItemSelect()}
+      `${sql}
         WHERE i.instance_guid = $1
         ORDER BY COALESCE(i.name, t.name) ASC, i.create_datetime ASC
       `,
       [this.instanceGuid],
     );
-    return result.rows.map((row) => this.toEntity(row));
+    return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
   async load(itemGuid) {
+    const { sql } = await this.buildItemSelect();
     const result = await this.query(
-      `
-        ${this.buildItemSelect()}
+      `${sql}
         WHERE i.guid = $1 AND i.instance_guid = $2
       `,
       [itemGuid, this.instanceGuid],
@@ -88,6 +115,14 @@ class ItemStorage extends BaseStorage {
       }
     }
 
+    await saveExtensionRows(
+      ItemEntity.key,
+      this.packageNames,
+      entity.guid,
+      entity,
+      (text, params) => this.query(text, params),
+    );
+
     const reloaded = await this.load(entity.guid);
     if (reloaded) {
       Object.assign(entity, {
@@ -101,12 +136,30 @@ class ItemStorage extends BaseStorage {
         effectiveName: reloaded.effectiveName,
         effectiveDescription: reloaded.effectiveDescription,
         effectiveWeight: reloaded.effectiveWeight,
+        packageData: reloaded.packageData,
       });
+      for (const key of Object.keys(entity.extensionFieldSpecs)) {
+        entity[key] = reloaded[key];
+      }
     }
     return entity;
   }
 
-  toEntity(row) {
+  async delete(itemGuid) {
+    await deleteExtensionRows(
+      ItemEntity.key,
+      this.packageNames,
+      itemGuid,
+      (text, params) => this.query(text, params),
+    );
+    return this.deleteRow(itemGuid);
+  }
+
+  async toEntity(row) {
+    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
+    const packageData = packageDataFromRow(row.package_extensions);
+    const extensionValues = flattenPackageDataForEntity(packageData, extensionFieldSpecs);
+
     const itemTemplate = {
       guid: row.template_guid,
       name: row.template_name,
@@ -123,6 +176,9 @@ class ItemStorage extends BaseStorage {
       guid: row.guid,
       isNew: false,
       storage: this,
+      packageNames: this.packageNames,
+      extensionFieldSpecs,
+      packageData,
       itemTemplateGuid: row.item_template_guid,
       name: row.name,
       description: row.description,
@@ -133,27 +189,39 @@ class ItemStorage extends BaseStorage {
       effectiveName,
       effectiveDescription,
       effectiveWeight,
+      ...extensionValues,
     });
   }
 
-  buildItemSelect() {
-    return `
-      SELECT
-        i.guid,
-        i.instance_guid,
-        i.item_template_guid,
-        i.name,
-        i.description,
-        i.weight,
-        i.create_datetime,
-        i.update_datetime,
-        t.guid AS template_guid,
-        t.name AS template_name,
-        t.description AS template_description,
-        t.weight AS template_weight
-      FROM ${this.schema_table} i
-      JOIN ${ItemTemplateStorage.schema_table} t ON t.guid = i.item_template_guid
-    `;
+  async buildItemSelect() {
+    const { joins, packageExtensionsSql } = await buildExtensionJoinSql(
+      ItemEntity.key,
+      this.packageNames,
+      "i",
+    );
+
+    return {
+      sql: `
+        SELECT
+          i.guid,
+          i.instance_guid,
+          i.item_template_guid,
+          i.name,
+          i.description,
+          i.weight,
+          i.create_datetime,
+          i.update_datetime,
+          t.guid AS template_guid,
+          t.name AS template_name,
+          t.description AS template_description,
+          t.weight AS template_weight,
+          ${packageExtensionsSql} AS package_extensions
+        FROM ${this.schema_table} i
+        JOIN ${ItemTemplateStorage.schema_table} t ON t.guid = i.item_template_guid
+        ${joins.join("\n        ")}
+      `,
+      params: [],
+    };
   }
 }
 

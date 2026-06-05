@@ -17,7 +17,7 @@ const DELETE_CONFLICT_MESSAGE = "Cannot delete this template while items still r
 itemTemplatesRouter.get("/instances/:instanceGuid/item-templates", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-    const entities = await ItemTemplateStorage.forInstance(context.instanceGuid).list();
+    const entities = await ItemTemplateStorage.forInstance(context.instance).list();
     res.json({ itemTemplates: entities.map((entity) => entity.toJSON()) });
   } catch (error) {
     handleRouteError(res, error, next);
@@ -29,7 +29,7 @@ itemTemplatesRouter.get(
   async (req, res, next) => {
     try {
       const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-      const entity = await ItemTemplateStorage.forInstance(context.instanceGuid).load(
+      const entity = await ItemTemplateStorage.forInstance(context.instance).load(
         req.params.templateGuid,
       );
       if (!entity) {
@@ -46,7 +46,7 @@ itemTemplatesRouter.post("/instances/:instanceGuid/item-templates", async (req, 
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const itemTemplate = await withTransaction(async () => {
-      const bound = ItemTemplateStorage.forInstance(context.instanceGuid);
+      const bound = ItemTemplateStorage.forInstance(context.instance);
       const entity = bound.create();
       entity.set(req.body);
       const validationErrors = await entity.validate();
@@ -68,7 +68,7 @@ itemTemplatesRouter.put(
     try {
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       const itemTemplate = await withTransaction(async () => {
-        const bound = ItemTemplateStorage.forInstance(context.instanceGuid);
+        const bound = ItemTemplateStorage.forInstance(context.instance);
         const entity = await bound.load(req.params.templateGuid);
         if (!entity) {
           throw new NotFoundError("Item template not found");
@@ -98,7 +98,7 @@ itemTemplatesRouter.delete(
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       await withTransaction(async () => {
         try {
-          const deleted = await ItemTemplateStorage.forInstance(context.instanceGuid).delete(
+          const deleted = await ItemTemplateStorage.forInstance(context.instance).delete(
             req.params.templateGuid,
           );
           if (!deleted) {
