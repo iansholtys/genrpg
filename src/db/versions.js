@@ -215,6 +215,51 @@ async function reapplyPackageSchemaVersions({
   }
 }
 
+async function applyPendingSchemaVersionsForPackage({
+  pool = defaultPool,
+  packageName,
+  rootDir = ROOT_DIR,
+} = {}) {
+  if (!packageName) {
+    throw new Error("packageName is required");
+  }
+
+  const client = await pool.connect();
+  const appliedNow = [];
+
+  try {
+    await ensureSchemaVersionTable(client);
+    await client.query(`CREATE SCHEMA IF NOT EXISTS "${packageName}"`);
+
+    const applied = await getAppliedSchemaVersions(client);
+    const schemaVersions = (await discoverSchemaVersions(rootDir)).filter(
+      (entry) => entry.packageName === packageName,
+    );
+
+    for (const schemaVersion of schemaVersions) {
+      const key = `${schemaVersion.packageName}:${schemaVersion.fileName}`;
+      const { sql, checksum } = await readSchemaVersion(schemaVersion);
+      const appliedChecksum = applied.get(key);
+
+      if (appliedChecksum) {
+        if (appliedChecksum !== checksum) {
+          console.warn(
+            `Schema version "${key}" was already applied but ${schemaVersion.fileName} has changed; skipping re-apply.`,
+          );
+        }
+        continue;
+      }
+
+      await applySchemaVersion(client, schemaVersion, sql, checksum);
+      appliedNow.push(key);
+    }
+
+    return { applied: appliedNow };
+  } finally {
+    client.release();
+  }
+}
+
 async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = {}) {
   const client = await pool.connect();
 
@@ -307,5 +352,6 @@ if (require.main === module) {
 
 module.exports = {
   applySchemaVersions,
+  applyPendingSchemaVersionsForPackage,
   reapplyPackageSchemaVersions,
 };

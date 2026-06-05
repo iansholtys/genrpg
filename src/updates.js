@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { loadPackages } = require("./packages");
+const { applySchemaVersions, applyPendingSchemaVersionsForPackage } = require("./db/versions");
 
 const REPO_ROOT = path.join(__dirname, "..");
 
@@ -116,6 +117,11 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
     return { applied: [] };
   }
 
+  const schemaApplied = await applyPendingSchemaVersionsForPackage({
+    pool,
+    packageName: machineName,
+  });
+
   if (pkg.machineName) {
     const client = await pool.connect();
     try {
@@ -128,7 +134,7 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
   const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
   const latestVersion = getLatestVersion(updatesModule);
   if (!latestVersion) {
-    return { applied: [] };
+    return { applied: schemaApplied.applied };
   }
 
   let currentVersion = 0;
@@ -141,7 +147,7 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
   }
 
   if (currentVersion >= latestVersion) {
-    return { applied: [] };
+    return { applied: schemaApplied.applied };
   }
 
   for (let version = currentVersion + 1; version <= latestVersion; version += 1) {
@@ -161,6 +167,7 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
 
   return {
     applied: [
+      ...schemaApplied.applied,
       {
         machineName: pkg.machineName,
         fromVersion: currentVersion,
@@ -201,6 +208,8 @@ async function checkPackageUpdates(pool) {
 }
 
 async function applyPackageUpdates(pool) {
+  await applySchemaVersions({ pool });
+
   const { packages } = await loadPackages({ strict: false });
   const orderedPackages = sortPackagesByDependencies(packages);
   const applied = [];

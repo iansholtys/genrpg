@@ -250,8 +250,27 @@ async function saveExtensionRows(entityKey, packageNames, parentGuid, entity, qu
     }
 
     if (!activeSchemas.has(schema)) {
+      const columnResult = await metadataQuery(
+        `
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_schema = $1
+            AND table_name = $2
+          ORDER BY ordinal_position ASC
+        `,
+        [schema, config.coreTable],
+      );
+      const columnsFound = columnResult.rows.map((row) => row.column_name).join(", ") || "(table missing)";
+      const versionResult = await metadataQuery(
+        `SELECT version FROM genrpg.packages WHERE package = $1`,
+        [schema],
+      );
+      const packageDbVersion = versionResult.rows[0]?.version ?? "not recorded";
+
       throw new ValidationError([
-        `Cannot save package fields for "${schema}": apply package updates so ${schema}.${config.coreTable} exists.`,
+        `Cannot save package fields for "${schema}": ${schema}.${config.coreTable} must exist with column ${config.parentKeyColumn}.`,
+        `Update the "${schema}" package from Manage Packages (pull or Update packages). Package DB version: ${packageDbVersion}.`,
+        `Columns found on ${schema}.${config.coreTable}: ${columnsFound}.`,
       ]);
     }
 
