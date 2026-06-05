@@ -1,7 +1,7 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemEntity } = require("../entities/itemEntity");
+const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
 const {
-  buildExtensionFieldSpecs,
   buildExtensionJoinSql,
   saveExtensionRows,
   deleteExtensionRows,
@@ -21,7 +21,7 @@ class ItemStorage extends BaseStorage {
 
   async getExtensionFieldSpecs() {
     if (!this._extensionFieldSpecsCache) {
-      this._extensionFieldSpecsCache = await buildExtensionFieldSpecs(
+      this._extensionFieldSpecsCache = mergeExtensionFieldSpecs(
         ItemEntity.key,
         this.packageNames,
         Object.keys(ItemEntity.fields),
