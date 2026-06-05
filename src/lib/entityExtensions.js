@@ -40,6 +40,64 @@ function isNonEmptyValue(value) {
   return value !== null && value !== undefined && value !== "";
 }
 
+function entityValueForColumn(entity, columnName) {
+  if (Object.prototype.hasOwnProperty.call(entity, columnName)) {
+    return entity[columnName];
+  }
+
+  const camelCase = columnName.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+  if (Object.prototype.hasOwnProperty.call(entity, camelCase)) {
+    return entity[camelCase];
+  }
+
+  return undefined;
+}
+
+function defaultInsertValueForColumn(column) {
+  if (column.dataType === "boolean") {
+    return false;
+  }
+  if (column.dataType === "integer" || column.dataType === "bigint" || column.dataType === "smallint") {
+    return 0;
+  }
+  if (column.dataType === "double precision" || column.dataType === "numeric" || column.dataType === "real") {
+    return 0;
+  }
+  return "";
+}
+
+function buildExtensionInsertValues(config, columns, entity, parentGuid, columnValues) {
+  const insertValues = { [config.parentKeyColumn]: parentGuid, ...columnValues };
+
+  for (const column of columns) {
+    if (Object.prototype.hasOwnProperty.call(insertValues, column.name)) {
+      continue;
+    }
+
+    if (config.managedColumns.has(column.name)) {
+      if (column.name === "guid" && column.required && !column.hasDefault) {
+        const crypto = require("node:crypto");
+        insertValues.guid = crypto.randomUUID();
+      }
+      continue;
+    }
+
+    if (!column.required || column.hasDefault) {
+      continue;
+    }
+
+    const fromEntity = entityValueForColumn(entity, column.name);
+    if (fromEntity !== undefined && fromEntity !== null) {
+      insertValues[column.name] = fromEntity;
+      continue;
+    }
+
+    insertValues[column.name] = defaultInsertValueForColumn(column);
+  }
+
+  return insertValues;
+}
+
 async function metadataQuery(text, params = []) {
   const executor = getTransactionClient() || pool;
   return executor.query(text, params);
@@ -285,12 +343,13 @@ async function saveExtensionRows(entityKey, packageNames, parentGuid, entity, qu
 
     if (updateResult.rowCount === 0) {
       const columns = columnsBySchema.get(schema) || [];
-      const guidColumn = columns.find((column) => column.name === "guid");
-      const insertValues = { [config.parentKeyColumn]: parentGuid, ...columnValues };
-      if (guidColumn?.required && !guidColumn.hasDefault) {
-        const crypto = require("node:crypto");
-        insertValues.guid = crypto.randomUUID();
-      }
+      const insertValues = buildExtensionInsertValues(
+        config,
+        columns,
+        entity,
+        parentGuid,
+        columnValues,
+      );
       const packageInsert = buildInsertQuery(schema, config.coreTable, insertValues);
       await queryFn(packageInsert.sql, packageInsert.params);
     }
