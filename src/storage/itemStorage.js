@@ -1,8 +1,8 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemEntity } = require("../entities/itemEntity");
-const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
 const {
-  buildExtensionJoinSql,
+  getCachedExtensionFieldSpecs,
+  getCachedExtensionJoinSql,
   saveExtensionRows,
   deleteExtensionRows,
   packageDataFromRow,
@@ -14,20 +14,13 @@ class ItemStorage extends BaseStorage {
   static schema = "genrpg";
   static table = "items";
 
-  constructor(instanceGuid, packageNames = []) {
-    super(instanceGuid, packageNames);
-    this._extensionFieldSpecsCache = null;
-  }
-
   async getExtensionFieldSpecs() {
-    if (!this._extensionFieldSpecsCache) {
-      this._extensionFieldSpecsCache = mergeExtensionFieldSpecs(
-        ItemEntity.key,
-        this.packageNames,
-        Object.keys(ItemEntity.fields),
-      );
-    }
-    return this._extensionFieldSpecsCache;
+    return getCachedExtensionFieldSpecs(
+      ItemEntity.key,
+      this.packageNames,
+      Object.keys(ItemEntity.fields),
+      this.instanceGuid,
+    );
   }
 
   async create() {
@@ -196,10 +189,11 @@ class ItemStorage extends BaseStorage {
   }
 
   async buildItemSelect() {
-    const { joins, packageExtensionsSql } = await buildExtensionJoinSql(
+    const { joins, packageExtensionsSql } = await getCachedExtensionJoinSql(
       ItemEntity.key,
       this.packageNames,
       "i",
+      this.instanceGuid,
     );
 
     return {

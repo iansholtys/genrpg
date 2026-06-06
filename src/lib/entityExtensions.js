@@ -1,5 +1,6 @@
 const { mergeExtensionFieldSpecs } = require("./entityExtensionIndex");
 const { ValidationError } = require("../errors/ValidationError");
+const { getOrCompute } = require("../services/cacheService");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
 
@@ -442,9 +443,25 @@ function flattenPackageDataForEntity(packageData, extensionFieldSpecs) {
   return values;
 }
 
+async function getCachedExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys, instanceGuid) {
+  return getOrCompute(
+    `entity.field_extensions:${entityKey}`,
+    () => buildExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys),
+    { instanceGuid },
+  );
+}
+
+async function getCachedExtensionJoinSql(entityKey, packageNames, coreTableAlias, instanceGuid) {
+  return getOrCompute(
+    `entity.field_sql:${entityKey}`,
+    () => buildExtensionJoinSql(entityKey, packageNames, coreTableAlias),
+    { instanceGuid },
+  );
+}
+
 module.exports = {
-  buildExtensionFieldSpecs,
-  buildExtensionJoinSql,
+  getCachedExtensionFieldSpecs,
+  getCachedExtensionJoinSql,
   saveExtensionRows,
   deleteExtensionRows,
   packageDataFromRow,

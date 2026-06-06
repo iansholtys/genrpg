@@ -9,6 +9,7 @@ const itemCollectionsRouter = require("./itemCollections");
 const inventoriesRouter = require("./inventories");
 const charactersRouter = require("./characters");
 const aliasesRouter = require("./aliases");
+const cacheRouter = require("./cache");
 
 const genrpgApi = express.Router();
 
@@ -22,5 +23,6 @@ genrpgApi.use(itemCollectionsRouter);
 genrpgApi.use(inventoriesRouter);
 genrpgApi.use(charactersRouter);
 genrpgApi.use(aliasesRouter);
+genrpgApi.use(cacheRouter);
 
 module.exports = genrpgApi;

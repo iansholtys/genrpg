@@ -1,6 +1,7 @@
 import { getElements } from "./elements.js";
 import { state } from "./state.js";
 import { requestJson } from "./api.js";
+import { notify } from "./utils.js";
 import {
   renderPackages,
   showConfigurationIssues,
@@ -28,6 +29,7 @@ export function applyCurrentUser(user) {
   if (user?.admin) {
     elements.$administrationSection.prop("hidden", false);
     elements.$managePackagesButton.prop("hidden", false);
+    elements.$clearCacheButton.prop("hidden", false);
     elements.$manageRolesButton.prop("hidden", false);
     elements.$manageGlobalUsersButton.prop("hidden", false);
   } else {
@@ -61,4 +63,21 @@ export async function ensureLandingPageLoaded() {
     return;
   }
   await loadLandingPage();
+}
+
+export async function clearApplicationCache() {
+  try {
+    const data = await requestJson("/api/genrpg/cache/clear", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    notify(`Cache cleared (${data.cleared} entries).`, "success");
+  } catch (error) {
+    notify(error.message, "error");
+  }
+}
+
+export function setupCacheEvents() {
+  const elements = getElements();
+  elements.$clearCacheButton.on("click", clearApplicationCache);
 }

@@ -509,6 +509,12 @@ function invalidatePackageCache() {
   } catch {
     // events module may not be loaded yet during early startup
   }
+  try {
+    const { clearMemory } = require("./services/cacheService");
+    clearMemory();
+  } catch {
+    // cache service may not be loaded yet during early startup
+  }
 }
 
 function parsePackageCsv(value) {

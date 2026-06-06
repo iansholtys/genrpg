@@ -10,6 +10,7 @@ export function getElements() {
       $updateBanner: $("#updateBanner"),
       $applyUpdatesButton: $("#applyUpdatesButton"),
       $managePackagesButton: $("#managePackagesButton"),
+      $clearCacheButton: $("#clearCacheButton"),
       $workspace: $("body > .workspace"),
       // Manage Roles
       $manageRolesButton: $("#manageRolesButton"),

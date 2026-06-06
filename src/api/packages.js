@@ -16,6 +16,7 @@ const {
   loadPackages,
   invalidatePackageCache,
 } = require("../packages");
+const { clear: clearCache } = require("../services/cacheService");
 const {
   PackageUpdateError,
   applyPackageUpdates,
@@ -306,8 +307,6 @@ packagesRouter.post("/packages/git/pull", requireAdmin, async (req, res, next) =
       await execAsync(`git clone "${url}" "${targetDir}"`);
     }
 
-    invalidatePackageCache();
-
     let updateWarning = null;
     try {
       await applySchemaVersions({ pool });
@@ -316,6 +315,9 @@ packagesRouter.post("/packages/git/pull", requireAdmin, async (req, res, next) =
       console.error(`Failed to apply DB updates for ${preview.machineName}:`, error);
       updateWarning = error.message || "Failed to apply package database updates";
     }
+
+    await clearCache();
+    invalidatePackageCache();
 
     const { configurationIssues } = await loadPackages({ strict: false });
 
@@ -357,6 +359,7 @@ packagesRouter.post("/packages/install", requireAdmin, async (req, res, next) =>
     }
 
     const { updateWarning } = await applyPackageDatabase(machineName, pkg.path);
+    await clearCache();
     invalidatePackageCache();
 
     res.json({ success: true, updateWarning });
@@ -388,6 +391,7 @@ packagesRouter.post("/packages/reinstall", requireAdmin, async (req, res, next) 
     }
 
     const { updateWarning } = await applyPackageDatabase(machineName, pkg.path, { reinstall: true });
+    await clearCache();
     invalidatePackageCache();
 
     res.json({ success: true, updateWarning });
@@ -404,7 +408,10 @@ packagesRouter.post("/packages/reinstall", requireAdmin, async (req, res, next) 
 packagesRouter.post("/update", requireAdmin, async (req, res, next) => {
   try {
     if (req.body?.update === true) {
-      res.json(await applyPackageUpdates(pool));
+      const result = await applyPackageUpdates(pool);
+      await clearCache();
+      invalidatePackageCache();
+      res.json(result);
       return;
     }
 

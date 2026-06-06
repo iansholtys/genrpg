@@ -9,6 +9,7 @@ import {
   applyCurrentUser,
   isLandingUrl,
   loadLandingPage,
+  setupCacheEvents,
 } from "./landing.js";
 
 export async function loadApp() {
@@ -46,6 +47,7 @@ $(function () {
 
   // Set up all event listeners
   setupPackageEvents();
+  setupCacheEvents();
   setupInstanceEvents();
   setupRoleEvents();
   setupUserEvents();
