@@ -1,5 +1,5 @@
-const { pool } = require("../db/pool");
-const { ValidationError } = require("../errors/ValidationError");
+const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
+const { BaseEntity } = require("./baseEntity");
 const {
   CharacterPreCreateEvent,
   CharacterPostCreateEvent,
@@ -10,178 +10,72 @@ const {
   CharacterPreGetEvent,
   CharacterPostGetEvent,
 } = require("../../genrpg/events/characterEvents");
-const { getEventDispatcher } = require("../events/packageEvents");
-const CharacterStorage = require("../storage/characterStorage");
 
-function buildCharacterDispatchContext(instanceGuid, packageNames, user) {
-  return {
-    instanceGuid,
-    instancePackageNames: packageNames,
-    user,
-    pool,
-  };
-}
+class CharacterEntity extends BaseEntity {
+  static key = "character";
 
-async function dispatchCharacterGetEvents(characters, context) {
-  const dispatcher = await getEventDispatcher();
-  const packageNames = context.instancePackageNames;
-  const eventContext = {
-    characters,
-    instanceGuid: context.instanceGuid,
-    instancePackageNames: packageNames,
-    user: context.user,
-    pool,
+  static events = {
+    preGet: CharacterPreGetEvent,
+    postGet: CharacterPostGetEvent,
+    preCreate: CharacterPreCreateEvent,
+    postCreate: CharacterPostCreateEvent,
+    preUpdate: CharacterPreUpdateEvent,
+    postUpdate: CharacterPostUpdateEvent,
+    preDelete: CharacterPreDeleteEvent,
+    postDelete: CharacterPostDeleteEvent,
   };
 
-  const pre = new CharacterPreGetEvent(eventContext);
-  await dispatcher.dispatch(pre, packageNames);
+  static fields = {
+    displayName: { label: "Display name", type: "text" },
+    fullName: { label: "Full name", type: "text" },
+    appearance: { label: "Appearance", type: "text", inputType: "textarea" },
+    pronouns: { label: "Pronouns", type: "text" },
+  };
 
-  const post = new CharacterPostGetEvent({
-    ...eventContext,
-    characters: pre.characters,
-  });
-  await dispatcher.dispatch(post, packageNames);
-  return post.characters;
-}
+  static readOnlyFields = ["userGuid", "createDatetime", "updateDatetime", "packageData"];
 
-function throwEventErrors(event) {
-  if (event.errors.length) {
-    throw new ValidationError(event.errors);
-  }
-}
-
-class CharacterEntity {
   static getStorage() {
     return require("../storage/characterStorage");
   }
 
-  static buildDispatchContext(context, packageNames) {
-    return buildCharacterDispatchContext(context.instance.guid, packageNames, context.user);
+  constructor(options = {}) {
+    super(options);
+    this.initFields(options);
   }
 
   static async getFormSchema(context) {
-    return CharacterStorage.loadFormMetadata(context.instance.packageNames);
-  }
-
-  static async list(context) {
-    const { packageNames } = context.instance;
-    const storage = CharacterStorage.forInstance(context.instance);
-    let characters = await storage.list(packageNames);
-    return dispatchCharacterGetEvents(
-      characters,
-      CharacterEntity.buildDispatchContext(context, packageNames),
-    );
-  }
-
-  static async load(context, id) {
-    const { packageNames } = context.instance;
-    const storage = CharacterStorage.forInstance(context.instance);
-    let characters = await storage.list(packageNames, id);
-    if (!characters.length) {
-      return null;
-    }
-
-    characters = await dispatchCharacterGetEvents(
-      characters,
-      CharacterEntity.buildDispatchContext(context, packageNames),
+    const packageNames = Object.keys(context.instance.packages);
+    const extensionFieldSpecs = mergeExtensionFieldSpecs(
+      CharacterEntity.key,
+      packageNames,
+      Object.keys(CharacterEntity.fields),
     );
 
-    if (!characters.length) {
-      return null;
-    }
+    const coreFields = Object.entries(CharacterEntity.fields).map(([key, spec]) =>
+      this.formFieldFromSpec(key, spec),
+    );
 
-    return characters[0];
+    const groups = [
+      { id: "core", label: "Character", fields: coreFields },
+      ...this.buildExtensionFormGroups(extensionFieldSpecs, context),
+    ];
+
+    return { groups: groups.filter((group) => group.fields.length) };
   }
 
-  static async create(context, input) {
-    const { packageNames } = context.instance;
-    const storage = CharacterStorage.forInstance(context.instance);
-    const dispatcher = await getEventDispatcher();
-    const dispatchContext = CharacterEntity.buildDispatchContext(context, packageNames);
-
-    const pre = new CharacterPreCreateEvent({
-      ...dispatchContext,
-      payload: input,
-    });
-    await dispatcher.dispatch(pre, packageNames);
-    throwEventErrors(pre);
-
-    const characterGuid = await storage.create(context.user.guid, packageNames, pre.payload);
-    let characters = await storage.list(packageNames, characterGuid);
-
-    const post = new CharacterPostCreateEvent({
-      ...dispatchContext,
-      characters,
-      characterGuid,
-      payload: pre.payload,
-    });
-    await dispatcher.dispatch(post, packageNames);
-    characters = await storage.list(packageNames, characterGuid);
-    characters = await dispatchCharacterGetEvents(characters, dispatchContext);
-    return characters[0];
-  }
-
-  static async update(context, id, input) {
-    const storage = CharacterStorage.forInstance(context.instance);
-    if (!(await storage.exists(id))) {
-      return null;
-    }
-
-    const { packageNames } = context.instance;
-    const dispatcher = await getEventDispatcher();
-    const dispatchContext = CharacterEntity.buildDispatchContext(context, packageNames);
-
-    const pre = new CharacterPreUpdateEvent({
-      ...dispatchContext,
-      characterGuid: id,
-      payload: input,
-    });
-    await dispatcher.dispatch(pre, packageNames);
-    throwEventErrors(pre);
-
-    await storage.update(id, packageNames, pre.payload);
-    let characters = await storage.list(packageNames, id);
-
-    const post = new CharacterPostUpdateEvent({
-      ...dispatchContext,
-      characters,
-      characterGuid: id,
-      payload: pre.payload,
-    });
-    await dispatcher.dispatch(post, packageNames);
-    characters = await storage.list(packageNames, id);
-    characters = await dispatchCharacterGetEvents(characters, dispatchContext);
-    return characters[0];
-  }
-
-  static async delete(context, id) {
-    const storage = CharacterStorage.forInstance(context.instance);
-    if (!(await storage.exists(id))) {
-      return false;
-    }
-
-    const { packageNames } = context.instance;
-    const dispatcher = await getEventDispatcher();
-    const dispatchContext = CharacterEntity.buildDispatchContext(context, packageNames);
-
-    const pre = new CharacterPreDeleteEvent({
-      ...dispatchContext,
-      characterGuid: id,
-    });
-    await dispatcher.dispatch(pre, packageNames);
-    throwEventErrors(pre);
-
-    const deleted = await storage.delete(id, packageNames);
-    if (!deleted) {
-      return false;
-    }
-
-    const post = new CharacterPostDeleteEvent({
-      ...dispatchContext,
-      characterGuid: id,
-    });
-    await dispatcher.dispatch(post, packageNames);
-    return true;
+  toJSON() {
+    return {
+      guid: this.guid,
+      instanceGuid: this.instanceGuid,
+      userGuid: this.userGuid,
+      displayName: this.displayName,
+      fullName: this.fullName,
+      appearance: this.appearance,
+      pronouns: this.pronouns,
+      createDatetime: this.createDatetime,
+      updateDatetime: this.updateDatetime,
+      ...super.toJSON(),
+    };
   }
 }
 

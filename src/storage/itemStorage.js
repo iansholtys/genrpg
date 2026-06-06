@@ -1,41 +1,13 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemEntity } = require("../entities/itemEntity");
-const {
-  getCachedExtensionFieldSpecs,
-  getCachedExtensionJoinSql,
-  saveExtensionRows,
-  deleteExtensionRows,
-  packageDataFromRow,
-  flattenPackageDataForEntity,
-} = require("../lib/entityExtensions");
 const ItemTemplateStorage = require("./itemTemplateStorage");
 
 class ItemStorage extends BaseStorage {
   static schema = "genrpg";
   static table = "items";
+  static Entity = ItemEntity;
 
-  async getExtensionFieldSpecs() {
-    return getCachedExtensionFieldSpecs(
-      ItemEntity.key,
-      this.packageNames,
-      Object.keys(ItemEntity.fields),
-      this.instanceGuid,
-    );
-  }
-
-  async create() {
-    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
-    return new ItemEntity({
-      instanceGuid: this.instanceGuid,
-      guid: this.newGuid(),
-      isNew: true,
-      storage: this,
-      packageNames: this.packageNames,
-      extensionFieldSpecs,
-    });
-  }
-
-  async list() {
+  async listEntities() {
     const { sql } = await this.buildItemSelect();
     const result = await this.query(
       `${sql}
@@ -47,7 +19,7 @@ class ItemStorage extends BaseStorage {
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
-  async load(itemGuid) {
+  async loadEntity(itemGuid) {
     const { sql } = await this.buildItemSelect();
     const result = await this.query(
       `${sql}
@@ -108,13 +80,7 @@ class ItemStorage extends BaseStorage {
       }
     }
 
-    await saveExtensionRows(
-      ItemEntity.key,
-      this.packageNames,
-      entity.guid,
-      entity,
-      (text, params) => this.query(text, params),
-    );
+    await this.saveExtensionRowsForEntity(entity);
 
     const reloaded = await this.load(entity.guid);
     if (reloaded) {
@@ -131,29 +97,13 @@ class ItemStorage extends BaseStorage {
         effectiveWeight: reloaded.effectiveWeight,
         packageData: reloaded.packageData,
       });
-      for (const key of Object.keys(entity.extensionFieldSpecs)) {
-        if (key in reloaded) {
-          entity[key] = reloaded[key];
-        }
-      }
+      this.assignExtensionFieldsFromReload(entity, reloaded);
     }
     return entity;
   }
 
-  async delete(itemGuid) {
-    await deleteExtensionRows(
-      ItemEntity.key,
-      this.packageNames,
-      itemGuid,
-      (text, params) => this.query(text, params),
-    );
-    return this.deleteRow(itemGuid);
-  }
-
   async toEntity(row) {
-    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
-    const packageData = packageDataFromRow(row.package_extensions);
-    const extensionValues = flattenPackageDataForEntity(packageData, extensionFieldSpecs);
+    const { extensionFieldSpecs, packageData, extensionValues } = await this.extensionContextFromRow(row);
 
     const itemTemplate = {
       guid: row.template_guid,
@@ -166,7 +116,7 @@ class ItemStorage extends BaseStorage {
     const effectiveWeight =
       row.weight !== null && row.weight !== undefined ? row.weight : row.template_weight;
 
-    return new ItemEntity({
+    return new this.constructor.Entity({
       instanceGuid: row.instance_guid,
       guid: row.guid,
       isNew: false,
@@ -189,12 +139,7 @@ class ItemStorage extends BaseStorage {
   }
 
   async buildItemSelect() {
-    const { joins, packageExtensionsSql } = await getCachedExtensionJoinSql(
-      ItemEntity.key,
-      this.packageNames,
-      "i",
-      this.instanceGuid,
-    );
+    const { joins, packageExtensionsSql } = await this.getExtensionJoinSql("i");
 
     return {
       sql: `

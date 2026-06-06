@@ -19,6 +19,31 @@ const ENTITY_EXTENSION_CONFIGS = {
       "update_datetime",
     ]),
   },
+  inventory: {
+    coreSchema: "genrpg",
+    coreTable: "inventories",
+    parentKeyColumn: "inventory_guid",
+    managedColumns: new Set([
+      "guid",
+      "inventory_guid",
+      "instance_guid",
+      "create_datetime",
+      "update_datetime",
+    ]),
+  },
+  character: {
+    coreSchema: "genrpg",
+    coreTable: "characters",
+    parentKeyColumn: "character_guid",
+    managedColumns: new Set([
+      "guid",
+      "character_guid",
+      "instance_guid",
+      "user_guid",
+      "create_datetime",
+      "update_datetime",
+    ]),
+  },
 };
 
 function quoteIdentifier(identifier) {
@@ -255,6 +280,10 @@ function collectExtensionValues(entity, extensionFieldSpecs) {
 
 function buildInsertQuery(schema, table, values) {
   const columns = Object.keys(values);
+  if (!columns.length) {
+    throw new Error(`No values supplied for ${schema}.${table}`);
+  }
+
   const columnSql = columns.map(quoteColumn).join(", ");
   const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
   return {

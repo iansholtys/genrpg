@@ -1,43 +1,6 @@
 const { BaseEntity } = require("./baseEntity");
 const { ItemTemplateEntity } = require("./itemTemplateEntity");
-const { loadPackages } = require("../packages");
 const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
-
-function inputTypeForField(key, spec) {
-  switch (spec.type) {
-    case "boolean":
-      return "checkbox";
-    case "number":
-    case "integer":
-      return "number";
-    case "guid":
-      return "select";
-    case "text":
-      return key === "description" ? "textarea" : "text";
-    default:
-      return "text";
-  }
-}
-
-function formFieldFromSpec(key, spec, overrides = {}) {
-  const field = {
-    key,
-    label: spec.label || key,
-    type: spec.type,
-    required: !!spec.required,
-    inputType: overrides.inputType || inputTypeForField(key, spec),
-    ...overrides,
-  };
-
-  if (field.type === "number") {
-    field.step = "any";
-  }
-  if (field.type === "integer") {
-    field.step = "1";
-  }
-
-  return field;
-}
 
 class ItemEntity extends BaseEntity {
   static key = "item";
@@ -54,7 +17,7 @@ class ItemEntity extends BaseEntity {
       refs: ItemTemplateEntity,
     },
     name: { label: "Name", type: "text" },
-    description: { label: "Description", type: "text" },
+    description: { label: "Description", type: "text", inputType: "textarea" },
     weight: { label: "Weight", type: "number" },
   };
 
@@ -76,19 +39,17 @@ class ItemEntity extends BaseEntity {
   static async getFormSchema(context) {
     const ItemTemplateStorage = require("../storage/itemTemplateStorage");
 
-    const packageNames = context.instance.packageNames ?? [];
+    const packageNames = Object.keys(context.instance.packages);
     const extensionFieldSpecs = mergeExtensionFieldSpecs(
       ItemEntity.key,
       packageNames,
       Object.keys(ItemEntity.fields),
     );
     const templates = await ItemTemplateStorage.forInstance(context.instance).list();
-    const { packages } = await loadPackages({ strict: false });
-    const packageLabels = new Map(packages.map((pkg) => [pkg.machineName, pkg.name]));
 
     const coreFields = Object.entries(ItemEntity.fields).map(([key, spec]) => {
       if (key === "itemTemplateGuid") {
-        return formFieldFromSpec(key, spec, {
+        return this.formFieldFromSpec(key, spec, {
           inputType: "select",
           options: templates.map((template) => ({
             value: template.guid,
@@ -96,28 +57,19 @@ class ItemEntity extends BaseEntity {
           })),
         });
       }
-      return formFieldFromSpec(key, spec);
+      return this.formFieldFromSpec(key, spec);
     });
 
-    const extensionGroups = new Map();
-    for (const [key, spec] of Object.entries(extensionFieldSpecs)) {
-      if (!extensionGroups.has(spec.schema)) {
-        extensionGroups.set(spec.schema, {
-          id: spec.schema,
-          label: packageLabels.get(spec.schema) || spec.schema,
-          fields: [],
-        });
-      }
-      extensionGroups.get(spec.schema).fields.push(formFieldFromSpec(key, spec));
-    }
-
-    const groups = [{ id: "core", label: "Item", fields: coreFields }, ...extensionGroups.values()];
+    const groups = [
+      { id: "core", label: "Item", fields: coreFields },
+      ...this.buildExtensionFormGroups(extensionFieldSpecs, context),
+    ];
 
     return { groups: groups.filter((group) => group.fields.length) };
   }
 
   toJSON() {
-    const payload = {
+    return {
       guid: this.guid,
       instanceGuid: this.instanceGuid,
       itemTemplateGuid: this.itemTemplateGuid,
@@ -130,17 +82,8 @@ class ItemEntity extends BaseEntity {
       effectiveName: this.effectiveName,
       effectiveDescription: this.effectiveDescription,
       effectiveWeight: this.effectiveWeight,
+      ...super.toJSON(),
     };
-
-    for (const key of Object.keys(this.extensionFieldSpecs)) {
-      payload[key] = this[key];
-    }
-
-    if (Object.keys(this.packageData).length) {
-      payload.packageData = this.packageData;
-    }
-
-    return payload;
   }
 }
 

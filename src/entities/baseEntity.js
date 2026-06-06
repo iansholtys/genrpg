@@ -1,9 +1,11 @@
 const { getTransactionClient } = require("../db/transactionContext");
+const { ValidationError } = require("../errors/ValidationError");
+const { getEventDispatcher } = require("../events/packageEvents");
 
 class BaseEntity {
   /**
    * Input field definitions keyed by property name.
-   * Each spec: `{ label?, type, default?, required?, refs? }`
+   * Each spec: `{ label?, type, default?, required?, refs?, inputType? }`
    * Types: `text`, `guid`, `number`, `integer`, `boolean`.
    * `refs`: required on `guid` fields — entity class with `static getStorage()` for existence checks.
    *
@@ -21,6 +23,38 @@ class BaseEntity {
   static key = null;
 
   /**
+   * Maps lifecycle phases to package event classes, e.g. `{ preCreate, postCreate, … }`.
+   * @type {Record<string, typeof import("../events/BaseEvent").BaseEvent>}
+   */
+  static events = {};
+
+  /**
+   * Dispatch a configured lifecycle event for this entity type.
+   *
+   * Uses {@link BaseEntity#packageNames} from this instance for subscriber routing.
+   *
+   * @param {string} phase e.g. `preCreate`, `postGet`
+   * @param {object} eventArgs payload passed to the event constructor
+   * @returns {Promise<import("../events/BaseEvent").BaseEvent | null>}
+   */
+  async dispatchEvent(phase, eventArgs) {
+    const EventClass = this.constructor.events?.[phase];
+    if (!EventClass) {
+      return null;
+    }
+
+    const dispatcher = await getEventDispatcher();
+    const event = new EventClass(eventArgs);
+    await dispatcher.dispatch(event, this.packageNames);
+
+    if (event.errors?.length) {
+      throw new ValidationError(event.errors);
+    }
+
+    return event;
+  }
+
+  /**
    * @returns {typeof import("../storage/baseStorage").BaseStorage}
    */
   static getStorage() {
@@ -29,6 +63,72 @@ class BaseEntity {
 
   /** @type {string[]} Loaded from storage; not applied by {@link BaseEntity#set}. */
   static readOnlyFields = [];
+
+  /**
+   * Default HTML input type for a field spec. Explicit `spec.inputType` wins.
+   */
+  static defaultInputType(spec) {
+    if (spec.inputType) {
+      return spec.inputType;
+    }
+
+    switch (spec.type) {
+      case "boolean":
+        return "checkbox";
+      case "number":
+      case "integer":
+        return "number";
+      case "guid":
+        return "select";
+      case "text":
+      default:
+        return "text";
+    }
+  }
+
+  /**
+   * Builds a form field descriptor from a field spec for {@link BaseEntity.getFormSchema} metadata.
+   */
+  static formFieldFromSpec(key, spec, overrides = {}) {
+    const field = {
+      key,
+      label: spec.label || key,
+      type: spec.type,
+      required: !!spec.required,
+      inputType: this.defaultInputType(spec),
+      ...overrides,
+    };
+
+    if (field.type === "number") {
+      field.step = "any";
+    }
+    if (field.type === "integer") {
+      field.step = "1";
+    }
+
+    return field;
+  }
+
+  /**
+   * Builds form schema groups for package extension fields on this entity.
+   */
+  static buildExtensionFormGroups(extensionFieldSpecs, context) {
+    const { packages } = context.instance;
+    const groups = new Map();
+
+    for (const [key, spec] of Object.entries(extensionFieldSpecs)) {
+      if (!groups.has(spec.schema)) {
+        groups.set(spec.schema, {
+          id: spec.schema,
+          label: packages[spec.schema] || spec.schema,
+          fields: [],
+        });
+      }
+      groups.get(spec.schema).fields.push(this.formFieldFromSpec(key, spec));
+    }
+
+    return [...groups.values()];
+  }
 
   constructor({
     instanceGuid,
@@ -118,7 +218,7 @@ class BaseEntity {
     const context = {
       instance: {
         guid: this.instanceGuid,
-        packageNames: this.packageNames,
+        packages: Object.fromEntries(this.packageNames.map((name) => [name, name])),
       },
     };
     const messages = await Promise.all(
@@ -138,21 +238,69 @@ class BaseEntity {
     return errors;
   }
 
-  async save() {
+  async save({ skipEvents = false } = {}) {
     this.assertInTransaction();
     this.assertHasStorage();
     this.assertValidated();
-    return this.storage.save(this);
+
+    if (skipEvents) {
+      return this.storage.save(this);
+    }
+
+    const eventArgs = { entity: this, instanceGuid: this.instanceGuid };
+    const { isNew } = this;
+    await this.dispatchEvent(
+      isNew ? "preCreate" : "preUpdate",
+      eventArgs,
+    );
+
+    const result = await this.storage.save(this);
+
+    if (result) {
+      await this.dispatchEvent(
+        isNew ? "postCreate" : "postUpdate",
+        eventArgs,
+      );
+    }
+
+    return result;
   }
 
-  async delete() {
+  async delete({ skipEvents = false } = {}) {
     this.assertInTransaction();
     this.assertHasStorage();
-    return this.storage.delete(this.guid);
+
+    if (skipEvents) {
+      return this.storage.delete(this.guid);
+    }
+
+    const eventArgs = { entity: this, instanceGuid: this.instanceGuid };
+    await this.dispatchEvent("preDelete", eventArgs);
+
+    const deleted = await this.storage.delete(this.guid);
+    if (deleted) {
+      await this.dispatchEvent("postDelete", eventArgs);
+    }
+
+    return deleted;
   }
 
+  /**
+   * Extension field values and package metadata for API responses.
+   * Subclasses with {@link BaseEntity.key} should spread this at the end of `toJSON()`.
+   */
   toJSON() {
-    throw new Error(`toJSON() not implemented for ${this.constructor.name}`);
+    const payload = {};
+
+    for (const key of Object.keys(this.extensionFieldSpecs)) {
+      payload[key] = this[key];
+    }
+
+    if (Object.keys(this.packageData).length) {
+      payload.packageData = this.packageData;
+    }
+
+    return payload;
   }
 }
 

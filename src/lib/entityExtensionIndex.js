@@ -54,6 +54,7 @@ function normalizeFieldSpec(property, rawSpec, machineName, label) {
     extension: true,
     ...(rawSpec.refs ? { refs: rawSpec.refs } : {}),
     ...(rawSpec.default !== undefined ? { default: rawSpec.default } : {}),
+    ...(rawSpec.inputType ? { inputType: rawSpec.inputType } : {}),
   };
 }
 

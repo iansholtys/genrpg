@@ -522,8 +522,17 @@ function parsePackageCsv(value) {
   return [...new Set(String(value).split(",").map((entry) => entry.trim()).filter(Boolean))].sort();
 }
 
-function formatPackageCsv(machineNames) {
-  return [...new Set(machineNames)].sort().join(",");
+/**
+ * Expanded instance packages as { [machineName]: humanLabel } for request context.
+ */
+function resolveInstancePackages(packageCsv, packages) {
+  const expanded = expandPackageSelectionForAssets(parsePackageCsv(packageCsv), packages);
+  const expandedSet = new Set(expanded);
+  return Object.fromEntries(
+    packages
+      .filter((pkg) => expandedSet.has(pkg.machineName))
+      .map((pkg) => [pkg.machineName, pkg.name]),
+  );
 }
 
 function validatePackageSelection(selectedMachineNames, packages) {
@@ -557,7 +566,7 @@ function validatePackageSelection(selectedMachineNames, packages) {
   return {
     valid: details.length === 0,
     details,
-    packageCsv: formatPackageCsv([...selected]),
+    packageCsv: [...selected].sort().join(","),
   };
 }
 
@@ -569,6 +578,7 @@ module.exports = {
   refreshPackageCache,
   invalidatePackageCache,
   parsePackageCsv,
+  resolveInstancePackages,
   validatePackageSelection,
   resolveInstanceAssetsForRequest,
   expandPackageSelectionForAssets,

@@ -213,12 +213,6 @@ export function applyPackageSelectionChange(machineName, isChecked, $container) 
   syncPackageCheckboxStates($container);
 }
 
-export function formatInstancePackageLabels(packageNames) {
-  return (packageNames || [])
-    .map((machineName) => state.packageNameByMachineName.get(machineName) || machineName)
-    .join(", ") || "None";
-}
-
 export function renderInstancePackageSelection($container, { selectedPackages = null, readOnly = false } = {}) {
   const installedPackages = [...state.packageByMachineName.values()].filter((pkg) => pkg.installed);
 

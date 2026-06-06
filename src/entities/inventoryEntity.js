@@ -1,8 +1,12 @@
 const { BaseEntity } = require("./baseEntity");
 const { ItemCollectionEntity } = require("./itemCollectionEntity");
 const { CharacterEntity } = require("./characterEntity");
+const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
+const CharacterStorage = require("../storage/characterStorage");
 
 class InventoryEntity extends BaseEntity {
+  static key = "inventory";
+
   static getStorage() {
     return require("../storage/inventoryStorage");
   }
@@ -22,11 +26,54 @@ class InventoryEntity extends BaseEntity {
     },
   };
 
-  static readOnlyFields = ["createDatetime", "updateDatetime"];
+  static readOnlyFields = ["createDatetime", "updateDatetime", "packageData"];
 
   constructor(options = {}) {
     super(options);
     this.initFields(options);
+  }
+
+  static async getFormSchema(context) {
+    const ItemCollectionStorage = require("../storage/itemCollectionStorage");
+
+    const packageNames = Object.keys(context.instance.packages);
+    const extensionFieldSpecs = mergeExtensionFieldSpecs(
+      InventoryEntity.key,
+      packageNames,
+      Object.keys(InventoryEntity.fields),
+    );
+    const [collections, characters] = await Promise.all([
+      ItemCollectionStorage.forInstance(context.instance).listCollections(),
+      CharacterStorage.forInstance(context.instance).list(),
+    ]);
+    const coreFields = Object.entries(InventoryEntity.fields).map(([key, spec]) => {
+      if (key === "collectionGuid") {
+        return this.formFieldFromSpec(key, spec, {
+          inputType: "select",
+          options: collections.map((collection) => ({
+            value: collection.guid,
+            label: collection.name || collection.type || collection.guid,
+          })),
+        });
+      }
+      if (key === "characterGuid") {
+        return this.formFieldFromSpec(key, spec, {
+          inputType: "select",
+          options: characters.map((character) => ({
+            value: character.guid,
+            label: character.displayName || character.fullName || character.guid,
+          })),
+        });
+      }
+      return this.formFieldFromSpec(key, spec);
+    });
+
+    const groups = [
+      { id: "core", label: "Inventory", fields: coreFields },
+      ...this.buildExtensionFormGroups(extensionFieldSpecs, context),
+    ];
+
+    return { groups: groups.filter((group) => group.fields.length) };
   }
 
   toJSON() {
@@ -37,6 +84,7 @@ class InventoryEntity extends BaseEntity {
       characterGuid: this.characterGuid,
       createDatetime: this.createDatetime,
       updateDatetime: this.updateDatetime,
+      ...super.toJSON(),
     };
   }
 }

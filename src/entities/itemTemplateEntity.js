@@ -7,7 +7,7 @@ class ItemTemplateEntity extends BaseEntity {
 
   static fields = {
     name: { label: "Name", type: "text", required: true },
-    description: { label: "Description", type: "text" },
+    description: { label: "Description", type: "text", inputType: "textarea" },
     weight: { label: "Weight", type: "number" },
   };
 

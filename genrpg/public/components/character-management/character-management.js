@@ -49,36 +49,45 @@ class ManageCharacterModal extends Modal {
     return Boolean(this.characterGuid);
   }
 
-  buildField(schema, column) {
-    const id = `character-${schema}-${column.name}`;
+  buildField(field) {
+    const id = `character-field-${field.key}`;
     const common = {
       id,
-      name: column.name,
+      name: field.key,
     };
     let $input;
 
-    if (column.inputType === "textarea") {
+    if (field.inputType === "textarea") {
       $input = $("<textarea>", { ...common, rows: 3 });
-    } else if (column.inputType === "select") {
+    } else if (field.inputType === "select") {
       $input = $("<select>", common).append(
-        $("<option>", { value: "", text: column.required ? "Select one" : "None" }),
+        $("<option>", {
+          value: "",
+          text: field.required ? "Select one" : "None",
+          disabled: field.required,
+          selected: true,
+        }),
       );
-      for (const option of column.options || []) {
+      for (const option of field.options || []) {
         $input.append($("<option>", { value: option.value, text: option.label }));
       }
-    } else if (column.inputType === "checkbox") {
+    } else if (field.inputType === "checkbox") {
       $input = $("<input>", { ...common, type: "checkbox", value: "true" });
     } else {
-      $input = $("<input>", { ...common, type: column.inputType || "text" });
+      const attrs = { ...common, type: field.inputType || "text" };
+      if (field.inputType === "number") {
+        attrs.step = field.step || "any";
+      }
+      $input = $("<input>", attrs);
     }
 
-    if (column.required) {
+    if (field.required) {
       $input.prop("required", true);
     }
 
     return $("<label>", { for: id }).append(
-      $("<span>", { text: column.label || column.name }),
-      $input.attr("data-schema", schema),
+      $("<span>", { text: field.label || field.key }),
+      $input,
     );
   }
 
@@ -101,15 +110,15 @@ class ManageCharacterModal extends Modal {
 
     this.elements.$form = $("<form>", { class: "character-form" });
 
-    for (const schema of this.metadata.schemas || []) {
+    for (const group of this.metadata?.groups || []) {
       const $fields = $("<div>", { class: "character-form__fields" });
-      for (const column of schema.columns || []) {
-        $fields.append(this.buildField(schema.schema, column));
+      for (const field of group.fields || []) {
+        $fields.append(this.buildField(field));
       }
 
       this.elements.$form.append(
         $("<fieldset>", { class: "character-form__fieldset" }).append(
-          $("<legend>", { text: schema.label || schema.schema }),
+          $("<legend>", { text: group.label || group.id }),
           $fields.children().length
             ? $fields
             : $("<p>", { class: "empty-state", text: "No editable fields." }),
@@ -139,55 +148,91 @@ class ManageCharacterModal extends Modal {
     this.elements.$editSubmit?.prop("hidden", !isEdit);
   }
 
+  rebuildFormContent() {
+    if (!this.domExists || !this.metadata) {
+      return;
+    }
+
+    this.elements.$form?.off(this.eventNs);
+    this.fillBody(this.getContent());
+  }
+
   prepareShow() {
     if (!this.domExists) {
       this.createModalElement();
       this.bindEvents();
+      return;
     }
+
+    this.rebuildFormContent();
   }
 
   resetForm() {
     this.elements.$form?.[0]?.reset();
   }
 
-  gatherPayload() {
-    const packages = {};
-    for (const schema of this.metadata.schemas || []) {
-      packages[schema.schema] = {};
+  fillForm(character) {
+    for (const group of this.metadata?.groups || []) {
+      for (const field of group.fields || []) {
+        const $input = this.elements.$form.find(`[name="${field.key}"]`);
+        if (!$input.length) {
+          continue;
+        }
+
+        const value = character[field.key];
+        if (field.inputType === "checkbox") {
+          $input.prop("checked", Boolean(value));
+          continue;
+        }
+
+        if (value === null || value === undefined) {
+          $input.val("");
+          continue;
+        }
+
+        $input.val(String(value));
+      }
+    }
+  }
+
+  readFormPayload() {
+    const payload = {};
+
+    for (const group of this.metadata?.groups || []) {
+      for (const field of group.fields || []) {
+        const $input = this.elements.$form.find(`[name="${field.key}"]`);
+        if (!$input.length) {
+          continue;
+        }
+
+        if (field.inputType === "checkbox") {
+          if ($input.prop("checked")) {
+            payload[field.key] = true;
+          }
+          continue;
+        }
+
+        const raw = $input.val();
+        if (raw === null || raw === undefined || raw === "") {
+          payload[field.key] = null;
+          continue;
+        }
+
+        payload[field.key] = raw;
+      }
     }
 
-    this.elements.$form.find("input, textarea, select").each((_, element) => {
-      const $input = $(element);
-      const schema = $input.attr("data-schema");
-      const name = $input.attr("name");
-      if (!schema || !name) {
-        return;
-      }
-
-      if ($input.attr("type") === "checkbox") {
-        if ($input.prop("checked")) {
-          packages[schema][name] = true;
-        }
-        return;
-      }
-
-      const value = $input.val();
-      if (value !== null && value !== undefined && value !== "") {
-        packages[schema][name] = value;
-      }
-    });
-
-    return { packages };
+    return payload;
   }
 
   async handleSubmit() {
     this.setSaving(true);
 
     try {
-      const payload = this.gatherPayload();
+      const payload = this.readFormPayload();
       if (this.isEditMode()) {
         await this.requestJson(`${this.apiBase()}/${this.characterGuid}`, {
-          method: "PATCH",
+          method: "PUT",
           body: JSON.stringify(payload),
         });
       } else {
@@ -263,32 +308,7 @@ class ManageCharacterModal extends Modal {
 
     this.prepareShow();
     this.resetForm();
-
-    // Form fields come from /form metadata (labels, types) — not character values.
-    // Apply row.packages so edit mode shows current data (inverse of gatherPayload).
-    const packageData = row.packages && typeof row.packages === "object" ? row.packages : {};
-    this.elements.$form.find("input, textarea, select").each((_, element) => {
-      const $input = $(element);
-      const schema = $input.attr("data-schema");
-      const name = $input.attr("name");
-      if (!schema || !name) {
-        return;
-      }
-
-      const value = packageData[schema]?.[name];
-      if ($input.attr("type") === "checkbox") {
-        $input.prop("checked", Boolean(value));
-        return;
-      }
-
-      if (value === null || value === undefined) {
-        $input.val("");
-        return;
-      }
-
-      $input.val(String(value));
-    });
-
+    this.fillForm(row);
     this.configureActions();
     super.show();
   }
@@ -718,13 +738,11 @@ class CharacterManagement {
   }
 
   static rowFromCharacter(character) {
-    const core = character.packages?.genrpg || {};
     return {
-      guid: character.guid,
-      displayName: core.display_name || core.full_name || character.guid,
-      pronouns: core.pronouns || "",
-      appearance: core.appearance || "",
-      packages: character.packages || {},
+      ...character,
+      displayName: character.displayName || character.fullName || character.guid,
+      pronouns: character.pronouns || "",
+      appearance: character.appearance || "",
     };
   }
 

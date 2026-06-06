@@ -9,6 +9,7 @@ const {
   assertInstancePermissions,
 } = require("./instanceContext");
 const { handleRouteError } = require("../lib/httpResponse");
+const { InventoryEntity } = require("../entities/inventoryEntity");
 const InventoryStorage = require("../storage/inventoryStorage");
 
 const inventoriesRouter = express.Router();
@@ -36,6 +37,16 @@ function parseInventoryListQuery(query) {
 
   return { characterGuid, collectionGuid };
 }
+
+inventoriesRouter.get("/instances/:instanceGuid/inventories/form", async (req, res, next) => {
+  try {
+    const context = await assertInstancePermissions(req, PERMISSION_VIEW);
+    const metadata = await InventoryEntity.getFormSchema(context);
+    res.json(metadata);
+  } catch (error) {
+    handleRouteError(res, error, next);
+  }
+});
 
 inventoriesRouter.get("/instances/:instanceGuid/inventories", async (req, res, next) => {
   try {
@@ -67,7 +78,7 @@ inventoriesRouter.post("/instances/:instanceGuid/inventories", async (req, res, 
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const inventory = await withTransaction(async () => {
-      const entity = InventoryStorage.forInstance(context.instance).create();
+      const entity = await InventoryStorage.forInstance(context.instance).create();
       entity.set(req.body);
       const validationErrors = await entity.validate();
       if (validationErrors.length) {
@@ -115,9 +126,12 @@ inventoriesRouter.delete(
     try {
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       await withTransaction(async () => {
-        const deleted = await InventoryStorage.forInstance(context.instance).delete(
-          req.params.inventoryGuid,
-        );
+        const storage = InventoryStorage.forInstance(context.instance);
+        const entity = await storage.load(req.params.inventoryGuid);
+        if (!entity) {
+          throw new NotFoundError("Inventory not found");
+        }
+        const deleted = await entity.delete();
         if (!deleted) {
           throw new NotFoundError("Inventory not found");
         }

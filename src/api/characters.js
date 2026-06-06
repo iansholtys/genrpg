@@ -1,6 +1,9 @@
 const express = require("express");
 const { NotFoundError } = require("../errors/NotFoundError");
+const { ValidationError } = require("../errors/ValidationError");
+const { withTransaction } = require("../db/transactionContext");
 const { CharacterEntity } = require("../entities/characterEntity");
+const CharacterStorage = require("../storage/characterStorage");
 const {
   PERMISSION_VIEW,
   PERMISSION_EDIT,
@@ -23,7 +26,8 @@ charactersRouter.get("/instances/:instanceGuid/characters/form", async (req, res
 charactersRouter.get("/instances/:instanceGuid/characters", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-    const characters = await CharacterEntity.list(context);
+    const storage = CharacterStorage.forInstance(context.instance);
+    const characters = (await storage.list()).map((entity) => entity.toJSON());
     res.json({ characters });
   } catch (error) {
     handleRouteError(res, error, next);
@@ -33,11 +37,12 @@ charactersRouter.get("/instances/:instanceGuid/characters", async (req, res, nex
 charactersRouter.get("/instances/:instanceGuid/characters/:characterGuid", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-    const character = await CharacterEntity.load(context, req.params.characterGuid);
-    if (!character) {
+    const storage = CharacterStorage.forInstance(context.instance);
+    const entity = await storage.load(req.params.characterGuid);
+    if (!entity) {
       throw new NotFoundError("Character not found");
     }
-    res.json({ character });
+    res.json({ character: entity.toJSON() });
   } catch (error) {
     handleRouteError(res, error, next);
   }
@@ -46,26 +51,45 @@ charactersRouter.get("/instances/:instanceGuid/characters/:characterGuid", async
 charactersRouter.post("/instances/:instanceGuid/characters", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
-    const character = await CharacterEntity.create(context, req.body);
+    const character = await withTransaction(async () => {
+      const storage = CharacterStorage.forInstance(context.instance);
+      const entity = await storage.create(context.user.guid);
+      entity.set(req.body);
+      const validationErrors = await entity.validate();
+      if (validationErrors.length) {
+        throw new ValidationError(validationErrors);
+      }
+      await entity.save();
+      return entity.toJSON();
+    });
     res.status(201).json({ character });
   } catch (error) {
     handleRouteError(res, error, next);
   }
 });
 
-charactersRouter.patch(
+charactersRouter.put(
   "/instances/:instanceGuid/characters/:characterGuid",
   async (req, res, next) => {
     try {
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
-      const character = await CharacterEntity.update(
-        context,
-        req.params.characterGuid,
-        req.body,
-      );
-      if (!character) {
-        throw new NotFoundError("Character not found");
-      }
+      const character = await withTransaction(async () => {
+        const storage = CharacterStorage.forInstance(context.instance);
+        const entity = await storage.load(req.params.characterGuid);
+        if (!entity) {
+          throw new NotFoundError("Character not found");
+        }
+        entity.set(req.body);
+        const validationErrors = await entity.validate();
+        if (validationErrors.length) {
+          throw new ValidationError(validationErrors);
+        }
+        const saved = await entity.save();
+        if (!saved) {
+          throw new NotFoundError("Character not found");
+        }
+        return entity.toJSON();
+      });
       res.json({ character });
     } catch (error) {
       handleRouteError(res, error, next);
@@ -78,10 +102,17 @@ charactersRouter.delete(
   async (req, res, next) => {
     try {
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
-      const deleted = await CharacterEntity.delete(context, req.params.characterGuid);
-      if (!deleted) {
-        throw new NotFoundError("Character not found");
-      }
+      await withTransaction(async () => {
+        const storage = CharacterStorage.forInstance(context.instance);
+        const entity = await storage.load(req.params.characterGuid);
+        if (!entity) {
+          throw new NotFoundError("Character not found");
+        }
+        const deleted = await entity.delete();
+        if (!deleted) {
+          throw new NotFoundError("Character not found");
+        }
+      });
       res.status(204).send();
     } catch (error) {
       handleRouteError(res, error, next);

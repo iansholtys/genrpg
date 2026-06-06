@@ -96,7 +96,12 @@ itemsRouter.delete("/instances/:instanceGuid/items/:itemGuid", async (req, res, 
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     await withTransaction(async () => {
-      const deleted = await ItemStorage.forInstance(context.instance).delete(req.params.itemGuid);
+      const storage = ItemStorage.forInstance(context.instance);
+      const entity = await storage.load(req.params.itemGuid);
+      if (!entity) {
+        throw new NotFoundError("Item not found");
+      }
+      const deleted = await entity.delete();
       if (!deleted) {
         throw new NotFoundError("Item not found");
       }
