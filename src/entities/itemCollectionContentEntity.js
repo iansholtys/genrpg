@@ -1,10 +1,13 @@
+const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
 const { BaseEntity } = require("./baseEntity");
 const { ItemEntity } = require("./itemEntity");
 const { ItemCollectionEntity } = require("./itemCollectionEntity");
 
 class ItemCollectionContentEntity extends BaseEntity {
+  static key = "item_collection_content";
+
   static getStorage() {
-    return require("../storage/itemCollectionStorage");
+    return require("../storage/itemCollectionContentStorage");
   }
 
   static fields = {
@@ -15,11 +18,61 @@ class ItemCollectionContentEntity extends BaseEntity {
     collectionGuid: { readOnly: true },
     createDatetime: { readOnly: true },
     updateDatetime: { readOnly: true },
+    packageData: { readOnly: true, virtual: true, default: {} },
   };
 
   constructor(options = {}) {
     super(options);
     this.initFields(options);
+  }
+
+  static async getFormSchema(context, { collectionGuid } = {}) {
+    const ItemStorage = require("../storage/itemStorage");
+    const ItemCollectionStorage = require("../storage/itemCollectionStorage");
+
+    const packageNames = Object.keys(context.instance.packages);
+    const extensionFieldSpecs = mergeExtensionFieldSpecs(
+      ItemCollectionContentEntity.key,
+      packageNames,
+      Object.keys(ItemCollectionContentEntity.fields),
+    );
+    const [items, collections] = await Promise.all([
+      ItemStorage.forInstance(context.instance).list(),
+      ItemCollectionStorage.forInstance(context.instance).list(),
+    ]);
+
+    const coreFields = Object.entries(ItemCollectionContentEntity.fields)
+      .filter(([, spec]) => !spec.readOnly)
+      .map(([key, spec]) => {
+        if (key === "itemGuid") {
+          return this.formFieldFromSpec(key, spec, {
+            inputType: "select",
+            options: items.map((item) => ({
+              value: item.guid,
+              label: item.name || item.guid,
+            })),
+          });
+        }
+        if (key === "subcollectionGuid") {
+          return this.formFieldFromSpec(key, spec, {
+            inputType: "select",
+            options: collections
+              .filter((collection) => collection.guid !== collectionGuid)
+              .map((collection) => ({
+                value: collection.guid,
+                label: collection.name || collection.type || collection.guid,
+              })),
+          });
+        }
+        return this.formFieldFromSpec(key, spec);
+      });
+
+    const groups = [
+      { id: "core", label: "Collection Content", fields: coreFields },
+      ...this.buildExtensionFormGroups(extensionFieldSpecs, context),
+    ];
+
+    return { groups: groups.filter((group) => group.fields.length) };
   }
 
   async collectValidationErrors() {
@@ -41,19 +94,6 @@ class ItemCollectionContentEntity extends BaseEntity {
     return errors;
   }
 
-  async save() {
-    this.assertInTransaction();
-    this.assertHasStorage();
-    this.assertValidated();
-    return this.storage.saveContent(this);
-  }
-
-  async delete() {
-    this.assertInTransaction();
-    this.assertHasStorage();
-    return this.storage.deleteContent(this.collectionGuid, this.guid);
-  }
-
   toJSON() {
     return {
       guid: this.guid,
@@ -65,6 +105,7 @@ class ItemCollectionContentEntity extends BaseEntity {
       position: this.position,
       createDatetime: this.createDatetime,
       updateDatetime: this.updateDatetime,
+      ...super.toJSON(),
     };
   }
 }

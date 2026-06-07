@@ -9,11 +9,23 @@ const {
   assertInstancePermissions,
 } = require("./instanceContext");
 const { handleRouteError } = require("../lib/httpResponse");
+const { ItemTemplateEntity } = require("../entities/itemTemplateEntity");
 const ItemTemplateStorage = require("../storage/itemTemplateStorage");
 
 const itemTemplatesRouter = express.Router();
 
 const DELETE_CONFLICT_MESSAGE = "Cannot delete this template while items still reference it";
+
+itemTemplatesRouter.get("/instances/:instanceGuid/item-templates/form", async (req, res, next) => {
+  try {
+    const context = await assertInstancePermissions(req, PERMISSION_VIEW);
+    const metadata = await ItemTemplateEntity.getFormSchema(context);
+    res.json(metadata);
+  } catch (error) {
+    handleRouteError(res, error, next);
+  }
+});
+
 itemTemplatesRouter.get("/instances/:instanceGuid/item-templates", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
@@ -46,8 +58,8 @@ itemTemplatesRouter.post("/instances/:instanceGuid/item-templates", async (req, 
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const itemTemplate = await withTransaction(async () => {
-      const bound = ItemTemplateStorage.forInstance(context.instance);
-      const entity = bound.create();
+      const storage = ItemTemplateStorage.forInstance(context.instance);
+      const entity = await storage.create();
       entity.set(req.body);
       const validationErrors = await entity.validate();
       if (validationErrors.length) {

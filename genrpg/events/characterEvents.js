@@ -3,80 +3,80 @@ const { BaseEvent } = require("../../src/events/BaseEvent");
 class CharacterPreGetEvent extends BaseEvent {
   static eventName = "CharacterPreGetEvent";
 
-  constructor({ entities, instanceGuid }) {
+  constructor({ entities, instance }) {
     super();
     this.entities = entities;
-    this.instanceGuid = instanceGuid;
+    this.instance = instance;
   }
 }
 
 class CharacterPostGetEvent extends BaseEvent {
   static eventName = "CharacterPostGetEvent";
 
-  constructor({ entities, instanceGuid }) {
+  constructor({ entities, instance }) {
     super();
     this.entities = entities;
-    this.instanceGuid = instanceGuid;
+    this.instance = instance;
   }
 }
 
 class CharacterPreCreateEvent extends BaseEvent {
   static eventName = "CharacterPreCreateEvent";
 
-  constructor({ entity, instanceGuid }) {
+  constructor({ entity, instance }) {
     super();
     this.entity = entity;
-    this.instanceGuid = instanceGuid;
+    this.instance = instance;
   }
 }
 
 class CharacterPostCreateEvent extends BaseEvent {
   static eventName = "CharacterPostCreateEvent";
 
-  constructor({ entity, instanceGuid }) {
+  constructor({ entity, instance }) {
     super();
     this.entity = entity;
-    this.instanceGuid = instanceGuid;
+    this.instance = instance;
   }
 }
 
 class CharacterPreUpdateEvent extends BaseEvent {
   static eventName = "CharacterPreUpdateEvent";
 
-  constructor({ entity, instanceGuid }) {
+  constructor({ entity, instance }) {
     super();
     this.entity = entity;
-    this.instanceGuid = instanceGuid;
+    this.instance = instance;
   }
 }
 
 class CharacterPostUpdateEvent extends BaseEvent {
   static eventName = "CharacterPostUpdateEvent";
 
-  constructor({ entity, instanceGuid }) {
+  constructor({ entity, instance }) {
     super();
     this.entity = entity;
-    this.instanceGuid = instanceGuid;
+    this.instance = instance;
   }
 }
 
 class CharacterPreDeleteEvent extends BaseEvent {
   static eventName = "CharacterPreDeleteEvent";
 
-  constructor({ entity, instanceGuid }) {
+  constructor({ entity, instance }) {
     super();
     this.entity = entity;
-    this.instanceGuid = instanceGuid;
+    this.instance = instance;
   }
 }
 
 class CharacterPostDeleteEvent extends BaseEvent {
   static eventName = "CharacterPostDeleteEvent";
 
-  constructor({ entity, instanceGuid }) {
+  constructor({ entity, instance }) {
     super();
     this.entity = entity;
-    this.instanceGuid = instanceGuid;
+    this.instance = instance;
   }
 }
 

@@ -44,7 +44,7 @@ class InventoryEntity extends BaseEntity {
       Object.keys(InventoryEntity.fields),
     );
     const [collections, characters] = await Promise.all([
-      ItemCollectionStorage.forInstance(context.instance).listCollections(),
+      ItemCollectionStorage.forInstance(context.instance).list(),
       CharacterStorage.forInstance(context.instance).list(),
     ]);
     const coreFields = Object.entries(InventoryEntity.fields)

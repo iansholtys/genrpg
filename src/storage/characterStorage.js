@@ -23,18 +23,6 @@ class CharacterStorage extends BaseStorage {
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
-  async loadEntity(characterGuids) {
-    const query = await this.buildSelect();
-    const t = this.tableAlias;
-
-    query
-      .where(`${t}.guid = ANY($1)`, [characterGuids])
-      .where(`${t}.instance_guid = $1`, [this.instanceGuid]);
-
-    const result = await this.query(query.toString(), query.params);
-    return Promise.all(result.rows.map((row) => this.toEntity(row)));
-  }
-
   async save(entity) {
     if (entity.isNew) {
       await this.query(
@@ -117,7 +105,6 @@ class CharacterStorage extends BaseStorage {
       guid: row.guid,
       isNew: false,
       storage: this,
-      packageNames: this.packageNames,
       extensionFieldSpecs,
       packageData,
       userGuid: row.user_guid,

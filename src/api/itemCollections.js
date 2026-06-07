@@ -9,7 +9,10 @@ const {
   assertInstancePermissions,
 } = require("./instanceContext");
 const { handleRouteError } = require("../lib/httpResponse");
+const { ItemCollectionEntity } = require("../entities/itemCollectionEntity");
+const { ItemCollectionContentEntity } = require("../entities/itemCollectionContentEntity");
 const ItemCollectionStorage = require("../storage/itemCollectionStorage");
+const ItemCollectionContentStorage = require("../storage/itemCollectionContentStorage");
 
 const itemCollectionsRouter = express.Router();
 
@@ -44,13 +47,27 @@ async function assertCollectionExists(context, collectionGuid) {
   }
 }
 
+function assertContentInCollection(entity, collectionGuid) {
+  if (!entity || entity.collectionGuid !== collectionGuid) {
+    throw new NotFoundError("Collection content not found");
+  }
+}
+
+itemCollectionsRouter.get("/instances/:instanceGuid/item-collections/form", async (req, res, next) => {
+  try {
+    const context = await assertInstancePermissions(req, PERMISSION_VIEW);
+    const metadata = await ItemCollectionEntity.getFormSchema(context);
+    res.json(metadata);
+  } catch (error) {
+    handleRouteError(res, error, next);
+  }
+});
+
 itemCollectionsRouter.get("/instances/:instanceGuid/item-collections", async (req, res, next) => {
   try {
     const context = await assertInstancePermissions(req, PERMISSION_VIEW);
     const filters = parseItemCollectionListQuery(req.query);
-    const entities = await ItemCollectionStorage.forInstance(context.instance).listCollections(
-      filters,
-    );
+    const entities = await ItemCollectionStorage.forInstance(context.instance).list(filters);
     res.json({ itemCollections: entities.map((entity) => entity.toJSON()) });
   } catch (error) {
     handleRouteError(res, error, next);
@@ -62,7 +79,7 @@ itemCollectionsRouter.get(
   async (req, res, next) => {
     try {
       const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-      const entity = await ItemCollectionStorage.forInstance(context.instance).loadCollection(
+      const entity = await ItemCollectionStorage.forInstance(context.instance).load(
         req.params.collectionGuid,
       );
       if (!entity) {
@@ -79,7 +96,8 @@ itemCollectionsRouter.post("/instances/:instanceGuid/item-collections", async (r
   try {
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const itemCollection = await withTransaction(async () => {
-      const entity = ItemCollectionStorage.forInstance(context.instance).createCollection();
+      const storage = ItemCollectionStorage.forInstance(context.instance);
+      const entity = await storage.create();
       entity.set(req.body);
       const validationErrors = await entity.validate();
       if (validationErrors.length) {
@@ -100,7 +118,7 @@ itemCollectionsRouter.put(
     try {
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       const itemCollection = await withTransaction(async () => {
-        const entity = await ItemCollectionStorage.forInstance(context.instance).loadCollection(
+        const entity = await ItemCollectionStorage.forInstance(context.instance).load(
           req.params.collectionGuid,
         );
         if (!entity) {
@@ -130,14 +148,32 @@ itemCollectionsRouter.delete(
     try {
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       await withTransaction(async () => {
-        const deleted = await ItemCollectionStorage.forInstance(context.instance).deleteCollection(
-          req.params.collectionGuid,
-        );
+        const storage = ItemCollectionStorage.forInstance(context.instance);
+        const entity = await storage.load(req.params.collectionGuid);
+        if (!entity) {
+          throw new NotFoundError("Item collection not found");
+        }
+        const deleted = await entity.delete();
         if (!deleted) {
           throw new NotFoundError("Item collection not found");
         }
       });
       res.status(204).send();
+    } catch (error) {
+      handleRouteError(res, error, next);
+    }
+  },
+);
+
+itemCollectionsRouter.get(
+  "/instances/:instanceGuid/item-collections/:collectionGuid/contents/form",
+  async (req, res, next) => {
+    try {
+      const context = await assertInstancePermissions(req, PERMISSION_VIEW);
+      const collectionGuid = req.params.collectionGuid;
+      await assertCollectionExists(context, collectionGuid);
+      const metadata = await ItemCollectionContentEntity.getFormSchema(context, { collectionGuid });
+      res.json(metadata);
     } catch (error) {
       handleRouteError(res, error, next);
     }
@@ -151,9 +187,9 @@ itemCollectionsRouter.get(
       const context = await assertInstancePermissions(req, PERMISSION_VIEW);
       const collectionGuid = req.params.collectionGuid;
       await assertCollectionExists(context, collectionGuid);
-      const entities = await ItemCollectionStorage.forInstance(context.instance).listContents(
+      const entities = await ItemCollectionContentStorage.forInstance(context.instance).list({
         collectionGuid,
-      );
+      });
       res.json({ contents: entities.map((entity) => entity.toJSON()) });
     } catch (error) {
       handleRouteError(res, error, next);
@@ -167,13 +203,10 @@ itemCollectionsRouter.get(
     try {
       const context = await assertInstancePermissions(req, PERMISSION_VIEW);
       const collectionGuid = req.params.collectionGuid;
-      const entity = await ItemCollectionStorage.forInstance(context.instance).loadContent(
-        collectionGuid,
+      const entity = await ItemCollectionContentStorage.forInstance(context.instance).load(
         req.params.contentGuid,
       );
-      if (!entity) {
-        throw new NotFoundError("Collection content not found");
-      }
+      assertContentInCollection(entity, collectionGuid);
       res.json({ content: entity.toJSON() });
     } catch (error) {
       handleRouteError(res, error, next);
@@ -189,9 +222,8 @@ itemCollectionsRouter.post(
       const collectionGuid = req.params.collectionGuid;
       await assertCollectionExists(context, collectionGuid);
       const content = await withTransaction(async () => {
-        const entity = ItemCollectionStorage.forInstance(context.instance).createContent(
-          collectionGuid,
-        );
+        const storage = ItemCollectionContentStorage.forInstance(context.instance);
+        const entity = await storage.create({ collectionGuid });
         entity.set(req.body);
         const validationErrors = await entity.validate();
         if (validationErrors.length) {
@@ -214,13 +246,9 @@ itemCollectionsRouter.put(
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       const collectionGuid = req.params.collectionGuid;
       const content = await withTransaction(async () => {
-        const entity = await ItemCollectionStorage.forInstance(context.instance).loadContent(
-          collectionGuid,
-          req.params.contentGuid,
-        );
-        if (!entity) {
-          throw new NotFoundError("Collection content not found");
-        }
+        const storage = ItemCollectionContentStorage.forInstance(context.instance);
+        const entity = await storage.load(req.params.contentGuid);
+        assertContentInCollection(entity, collectionGuid);
         entity.set(req.body);
         const validationErrors = await entity.validate();
         if (validationErrors.length) {
@@ -243,10 +271,10 @@ itemCollectionsRouter.delete(
       const context = await assertInstancePermissions(req, PERMISSION_EDIT);
       const collectionGuid = req.params.collectionGuid;
       await withTransaction(async () => {
-        const deleted = await ItemCollectionStorage.forInstance(context.instance).deleteContent(
-          collectionGuid,
-          req.params.contentGuid,
-        );
+        const storage = ItemCollectionContentStorage.forInstance(context.instance);
+        const entity = await storage.load(req.params.contentGuid);
+        assertContentInCollection(entity, collectionGuid);
+        const deleted = await entity.delete();
         if (!deleted) {
           throw new NotFoundError("Collection content not found");
         }

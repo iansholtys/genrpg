@@ -1,111 +1,90 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemTemplateEntity } = require("../entities/itemTemplateEntity");
 
-const RETURNING_COLUMNS = `
-  guid,
-  instance_guid,
-  name,
-  description,
-  weight,
-  create_datetime,
-  update_datetime
-`;
-
 class ItemTemplateStorage extends BaseStorage {
   static schema = "genrpg";
   static table = "item_templates";
   static Entity = ItemTemplateEntity;
 
-  create() {
-    return new ItemTemplateEntity({
-      instanceGuid: this.instanceGuid,
-      guid: this.newGuid(),
-      isNew: true,
-      storage: this,
-    });
-  }
+  async listEntities() {
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
 
-  async list() {
-    const result = await this.query(
-      `
-        SELECT ${RETURNING_COLUMNS}
-        FROM ${this.schema_table}
-        WHERE instance_guid = $1
-        ORDER BY name ASC, create_datetime ASC
-      `,
-      [this.instanceGuid],
-    );
-    return result.rows.map((row) => this.toEntity(row));
-  }
+    query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
 
-  async loadEntity(templateGuids) {
     const result = await this.query(
-      `
-        SELECT ${RETURNING_COLUMNS}
-        FROM ${this.schema_table}
-        WHERE guid = ANY($1) AND instance_guid = $2
+      `${query.toString()}
+        ORDER BY ${t}.name ASC NULLS LAST, ${t}.create_datetime ASC
       `,
-      [templateGuids, this.instanceGuid],
+      query.params,
     );
-    return result.rows.map((row) => this.toEntity(row));
+    return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
   async save(entity) {
     if (entity.isNew) {
-      const result = await this.query(
+      await this.query(
         `
-          INSERT INTO ${this.schema_table} (guid, instance_guid, name, description, weight)
+          INSERT INTO ${this.schema_table} (
+            guid,
+            instance_guid,
+            name,
+            description,
+            weight
+          )
           VALUES ($1, $2, $3, $4, $5)
-          RETURNING ${RETURNING_COLUMNS}
         `,
         [entity.guid, entity.instanceGuid, entity.name, entity.description, entity.weight],
       );
-      const saved = this.toEntity(result.rows[0]);
       entity.isNew = false;
-      Object.assign(entity, {
-        name: saved.name,
-        description: saved.description,
-        weight: saved.weight,
-        createDatetime: saved.createDatetime,
-        updateDatetime: saved.updateDatetime,
-      });
-      return entity;
+    } else {
+      const result = await this.query(
+        `
+          UPDATE ${this.schema_table}
+          SET name = $1, description = $2, weight = $3
+          WHERE guid = $4 AND instance_guid = $5
+          RETURNING guid
+        `,
+        [entity.name, entity.description, entity.weight, entity.guid, entity.instanceGuid],
+      );
+      if (!result.rows.length) {
+        return null;
+      }
     }
 
-    const result = await this.query(
-      `
-        UPDATE ${this.schema_table}
-        SET name = $1, description = $2, weight = $3
-        WHERE guid = $4 AND instance_guid = $5
-        RETURNING ${RETURNING_COLUMNS}
-      `,
-      [entity.name, entity.description, entity.weight, entity.guid, entity.instanceGuid],
-    );
-    if (!result.rows.length) {
-      return null;
+    await this.saveExtensionRowsForEntity(entity);
+
+    const reloaded = await this.load(entity.guid);
+    if (reloaded) {
+      Object.assign(entity, {
+        name: reloaded.name,
+        description: reloaded.description,
+        weight: reloaded.weight,
+        createDatetime: reloaded.createDatetime,
+        updateDatetime: reloaded.updateDatetime,
+        packageData: reloaded.packageData,
+      });
+      this.assignExtensionFieldsFromReload(entity, reloaded);
     }
-    const saved = this.toEntity(result.rows[0]);
-    Object.assign(entity, {
-      name: saved.name,
-      description: saved.description,
-      weight: saved.weight,
-      createDatetime: saved.createDatetime,
-      updateDatetime: saved.updateDatetime,
-    });
     return entity;
   }
 
-  toEntity(row) {
-    return new ItemTemplateEntity({
+  async toEntity(row) {
+    const { extensionFieldSpecs, packageData, extensionValues } = await this.extensionContextFromRow(row);
+
+    return new this.constructor.Entity({
       instanceGuid: row.instance_guid,
       guid: row.guid,
       isNew: false,
       storage: this,
+      extensionFieldSpecs,
+      packageData,
       name: row.name,
       description: row.description,
       weight: row.weight,
       createDatetime: row.create_datetime,
       updateDatetime: row.update_datetime,
+      ...extensionValues,
     });
   }
 }

@@ -1,68 +1,45 @@
-const crypto = require("node:crypto");
-const { pool } = require("../../src/db/pool");
-const { getTransactionClient } = require("../../src/db/transactionContext");
+const InventoryStorage = require("../../src/storage/inventoryStorage");
+const ItemCollectionStorage = require("../../src/storage/itemCollectionStorage");
+const { select } = require("../../src/services/queryService");
 
 const INVENTORY_COLLECTION_TYPE = "inventory";
 
 class CharacterInventorySubscriber {
-  query(text, params) {
-    const client = getTransactionClient();
-    if (client) {
-      return client.query(text, params);
-    }
-    return pool.query(text, params);
-  }
-
   async onCharacterPostCreate(event) {
-    const { instanceGuid, entity } = event;
+    const { instance, entity } = event;
     const characterGuid = entity.guid;
-    if (!instanceGuid || !characterGuid) {
+    if (!instance?.guid || !characterGuid) {
       throw new Error("Character inventory subscriber: missing instance or character guid");
     }
 
-    const existing = await this.query(
-      `
-        SELECT i.guid
-        FROM genrpg.inventories i
-        JOIN genrpg.item_collections c ON c.guid = i.collection_guid
-        WHERE i.character_guid = $1
-          AND i.instance_guid = $2
-          AND c.type = $3
-        LIMIT 1
-      `,
-      [characterGuid, instanceGuid, INVENTORY_COLLECTION_TYPE],
+    const inventoryStorage = InventoryStorage.forInstance(instance);
+
+    const existingQuery = select()
+      .from("genrpg", "inventories", "i")
+      .addFields("i", ["guid"])
+      .addJoin("genrpg", "item_collections", "c", "c.guid = i.collection_guid")
+      .where("i.character_guid = $1", [characterGuid])
+      .where("i.instance_guid = $1", [instance.guid])
+      .where("c.type = $1", [INVENTORY_COLLECTION_TYPE]);
+
+    const existing = await inventoryStorage.query(
+      `${existingQuery.toString()} LIMIT 1`,
+      existingQuery.params,
     );
     if (existing.rows.length) {
       return;
     }
 
-    const collectionGuid = crypto.randomUUID();
-    const inventoryGuid = crypto.randomUUID();
+    const collectionStorage = ItemCollectionStorage.forInstance(instance);
+    const collection = await collectionStorage.create();
+    collection.set({ type: INVENTORY_COLLECTION_TYPE, name: null });
+    await collection.validate();
+    await collection.save();
 
-    await this.query(
-      `
-        INSERT INTO genrpg.item_collections (
-          guid,
-          instance_guid,
-          type,
-          name
-        )
-        VALUES ($1, $2, $3, NULL)
-      `,
-      [collectionGuid, instanceGuid, INVENTORY_COLLECTION_TYPE],
-    );
-    await this.query(
-      `
-        INSERT INTO genrpg.inventories (
-          guid,
-          instance_guid,
-          collection_guid,
-          character_guid
-        )
-        VALUES ($1, $2, $3, $4)
-      `,
-      [inventoryGuid, instanceGuid, collectionGuid, characterGuid],
-    );
+    const inventory = await inventoryStorage.create();
+    inventory.set({ collectionGuid: collection.guid, characterGuid });
+    await inventory.validate();
+    await inventory.save();
   }
 }
 

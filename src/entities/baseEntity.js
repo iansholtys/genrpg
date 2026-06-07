@@ -33,7 +33,7 @@ class BaseEntity {
   /**
    * Dispatch a configured lifecycle event for this entity type.
    *
-   * Uses {@link BaseEntity#packageNames} from this instance for subscriber routing.
+   * Uses {@link BaseEntity#packageNames} (from bound storage) for subscriber routing.
    *
    * @param {string} phase e.g. `preCreate`, `postGet`
    * @param {object} eventArgs payload passed to the event constructor
@@ -138,7 +138,6 @@ class BaseEntity {
     guid,
     isNew = false,
     storage = null,
-    packageNames = [],
     extensionFieldSpecs = null,
   } = {}) {
     this.instanceGuid = instanceGuid;
@@ -146,12 +145,16 @@ class BaseEntity {
     this.isNew = isNew;
     this.storage = storage;
     this.validated = false;
-    this.packageNames = packageNames;
     this.extensionFieldSpecs = extensionFieldSpecs || {};
     this.effectiveFields = {
       ...this.constructor.fields,
       ...this.extensionFieldSpecs,
     };
+  }
+
+  /** Package machine names for this entity's instance, from bound storage. */
+  get packageNames() {
+    return this.storage?.packageNames ?? [];
   }
 
   /** @type {string[]} Keys applied by {@link BaseEntity#set}. */
@@ -228,7 +231,7 @@ class BaseEntity {
 
   async collectValidationErrors() {
     const context = {
-      instance: {
+      instance: this.storage?.instance ?? {
         guid: this.instanceGuid,
         packages: Object.fromEntries(this.packageNames.map((name) => [name, name])),
       },
@@ -260,7 +263,7 @@ class BaseEntity {
       return this.storage.save(this);
     }
 
-    const eventArgs = { entity: this, instanceGuid: this.instanceGuid };
+    const eventArgs = { entity: this, instance: this.storage.instance };
     const { isNew } = this;
     await this.dispatchEvent(
       isNew ? "preCreate" : "preUpdate",
@@ -287,7 +290,7 @@ class BaseEntity {
       return this.storage.delete(this.guid);
     }
 
-    const eventArgs = { entity: this, instanceGuid: this.instanceGuid };
+    const eventArgs = { entity: this, instance: this.storage.instance };
     await this.dispatchEvent("preDelete", eventArgs);
 
     const deleted = await this.storage.delete(this.guid);

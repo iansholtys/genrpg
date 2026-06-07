@@ -39,7 +39,9 @@ const { propertyToColumnName } = require("../lib/entityExtensionIndex");
  * | `save(entity)` | INSERT or UPDATE (called from `entity.save()`) |
  * | `delete(entityGuid, …)` | Delete; `true` if a row was removed |
  *
- * Subclasses implement `listEntities(…)` / `loadEntity()` (SQL, filters, ordering).
+ * Subclasses implement `listEntities(…)` and `toEntity()` (SQL, filters, ordering for list;
+ * default `loadEntity()` uses `buildSelect()` + guid filter). Override `loadEntity()` only
+ * for non-standard load queries.
  * Callers use `list()` / `load()` — the base class runs get lifecycle events there.
  * Pass `{ skipEvents: true }` only when hydration must bypass package get handlers
  * (rare; most reloads after save should use plain `load()` so postGet enrichment runs).
@@ -51,9 +53,8 @@ const { propertyToColumnName } = require("../lib/entityExtensionIndex");
  *
  * ## Row hydration
  *
- * Map SQL rows to entity instances via `toEntity(row)` (or resource-specific
- * names such as `toCollectionEntity` when one storage module serves multiple
- * entity types). Row mapping lives on storage alongside `create()`.
+ * Map SQL rows to entity instances via `toEntity(row)`. Row mapping lives on
+ * storage alongside `create()`.
  */
 class BaseStorage {
   /** @type {string | undefined} */
@@ -84,24 +85,33 @@ class BaseStorage {
     return true;
   }
 
-  constructor(instanceGuid, packageNames = []) {
-    if (this.constructor.instanceScoped && !instanceGuid) {
-      throw new Error("instanceGuid is required for storage modules");
+  constructor(instance = null) {
+    if (this.constructor.instanceScoped && !instance?.guid) {
+      throw new Error("instance is required for storage modules");
     }
-    this.instanceGuid = instanceGuid;
-    this.packageNames = packageNames;
+    this.instance = instance;
+  }
+
+  /** @returns {string | null} */
+  get instanceGuid() {
+    return this.instance?.guid ?? null;
+  }
+
+  /** @returns {string[]} Package machine names for this instance binding. */
+  get packageNames() {
+    return Object.keys(this.instance?.packages ?? {});
   }
 
   static forInstance(instance) {
     if (!this.instanceScoped) {
-      return new this(null, []);
+      return new this(null);
     }
 
     if (!instance?.guid) {
       throw new Error("instance guid is required for storage modules");
     }
 
-    return new this(instance.guid, Object.keys(instance.packages || {}));
+    return new this(instance);
   }
 
   /** Global (non-instance) storage binding. Only valid when {@link BaseStorage.instanceScoped} is false. */
@@ -109,7 +119,7 @@ class BaseStorage {
     if (this.instanceScoped) {
       throw new Error(`${this.name} is instance-scoped`);
     }
-    return new this(null, []);
+    return new this(null);
   }
 
   get pool() {
@@ -285,14 +295,33 @@ class BaseStorage {
   /**
    * Load entities for the given guids. Called only with a non-empty array from {@link BaseStorage.load}.
    *
-   * Subclasses implement query + `toEntity()` here. Do not dispatch get events —
+   * Default implementation uses {@link BaseStorage.buildSelect}, filters by guid (and
+   * instance_guid when instance-scoped), and maps rows via {@link BaseStorage.toEntity}.
+   * Override for non-standard queries. Do not dispatch get events —
    * {@link BaseStorage.load} wraps this and dispatches preGet/postGet for callers.
    *
    * @param {string[]} entityGuids non-empty
-   * @throws {Error} when not overridden
    */
   async loadEntity(entityGuids) {
-    throw new Error(`loadEntity() not implemented for ${this.constructor.name}`);
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
+
+    query.where(`${t}.guid = ANY($1)`, [entityGuids]);
+    if (this.instanceGuid) {
+      query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+    }
+
+    const result = await this.query(query.toString(), query.params);
+    return Promise.all(result.rows.map((row) => this.toEntity(row)));
+  }
+
+  /**
+   * Map a SQL row to an entity instance. Required when using the default {@link BaseStorage.loadEntity}.
+   *
+   * @throws {Error} when not overridden
+   */
+  toEntity(row) {
+    throw new Error(`toEntity() not implemented for ${this.constructor.name}`);
   }
 
   /**
@@ -309,16 +338,16 @@ class BaseStorage {
       return entities;
     }
 
-    const { instanceGuid } = this;
+    const { instance } = this;
     const pre = await entities[0].dispatchEvent(
       "preGet",
-      { entities, instanceGuid },
+      { entities, instance },
     );
     const preEntities = pre?.entities ?? entities;
 
     const post = await entities[0].dispatchEvent(
       "postGet",
-      { entities: preEntities, instanceGuid },
+      { entities: preEntities, instance },
     );
 
     return post?.entities ?? preEntities;
@@ -369,7 +398,6 @@ class BaseStorage {
       guid: this.newGuid(),
       isNew: true,
       storage: this,
-      packageNames: this.packageNames,
       extensionFieldSpecs,
     });
   }

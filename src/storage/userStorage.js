@@ -38,16 +38,6 @@ class UserStorage extends BaseStorage {
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
-  async loadEntity(userGuids) {
-    const query = await this.buildSelect();
-    const t = this.tableAlias;
-
-    query.where(`${t}.guid = ANY($1)`, [userGuids]);
-
-    const result = await this.query(query.toString(), query.params);
-    return Promise.all(result.rows.map((row) => this.toEntity(row)));
-  }
-
   async save(entity) {
     if (entity.isNew) {
       throw new Error("Users are created via OIDC login, not entity.save()");
