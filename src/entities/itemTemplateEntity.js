@@ -9,9 +9,9 @@ class ItemTemplateEntity extends BaseEntity {
     name: { label: "Name", type: "text", required: true },
     description: { label: "Description", type: "text", inputType: "textarea" },
     weight: { label: "Weight", type: "number" },
+    createDatetime: { readOnly: true },
+    updateDatetime: { readOnly: true },
   };
-
-  static readOnlyFields = ["createDatetime", "updateDatetime"];
 
   constructor(options = {}) {
     super(options);

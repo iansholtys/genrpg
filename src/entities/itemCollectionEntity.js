@@ -12,9 +12,9 @@ class ItemCollectionEntity extends BaseEntity {
     itemGuid: { label: "Item", type: "guid", refs: ItemEntity },
     capacityUsed: { label: "Capacity used", type: "number" },
     capacityMax: { label: "Capacity max", type: "number" },
+    createDatetime: { readOnly: true },
+    updateDatetime: { readOnly: true },
   };
-
-  static readOnlyFields = ["createDatetime", "updateDatetime"];
 
   constructor(options = {}) {
     super(options);

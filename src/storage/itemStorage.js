@@ -1,6 +1,5 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemEntity } = require("../entities/itemEntity");
-const ItemTemplateStorage = require("./itemTemplateStorage");
 
 class ItemStorage extends BaseStorage {
   static schema = "genrpg";
@@ -8,26 +7,30 @@ class ItemStorage extends BaseStorage {
   static Entity = ItemEntity;
 
   async listEntities() {
-    const { sql } = await this.buildItemSelect();
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
+
+    query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+
     const result = await this.query(
-      `${sql}
-        WHERE i.instance_guid = $1
-        ORDER BY COALESCE(i.name, t.name) ASC, i.create_datetime ASC
+      `${query.toString()}
+        ORDER BY ${t}.name ASC NULLS LAST, ${t}.create_datetime ASC
       `,
-      [this.instanceGuid],
+      query.params,
     );
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
-  async loadEntity(itemGuid) {
-    const { sql } = await this.buildItemSelect();
-    const result = await this.query(
-      `${sql}
-        WHERE i.guid = $1 AND i.instance_guid = $2
-      `,
-      [itemGuid, this.instanceGuid],
-    );
-    return result.rows[0] ? this.toEntity(result.rows[0]) : null;
+  async loadEntity(itemGuids) {
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
+
+    query
+      .where(`${t}.guid = ANY($1)`, [itemGuids])
+      .where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+
+    const result = await this.query(query.toString(), query.params);
+    return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
   async save(entity) {
@@ -91,10 +94,6 @@ class ItemStorage extends BaseStorage {
         weight: reloaded.weight,
         createDatetime: reloaded.createDatetime,
         updateDatetime: reloaded.updateDatetime,
-        itemTemplate: reloaded.itemTemplate,
-        effectiveName: reloaded.effectiveName,
-        effectiveDescription: reloaded.effectiveDescription,
-        effectiveWeight: reloaded.effectiveWeight,
         packageData: reloaded.packageData,
       });
       this.assignExtensionFieldsFromReload(entity, reloaded);
@@ -104,17 +103,6 @@ class ItemStorage extends BaseStorage {
 
   async toEntity(row) {
     const { extensionFieldSpecs, packageData, extensionValues } = await this.extensionContextFromRow(row);
-
-    const itemTemplate = {
-      guid: row.template_guid,
-      name: row.template_name,
-      description: row.template_description,
-      weight: row.template_weight,
-    };
-    const effectiveName = row.name ?? row.template_name;
-    const effectiveDescription = row.description ?? row.template_description;
-    const effectiveWeight =
-      row.weight !== null && row.weight !== undefined ? row.weight : row.template_weight;
 
     return new this.constructor.Entity({
       instanceGuid: row.instance_guid,
@@ -130,39 +118,8 @@ class ItemStorage extends BaseStorage {
       weight: row.weight,
       createDatetime: row.create_datetime,
       updateDatetime: row.update_datetime,
-      itemTemplate,
-      effectiveName,
-      effectiveDescription,
-      effectiveWeight,
       ...extensionValues,
     });
-  }
-
-  async buildItemSelect() {
-    const { joins, packageExtensionsSql } = await this.getExtensionJoinSql("i");
-
-    return {
-      sql: `
-        SELECT
-          i.guid,
-          i.instance_guid,
-          i.item_template_guid,
-          i.name,
-          i.description,
-          i.weight,
-          i.create_datetime,
-          i.update_datetime,
-          t.guid AS template_guid,
-          t.name AS template_name,
-          t.description AS template_description,
-          t.weight AS template_weight,
-          ${packageExtensionsSql} AS package_extensions
-        FROM ${this.schema_table} i
-        JOIN ${ItemTemplateStorage.schema_table} t ON t.guid = i.item_template_guid
-        ${joins.join("\n        ")}
-      `,
-      params: [],
-    };
   }
 }
 

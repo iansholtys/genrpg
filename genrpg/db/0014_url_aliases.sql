@@ -1,7 +1,7 @@
 -- Created: 2026-05-19
 
 CREATE TABLE IF NOT EXISTS genrpg.url_aliases (
-  guid uuid PRIMARY KEY,
+  guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   alias text NOT NULL UNIQUE,
   path text NOT NULL,
   create_datetime timestamptz NOT NULL DEFAULT now(),

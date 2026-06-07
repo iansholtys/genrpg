@@ -366,7 +366,7 @@ class ManageItemModal extends Modal {
     this.instanceGuid = instanceGuid;
     this.itemGuid = item.guid;
     this.onChanged = onChanged;
-    this.setTitle(`Edit — ${item.effectiveName || "Item"}`);
+    this.setTitle(`Edit — ${ItemManagement.displayName(item) || "Item"}`);
 
     const loaded = await this.loadFormMetadata();
     if (!loaded) {
@@ -411,6 +411,21 @@ class ItemManagement {
     this.table = null;
     this.isMounted = false;
     this.elements = {};
+  }
+
+  static displayName(item) {
+    return item?.name ?? item?.itemTemplate?.name ?? "";
+  }
+
+  static displayDescription(item) {
+    return item?.description ?? item?.itemTemplate?.description ?? "";
+  }
+
+  static displayWeight(item) {
+    if (item?.weight !== null && item?.weight !== undefined) {
+      return item.weight;
+    }
+    return item?.itemTemplate?.weight ?? null;
   }
 
   static formatWeight(value) {
@@ -486,17 +501,19 @@ class ItemManagement {
 
   buildTableColumns() {
     return [
-      { title: "Name", field: "effectiveName", searchable: true },
+      {
+        title: "Name",
+        searchable: true,
+        valueFunction: (row) => ItemManagement.displayName(row),
+      },
       {
         title: "Description",
-        field: "effectiveDescription",
         searchable: true,
-        valueFunction: (_row, value) => value || "",
+        valueFunction: (row) => ItemManagement.displayDescription(row) || "",
       },
       {
         title: "Weight",
-        field: "effectiveWeight",
-        valueFunction: (_row, value) => ItemManagement.formatWeight(value),
+        valueFunction: (row) => ItemManagement.formatWeight(ItemManagement.displayWeight(row)),
       },
       {
         title: "Template",
@@ -584,7 +601,7 @@ class ItemManagement {
       id: "instance-items-table",
       rowCount: { show: true, nounSingular: "item", nounPlural: "items" },
       searchPlaceholder: "Search items…",
-      defaultSort: { field: "effectiveName" },
+      defaultSort: { field: "name" },
       columns: this.buildTableColumns(),
       emptyState: {
         message: "No items",

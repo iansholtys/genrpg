@@ -430,4 +430,25 @@ module.exports = {
         WHERE instance_guid IS NOT NULL;
     `);
   },
+
+  9: async (client) => {
+    const tables = [
+      "genrpg.users",
+      "genrpg.instances",
+      "genrpg.characters",
+      "genrpg.item_templates",
+      "genrpg.items",
+      "genrpg.url_aliases",
+      "genrpg.item_collections",
+      "genrpg.item_collection_contents",
+      "genrpg.inventories",
+    ];
+
+    for (const table of tables) {
+      await client.query(`
+        ALTER TABLE ${table}
+          ALTER COLUMN guid SET DEFAULT gen_random_uuid();
+      `);
+    }
+  },
 };

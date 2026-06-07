@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const { Issuer } = require("openid-client");
 const { pool } = require("./db/pool");
+const UserStorage = require("./storage/userStorage");
 
 const OIDC_CONFIGURATION_URL = process.env.OIDC_CONFIGURATION_URL;
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID;
@@ -38,8 +39,8 @@ function getRedirectUri(req) {
 }
 
 async function isGlobalAdmin(userGuid) {
-  const result = await pool.query(`SELECT admin FROM genrpg.users WHERE guid = $1`, [userGuid]);
-  return result.rows[0]?.admin || false;
+  const user = await UserStorage.global().load(userGuid);
+  return user?.admin || false;
 }
 
 async function requireAdmin(req, res, next) {

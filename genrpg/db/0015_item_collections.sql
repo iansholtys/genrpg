@@ -1,7 +1,7 @@
 -- Created: 2026-05-26
 
 CREATE TABLE IF NOT EXISTS genrpg.item_collections (
-  guid uuid PRIMARY KEY,
+  guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   instance_guid uuid NOT NULL REFERENCES genrpg.instances(guid) ON DELETE CASCADE,
   type text NOT NULL,
   name text,
@@ -24,7 +24,7 @@ CREATE TRIGGER item_collections_update_datetime
   FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();
 
 CREATE TABLE IF NOT EXISTS genrpg.item_collection_contents (
-  guid uuid PRIMARY KEY,
+  guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   instance_guid uuid NOT NULL REFERENCES genrpg.instances(guid) ON DELETE CASCADE,
   collection_guid uuid NOT NULL REFERENCES genrpg.item_collections(guid) ON DELETE CASCADE,
   item_guid uuid REFERENCES genrpg.items(guid) ON DELETE CASCADE,
@@ -58,7 +58,7 @@ CREATE TRIGGER item_collection_contents_update_datetime
   FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();
 
 CREATE TABLE IF NOT EXISTS genrpg.inventories (
-  guid uuid PRIMARY KEY,
+  guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   instance_guid uuid NOT NULL REFERENCES genrpg.instances(guid) ON DELETE CASCADE,
   collection_guid uuid NOT NULL REFERENCES genrpg.item_collections(guid) ON DELETE CASCADE,
   character_guid uuid NOT NULL REFERENCES genrpg.characters(guid) ON DELETE CASCADE,

@@ -53,8 +53,8 @@ charactersRouter.post("/instances/:instanceGuid/characters", async (req, res, ne
     const context = await assertInstancePermissions(req, PERMISSION_EDIT);
     const character = await withTransaction(async () => {
       const storage = CharacterStorage.forInstance(context.instance);
-      const entity = await storage.create(context.user.guid);
-      entity.set(req.body);
+      const entity = await storage.create();
+      entity.set({ userGuid: context.user.guid, ...req.body });
       const validationErrors = await entity.validate();
       if (validationErrors.length) {
         throw new ValidationError(validationErrors);

@@ -19,17 +19,11 @@ class ItemEntity extends BaseEntity {
     name: { label: "Name", type: "text" },
     description: { label: "Description", type: "text", inputType: "textarea" },
     weight: { label: "Weight", type: "number" },
+    createDatetime: { readOnly: true },
+    updateDatetime: { readOnly: true },
+    itemTemplate: { readOnly: true, virtual: true },
+    packageData: { readOnly: true, virtual: true, default: {} },
   };
-
-  static readOnlyFields = [
-    "createDatetime",
-    "updateDatetime",
-    "itemTemplate",
-    "effectiveName",
-    "effectiveDescription",
-    "effectiveWeight",
-    "packageData",
-  ];
 
   constructor(options = {}) {
     super(options);
@@ -47,7 +41,9 @@ class ItemEntity extends BaseEntity {
     );
     const templates = await ItemTemplateStorage.forInstance(context.instance).list();
 
-    const coreFields = Object.entries(ItemEntity.fields).map(([key, spec]) => {
+    const coreFields = Object.entries(ItemEntity.fields)
+      .filter(([, spec]) => !spec.readOnly)
+      .map(([key, spec]) => {
       if (key === "itemTemplateGuid") {
         return this.formFieldFromSpec(key, spec, {
           inputType: "select",
@@ -78,10 +74,7 @@ class ItemEntity extends BaseEntity {
       weight: this.weight,
       createDatetime: this.createDatetime,
       updateDatetime: this.updateDatetime,
-      itemTemplate: this.itemTemplate,
-      effectiveName: this.effectiveName,
-      effectiveDescription: this.effectiveDescription,
-      effectiveWeight: this.effectiveWeight,
+      itemTemplate: this.itemTemplate ? this.itemTemplate.toJSON() : null,
       ...super.toJSON(),
     };
   }

@@ -1,35 +1,33 @@
 const express = require("express");
-const { pool } = require("../db/pool");
-const { requireAdmin, userSummary } = require("../auth");
+const { NotFoundError } = require("../errors/NotFoundError");
+const { ValidationError } = require("../errors/ValidationError");
+const { withTransaction } = require("../db/transactionContext");
+const { requireAdmin } = require("../auth");
+const UserStorage = require("../storage/userStorage");
+const { handleRouteError } = require("../lib/httpResponse");
 
 const usersRouter = express.Router();
 
 usersRouter.get("/me", async (req, res, next) => {
   try {
     if (req.session.user) {
-      // Keep session fresh so UI updates immediately upon promotion/demotion
-      const result = await pool.query(
-        `SELECT guid, email, display_name, admin FROM genrpg.users WHERE guid = $1`,
-        [req.session.user.guid]
-      );
-      if (result.rows.length) {
-        req.session.user = userSummary(result.rows[0]);
+      const entity = await UserStorage.global().load(req.session.user.guid);
+      if (entity) {
+        req.session.user = entity.toJSON();
       }
     }
     res.json({ user: req.session.user });
   } catch (error) {
-    next(error);
+    handleRouteError(res, error, next);
   }
 });
 
 usersRouter.get("/users", async (req, res, next) => {
   try {
-    const result = await pool.query(
-      `SELECT guid, email, display_name, admin FROM genrpg.users ORDER BY display_name`,
-    );
-    res.json({ users: result.rows.map(userSummary) });
+    const users = (await UserStorage.global().list()).map((entity) => entity.toJSON());
+    res.json({ users });
   } catch (error) {
-    next(error);
+    handleRouteError(res, error, next);
   }
 });
 
@@ -44,19 +42,28 @@ usersRouter.put("/users/:guid/admin", requireAdmin, async (req, res, next) => {
       return;
     }
 
-    const result = await pool.query(
-      `UPDATE genrpg.users SET admin = $1 WHERE guid = $2 RETURNING guid`,
-      [!!admin, targetGuid],
-    );
+    await withTransaction(async () => {
+      const storage = UserStorage.global();
+      const entity = await storage.load(targetGuid);
+      if (!entity) {
+        throw new NotFoundError("User not found");
+      }
 
-    if (!result.rows.length) {
-      res.status(404).json({ error: "User not found" });
-      return;
-    }
+      entity.set({ admin: !!admin });
+      const validationErrors = await entity.validate();
+      if (validationErrors.length) {
+        throw new ValidationError(validationErrors);
+      }
+
+      const saved = await entity.save();
+      if (!saved) {
+        throw new NotFoundError("User not found");
+      }
+    });
 
     res.json({ success: true });
   } catch (error) {
-    next(error);
+    handleRouteError(res, error, next);
   }
 });
 
@@ -70,19 +77,22 @@ usersRouter.delete("/users/:guid", requireAdmin, async (req, res, next) => {
       return;
     }
 
-    const result = await pool.query(
-      `DELETE FROM genrpg.users WHERE guid = $1 RETURNING guid`,
-      [targetGuid],
-    );
+    await withTransaction(async () => {
+      const storage = UserStorage.global();
+      const entity = await storage.load(targetGuid);
+      if (!entity) {
+        throw new NotFoundError("User not found");
+      }
 
-    if (!result.rows.length) {
-      res.status(404).json({ error: "User not found" });
-      return;
-    }
+      const deleted = await entity.delete({ skipEvents: true });
+      if (!deleted) {
+        throw new NotFoundError("User not found");
+      }
+    });
 
-    res.json({ success: true });
+    res.status(204).send();
   } catch (error) {
-    next(error);
+    handleRouteError(res, error, next);
   }
 });
 

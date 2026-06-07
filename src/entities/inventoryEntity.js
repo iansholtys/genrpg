@@ -24,9 +24,10 @@ class InventoryEntity extends BaseEntity {
       required: true,
       refs: CharacterEntity,
     },
+    createDatetime: { readOnly: true },
+    updateDatetime: { readOnly: true },
+    packageData: { readOnly: true, virtual: true, default: {} },
   };
-
-  static readOnlyFields = ["createDatetime", "updateDatetime", "packageData"];
 
   constructor(options = {}) {
     super(options);
@@ -46,7 +47,9 @@ class InventoryEntity extends BaseEntity {
       ItemCollectionStorage.forInstance(context.instance).listCollections(),
       CharacterStorage.forInstance(context.instance).list(),
     ]);
-    const coreFields = Object.entries(InventoryEntity.fields).map(([key, spec]) => {
+    const coreFields = Object.entries(InventoryEntity.fields)
+      .filter(([, spec]) => !spec.readOnly)
+      .map(([key, spec]) => {
       if (key === "collectionGuid") {
         return this.formFieldFromSpec(key, spec, {
           inputType: "select",

@@ -1,7 +1,7 @@
 -- Created: 2026-05-16
 
 CREATE TABLE IF NOT EXISTS genrpg.users (
-  guid uuid PRIMARY KEY,
+  guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   oidc_issuer text NOT NULL,
   oidc_subject text NOT NULL,
   email text,

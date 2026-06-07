@@ -1,5 +1,6 @@
 const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
 const { BaseEntity } = require("./baseEntity");
+const { UserEntity } = require("./userEntity");
 const {
   CharacterPreCreateEvent,
   CharacterPostCreateEvent,
@@ -26,13 +27,15 @@ class CharacterEntity extends BaseEntity {
   };
 
   static fields = {
+    userGuid: { label: "User", type: "guid", refs: UserEntity },
     displayName: { label: "Display name", type: "text" },
     fullName: { label: "Full name", type: "text" },
     appearance: { label: "Appearance", type: "text", inputType: "textarea" },
     pronouns: { label: "Pronouns", type: "text" },
+    createDatetime: { readOnly: true },
+    updateDatetime: { readOnly: true },
+    packageData: { readOnly: true, virtual: true, default: {} },
   };
-
-  static readOnlyFields = ["userGuid", "createDatetime", "updateDatetime", "packageData"];
 
   static getStorage() {
     return require("../storage/characterStorage");
@@ -51,10 +54,23 @@ class CharacterEntity extends BaseEntity {
       Object.keys(CharacterEntity.fields),
     );
 
-    const coreFields = Object.entries(CharacterEntity.fields).map(([key, spec]) =>
-      this.formFieldFromSpec(key, spec),
-    );
+    const UserStorage = require("../storage/userStorage");
+    const instanceUsers = await UserStorage.global().listForInstance(context.instance.guid);
 
+    const coreFields = Object.entries(CharacterEntity.fields)
+      .filter(([, spec]) => !spec.readOnly)
+      .map(([key, spec]) => {
+      if (key === "userGuid") {
+        return this.formFieldFromSpec(key, spec, {
+          inputType: "select",
+          options: instanceUsers.map((user) => ({
+            value: user.guid,
+            label: user.displayName || user.email || user.guid,
+          })),
+        });
+      }
+      return this.formFieldFromSpec(key, spec);
+    });
     const groups = [
       { id: "core", label: "Character", fields: coreFields },
       ...this.buildExtensionFormGroups(extensionFieldSpecs, context),

@@ -1,7 +1,7 @@
 -- Created: 2026-05-16
 
 CREATE TABLE IF NOT EXISTS genrpg.instances (
-  guid uuid PRIMARY KEY,
+  guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   description text NOT NULL DEFAULT '',
   packages text NOT NULL DEFAULT 'genrpg',

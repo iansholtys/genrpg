@@ -546,7 +546,7 @@ class ManageInventoryModal extends Modal {
     );
 
     for (const item of items) {
-      const label = item.effectiveName || item.name || item.guid;
+      const label = item.name ?? item.itemTemplate?.name ?? item.guid;
       $select.append($("<option>", { value: item.guid, text: label }));
     }
   }
@@ -584,9 +584,12 @@ class ManageInventoryModal extends Modal {
           contentGuid: content.guid,
           collectionGuid: inventory.collectionGuid,
           itemGuid: content.itemGuid,
-          name: item?.effectiveName || item?.name || content.itemGuid,
-          description: item?.effectiveDescription ?? item?.description ?? "",
-          weight: item?.effectiveWeight ?? item?.weight ?? null,
+          name: item?.name ?? item?.itemTemplate?.name ?? content.itemGuid,
+          description: item?.description ?? item?.itemTemplate?.description ?? "",
+          weight:
+            item?.weight !== null && item?.weight !== undefined
+              ? item.weight
+              : (item?.itemTemplate?.weight ?? null),
         });
       }
     }

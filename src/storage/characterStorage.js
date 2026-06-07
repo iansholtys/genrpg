@@ -9,43 +9,30 @@ class CharacterStorage extends BaseStorage {
   }
 
   async listEntities() {
-    const { sql } = await this.buildCharacterSelect();
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
+
+    query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+
     const result = await this.query(
-      `${sql}
-        WHERE c.instance_guid = $1
-        ORDER BY c.display_name ASC NULLS LAST, c.create_datetime ASC
+      `${query.toString()}
+        ORDER BY ${t}.display_name ASC NULLS LAST, ${t}.create_datetime ASC
       `,
-      [this.instanceGuid],
+      query.params,
     );
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
-  async loadEntity(characterGuid) {
-    const { sql } = await this.buildCharacterSelect();
-    const result = await this.query(
-      `${sql}
-        WHERE c.guid = $1 AND c.instance_guid = $2
-      `,
-      [characterGuid, this.instanceGuid],
-    );
-    return result.rows[0] ? this.toEntity(result.rows[0]) : null;
-  }
+  async loadEntity(characterGuids) {
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
 
-  async create(userGuid) {
-    if (!userGuid) {
-      throw new Error("userGuid is required to create a character");
-    }
+    query
+      .where(`${t}.guid = ANY($1)`, [characterGuids])
+      .where(`${t}.instance_guid = $1`, [this.instanceGuid]);
 
-    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
-    return new this.constructor.Entity({
-      instanceGuid: this.instanceGuid,
-      guid: this.newGuid(),
-      isNew: true,
-      storage: this,
-      packageNames: this.packageNames,
-      extensionFieldSpecs,
-      userGuid,
-    });
+    const result = await this.query(query.toString(), query.params);
+    return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
   async save(entity) {
@@ -79,14 +66,16 @@ class CharacterStorage extends BaseStorage {
         `
           UPDATE ${this.schema_table}
           SET
-            display_name = $1,
-            full_name = $2,
-            appearance = $3,
-            pronouns = $4
-          WHERE guid = $5 AND instance_guid = $6
+            user_guid = $1,
+            display_name = $2,
+            full_name = $3,
+            appearance = $4,
+            pronouns = $5
+          WHERE guid = $6 AND instance_guid = $7
           RETURNING guid
         `,
         [
+          entity.userGuid,
           entity.displayName,
           entity.fullName,
           entity.appearance,
@@ -105,6 +94,7 @@ class CharacterStorage extends BaseStorage {
     const reloaded = await this.load(entity.guid);
     if (reloaded) {
       Object.assign(entity, {
+        userGuid: reloaded.userGuid,
         displayName: reloaded.displayName,
         fullName: reloaded.fullName,
         appearance: reloaded.appearance,
@@ -139,28 +129,6 @@ class CharacterStorage extends BaseStorage {
       updateDatetime: row.update_datetime,
       ...extensionValues,
     });
-  }
-
-  async buildCharacterSelect() {
-    const { joins, packageExtensionsSql } = await this.getExtensionJoinSql("c");
-
-    return {
-      sql: `
-        SELECT
-          c.guid,
-          c.instance_guid,
-          c.user_guid,
-          c.display_name,
-          c.full_name,
-          c.appearance,
-          c.pronouns,
-          c.create_datetime,
-          c.update_datetime,
-          ${packageExtensionsSql} AS package_extensions
-        FROM ${this.schema_table} c
-        ${joins.join("\n        ")}
-      `,
-    };
   }
 }
 

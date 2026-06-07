@@ -51,7 +51,6 @@ function normalizeFieldSpec(property, rawSpec, machineName, label) {
         : property.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()),
     type,
     required: !!rawSpec.required,
-    extension: true,
     ...(rawSpec.refs ? { refs: rawSpec.refs } : {}),
     ...(rawSpec.default !== undefined ? { default: rawSpec.default } : {}),
     ...(rawSpec.inputType ? { inputType: rawSpec.inputType } : {}),
@@ -169,6 +168,7 @@ function mergeExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys = []) {
 }
 
 module.exports = {
+  propertyToColumnName,
   refreshEntityExtensionIndex,
   invalidateEntityExtensionIndex,
   mergeExtensionFieldSpecs,

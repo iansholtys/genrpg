@@ -10,39 +10,37 @@ class InventoryStorage extends BaseStorage {
   static Entity = InventoryEntity;
 
   async listEntities({ characterGuid, collectionGuid } = {}) {
-    const { sql } = await this.buildInventorySelect();
-    const params = [this.instanceGuid];
-    const conditions = ["inv.instance_guid = $1"];
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
+
+    query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
 
     if (characterGuid) {
-      params.push(characterGuid);
-      conditions.push(`inv.character_guid = $${params.length}`);
+      query.where(`${t}.character_guid = $1`, [characterGuid]);
     }
 
     if (collectionGuid) {
-      params.push(collectionGuid);
-      conditions.push(`inv.collection_guid = $${params.length}`);
+      query.where(`${t}.collection_guid = $1`, [collectionGuid]);
     }
 
     const result = await this.query(
-      `${sql}
-        WHERE ${conditions.join(" AND ")}
-        ORDER BY inv.create_datetime ASC
+      `${query.toString()}
+        ORDER BY ${t}.create_datetime ASC
       `,
-      params,
+      query.params,
     );
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
-  async loadEntity(inventoryGuid) {
-    const { sql } = await this.buildInventorySelect();
-    const result = await this.query(
-      `${sql}
-        WHERE inv.guid = $1 AND inv.instance_guid = $2
-      `,
-      [inventoryGuid, this.instanceGuid],
-    );
-    return result.rows[0] ? this.toEntity(result.rows[0]) : null;
+  async loadEntity(inventoryGuids) {
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
+    query
+      .where(`${t}.guid = ANY($1)`, [inventoryGuids])
+      .where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+
+    const result = await this.query(query.toString(), query.params);
+    return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
   async save(entity) {
@@ -108,25 +106,6 @@ class InventoryStorage extends BaseStorage {
       updateDatetime: row.update_datetime,
       ...extensionValues,
     });
-  }
-
-  async buildInventorySelect() {
-    const { joins, packageExtensionsSql } = await this.getExtensionJoinSql("inv");
-
-    return {
-      sql: `
-        SELECT
-          inv.guid,
-          inv.instance_guid,
-          inv.collection_guid,
-          inv.character_guid,
-          inv.create_datetime,
-          inv.update_datetime,
-          ${packageExtensionsSql} AS package_extensions
-        FROM ${this.schema_table} inv
-        ${joins.join("\n        ")}
-      `,
-    };
   }
 }
 

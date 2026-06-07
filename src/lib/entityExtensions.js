@@ -1,50 +1,9 @@
 const { mergeExtensionFieldSpecs } = require("./entityExtensionIndex");
 const { ValidationError } = require("../errors/ValidationError");
-const { getOrCompute } = require("../services/cacheService");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
 
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
-
-const ENTITY_EXTENSION_CONFIGS = {
-  item: {
-    coreSchema: "genrpg",
-    coreTable: "items",
-    parentKeyColumn: "item_guid",
-    managedColumns: new Set([
-      "guid",
-      "item_guid",
-      "instance_guid",
-      "create_datetime",
-      "update_datetime",
-    ]),
-  },
-  inventory: {
-    coreSchema: "genrpg",
-    coreTable: "inventories",
-    parentKeyColumn: "inventory_guid",
-    managedColumns: new Set([
-      "guid",
-      "inventory_guid",
-      "instance_guid",
-      "create_datetime",
-      "update_datetime",
-    ]),
-  },
-  character: {
-    coreSchema: "genrpg",
-    coreTable: "characters",
-    parentKeyColumn: "character_guid",
-    managedColumns: new Set([
-      "guid",
-      "character_guid",
-      "instance_guid",
-      "user_guid",
-      "create_datetime",
-      "update_datetime",
-    ]),
-  },
-};
 
 function quoteIdentifier(identifier) {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
@@ -66,79 +25,17 @@ function isNonEmptyValue(value) {
   return value !== null && value !== undefined && value !== "";
 }
 
-function entityValueForColumn(entity, columnName) {
-  if (Object.prototype.hasOwnProperty.call(entity, columnName)) {
-    return entity[columnName];
-  }
-
-  const camelCase = columnName.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
-  if (Object.prototype.hasOwnProperty.call(entity, camelCase)) {
-    return entity[camelCase];
-  }
-
-  return undefined;
-}
-
-function defaultInsertValueForColumn(column) {
-  if (column.dataType === "boolean") {
-    return false;
-  }
-  if (column.dataType === "integer" || column.dataType === "bigint" || column.dataType === "smallint") {
-    return 0;
-  }
-  if (column.dataType === "double precision" || column.dataType === "numeric" || column.dataType === "real") {
-    return 0;
-  }
-  return "";
-}
-
-function buildExtensionInsertValues(config, columns, entity, parentGuid, columnValues) {
-  const insertValues = { [config.parentKeyColumn]: parentGuid, ...columnValues };
-
-  for (const column of columns) {
-    if (Object.prototype.hasOwnProperty.call(insertValues, column.name)) {
-      continue;
-    }
-
-    if (config.managedColumns.has(column.name)) {
-      if (column.name === "guid" && column.required && !column.hasDefault) {
-        const crypto = require("node:crypto");
-        insertValues.guid = crypto.randomUUID();
-      }
-      continue;
-    }
-
-    if (!column.required || column.hasDefault) {
-      continue;
-    }
-
-    const fromEntity = entityValueForColumn(entity, column.name);
-    if (fromEntity !== undefined && fromEntity !== null) {
-      insertValues[column.name] = fromEntity;
-      continue;
-    }
-
-    insertValues[column.name] = defaultInsertValueForColumn(column);
-  }
-
-  return insertValues;
-}
-
 async function metadataQuery(text, params = []) {
   const executor = getTransactionClient() || pool;
   return executor.query(text, params);
 }
 
-function getExtensionConfig(entityKey) {
-  const config = ENTITY_EXTENSION_CONFIGS[entityKey];
-  if (!config) {
-    throw new Error(`Unknown extension entity key: ${entityKey}`);
-  }
-  return config;
+function extensionRowAlias(spec) {
+  return `${spec.schema}_${spec.column}`;
 }
 
-async function loadExtensionSchemas(config, packageNames) {
-  const schemas = [...new Set([config.coreSchema, ...packageNames])];
+async function loadExtensionSchemas(coreSchema, coreTable, parentKeyColumn, packageNames) {
+  const schemas = [...new Set([coreSchema, ...packageNames])];
   const invalidSchema = schemas.find((schema) => !IDENTIFIER_PATTERN.test(schema));
   if (invalidSchema) {
     throw new Error(`Invalid package schema name: ${invalidSchema}`);
@@ -160,7 +57,7 @@ async function loadExtensionSchemas(config, packageNames) {
         AND t.table_type = 'BASE TABLE'
       ORDER BY t.table_schema ASC
     `,
-    [schemas, config.parentKeyColumn, config.coreTable],
+    [schemas, parentKeyColumn, coreTable],
   );
 
   const found = result.rows.map((row) => ({
@@ -168,14 +65,14 @@ async function loadExtensionSchemas(config, packageNames) {
     hasParentKey: row.has_parent_key,
   }));
 
-  if (!found.some((row) => row.schema === config.coreSchema)) {
-    throw new Error(`Core ${config.coreSchema}.${config.coreTable} table does not exist`);
+  if (!found.some((row) => row.schema === coreSchema)) {
+    throw new Error(`Core ${coreSchema}.${coreTable} table does not exist`);
   }
 
-  return found.filter((row) => row.schema === config.coreSchema || row.hasParentKey);
+  return found.filter((row) => row.schema === coreSchema || row.hasParentKey);
 }
 
-async function loadExtensionColumns(config, schemas) {
+async function loadExtensionColumns(coreTable, schemas) {
   const result = await metadataQuery(
     `
       SELECT
@@ -190,7 +87,7 @@ async function loadExtensionColumns(config, schemas) {
         AND table_name = $2
       ORDER BY table_schema ASC, ordinal_position ASC
     `,
-    [schemas, config.coreTable],
+    [schemas, coreTable],
   );
 
   const columnsBySchema = new Map();
@@ -214,18 +111,20 @@ async function loadExtensionColumns(config, schemas) {
  * Build runtime field specs from package entity extension modules, verified against the database.
  * Specs are keyed by entity property name (camelCase).
  */
-async function buildExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys = []) {
-  const config = getExtensionConfig(entityKey);
+async function buildExtensionFieldSpecs(StorageClass, packageNames, coreFieldKeys = []) {
+  const { schema: coreSchema, table: coreTable } = StorageClass;
+  const entityKey = StorageClass.Entity.key;
+  const parentKeyColumn = `${entityKey}_guid`;
   const merged = mergeExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys);
   if (!Object.keys(merged).length) {
     return {};
   }
 
-  const schemaRows = await loadExtensionSchemas(config, packageNames);
+  const schemaRows = await loadExtensionSchemas(coreSchema, coreTable, parentKeyColumn, packageNames);
   const activeSchemas = new Set(
     schemaRows
       .map((row) => row.schema)
-      .filter((schema) => schema !== config.coreSchema),
+      .filter((schema) => schema !== coreSchema),
   );
 
   const specs = {};
@@ -240,7 +139,7 @@ async function buildExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys =
   }
 
   const packageSchemas = [...new Set(Object.values(specs).map((spec) => spec.schema))];
-  const columnsBySchema = await loadExtensionColumns(config, packageSchemas);
+  const columnsBySchema = await loadExtensionColumns(coreTable, packageSchemas);
 
   for (const spec of Object.values(specs)) {
     const columnNames = new Set(
@@ -312,8 +211,9 @@ function buildUpdateQuery(schema, table, values, whereColumn, whereValue) {
   };
 }
 
-async function saveExtensionRows(entityKey, packageNames, parentGuid, entity, queryFn) {
-  const config = getExtensionConfig(entityKey);
+async function saveExtensionRows(StorageClass, packageNames, parentGuid, entity, queryFn) {
+  const { schema: coreSchema, table: coreTable } = StorageClass;
+  const parentKeyColumn = `${StorageClass.Entity.key}_guid`;
   const extensionFieldSpecs = entity.extensionFieldSpecs || {};
   if (!Object.keys(extensionFieldSpecs).length) {
     return;
@@ -324,13 +224,12 @@ async function saveExtensionRows(entityKey, packageNames, parentGuid, entity, qu
     return;
   }
 
-  const schemaRows = await loadExtensionSchemas(config, packageNames);
+  const schemaRows = await loadExtensionSchemas(coreSchema, coreTable, parentKeyColumn, packageNames);
   const activeSchemas = new Set(
     schemaRows
       .map((row) => row.schema)
-      .filter((schema) => schema !== config.coreSchema),
+      .filter((schema) => schema !== coreSchema),
   );
-  const columnsBySchema = await loadExtensionColumns(config, [...activeSchemas]);
 
   for (const [schema, columnValues] of valuesBySchema) {
     if (!Object.keys(columnValues).length) {
@@ -346,7 +245,7 @@ async function saveExtensionRows(entityKey, packageNames, parentGuid, entity, qu
             AND table_name = $2
           ORDER BY ordinal_position ASC
         `,
-        [schema, config.coreTable],
+        [schema, coreTable],
       );
       const columnsFound = columnResult.rows.map((row) => row.column_name).join(", ") || "(table missing)";
       const versionResult = await metadataQuery(
@@ -356,143 +255,37 @@ async function saveExtensionRows(entityKey, packageNames, parentGuid, entity, qu
       const packageDbVersion = versionResult.rows[0]?.version ?? "not recorded";
 
       throw new ValidationError([
-        `Cannot save package fields for "${schema}": ${schema}.${config.coreTable} must exist with column ${config.parentKeyColumn}.`,
+        `Cannot save package fields for "${schema}": ${schema}.${coreTable} must exist with column ${parentKeyColumn}.`,
         `Update the "${schema}" package from Manage Packages (pull or Update packages). Package DB version: ${packageDbVersion}.`,
-        `Columns found on ${schema}.${config.coreTable}: ${columnsFound}.`,
+        `Columns found on ${schema}.${coreTable}: ${columnsFound}.`,
       ]);
     }
 
     const packageUpdate = buildUpdateQuery(
       schema,
-      config.coreTable,
+      coreTable,
       columnValues,
-      config.parentKeyColumn,
+      parentKeyColumn,
       parentGuid,
     );
     const updateResult = await queryFn(packageUpdate.sql, packageUpdate.params);
 
     if (updateResult.rowCount === 0) {
-      const columns = columnsBySchema.get(schema) || [];
-      const insertValues = buildExtensionInsertValues(
-        config,
-        columns,
-        entity,
-        parentGuid,
-        columnValues,
-      );
-      const packageInsert = buildInsertQuery(schema, config.coreTable, insertValues);
+      const insertValues = {
+        [parentKeyColumn]: parentGuid,
+        ...columnValues,
+      };
+      const packageInsert = buildInsertQuery(schema, coreTable, insertValues);
       await queryFn(packageInsert.sql, packageInsert.params);
     }
   }
 }
 
-async function deleteExtensionRows(entityKey, packageNames, parentGuid, queryFn) {
-  const config = getExtensionConfig(entityKey);
-  const schemaRows = await loadExtensionSchemas(config, packageNames);
-  const schemas = schemaRows
-    .map((row) => row.schema)
-    .filter((schema) => schema !== config.coreSchema);
-
-  for (const schema of schemas) {
-    await queryFn(
-      `
-        DELETE FROM ${quoteIdentifier(schema)}.${quoteIdentifier(config.coreTable)}
-        WHERE ${quoteColumn(config.parentKeyColumn)} = $1
-      `,
-      [parentGuid],
-    );
-  }
-}
-
-async function buildExtensionJoinSql(entityKey, packageNames, coreTableAlias) {
-  const config = getExtensionConfig(entityKey);
-  const merged = mergeExtensionFieldSpecs(entityKey, packageNames, []);
-  const extensionSchemas = [
-    ...new Set(Object.values(merged).map((spec) => spec.schema)),
-  ];
-  const schemaRows = await loadExtensionSchemas(config, packageNames);
-  const schemas = schemaRows
-    .map((row) => row.schema)
-    .filter(
-      (schema) => schema !== config.coreSchema && extensionSchemas.includes(schema),
-    );
-
-  const joins = [];
-  const jsonParts = [];
-
-  for (const [index, schema] of schemas.entries()) {
-    const alias = `ext${index + 1}`;
-    joins.push(
-      `LEFT JOIN ${quoteIdentifier(schema)}.${quoteIdentifier(config.coreTable)} ${alias} ON ${alias}.${quoteColumn(config.parentKeyColumn)} = ${coreTableAlias}.guid`,
-    );
-    jsonParts.push(
-      `'${schema}', CASE WHEN ${alias}.${quoteColumn(config.parentKeyColumn)} IS NULL THEN NULL ELSE row_to_json(${alias}) END`,
-    );
-  }
-
-  const packageExtensionsSql = jsonParts.length
-    ? `json_build_object(${jsonParts.join(", ")})`
-    : `'{}'::json`;
-
-  return { joins, packageExtensionsSql };
-}
-
-function packageDataFromRow(packageExtensions) {
-  let parsed = packageExtensions;
-  if (typeof parsed === "string") {
-    try {
-      parsed = JSON.parse(parsed);
-    } catch {
-      return {};
-    }
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    return {};
-  }
-
-  const packageData = {};
-  for (const [schema, row] of Object.entries(parsed)) {
-    if (!row || typeof row !== "object") {
-      continue;
-    }
-    packageData[schema] = row;
-  }
-  return packageData;
-}
-
-function flattenPackageDataForEntity(packageData, extensionFieldSpecs) {
-  const values = {};
-  for (const [property, spec] of Object.entries(extensionFieldSpecs)) {
-    const raw = packageData[spec.schema]?.[spec.column];
-    if (raw !== undefined) {
-      values[property] = raw;
-    }
-  }
-  return values;
-}
-
-async function getCachedExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys, instanceGuid) {
-  return getOrCompute(
-    `entity.field_extensions:${entityKey}`,
-    () => buildExtensionFieldSpecs(entityKey, packageNames, coreFieldKeys),
-    { instanceGuid },
-  );
-}
-
-async function getCachedExtensionJoinSql(entityKey, packageNames, coreTableAlias, instanceGuid) {
-  return getOrCompute(
-    `entity.field_sql:${entityKey}`,
-    () => buildExtensionJoinSql(entityKey, packageNames, coreTableAlias),
-    { instanceGuid },
-  );
-}
-
 module.exports = {
-  getCachedExtensionFieldSpecs,
-  getCachedExtensionJoinSql,
+  buildExtensionFieldSpecs,
   saveExtensionRows,
-  deleteExtensionRows,
-  packageDataFromRow,
-  flattenPackageDataForEntity,
+  extensionRowAlias,
+  loadExtensionSchemas,
+  quoteIdentifier,
+  quoteColumn,
 };

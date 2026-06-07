@@ -12,9 +12,10 @@ class ItemCollectionContentEntity extends BaseEntity {
     subcollectionGuid: { label: "Subcollection", type: "guid", refs: ItemCollectionEntity },
     quantity: { label: "Quantity", type: "integer", required: true, default: 1 },
     position: { label: "Position", type: "integer", required: true, default: 0 },
+    collectionGuid: { readOnly: true },
+    createDatetime: { readOnly: true },
+    updateDatetime: { readOnly: true },
   };
-
-  static readOnlyFields = ["collectionGuid", "createDatetime", "updateDatetime"];
 
   constructor(options = {}) {
     super(options);

@@ -14,6 +14,7 @@ const RETURNING_COLUMNS = `
 class ItemTemplateStorage extends BaseStorage {
   static schema = "genrpg";
   static table = "item_templates";
+  static Entity = ItemTemplateEntity;
 
   create() {
     return new ItemTemplateEntity({
@@ -37,16 +38,16 @@ class ItemTemplateStorage extends BaseStorage {
     return result.rows.map((row) => this.toEntity(row));
   }
 
-  async load(templateGuid) {
+  async loadEntity(templateGuids) {
     const result = await this.query(
       `
         SELECT ${RETURNING_COLUMNS}
         FROM ${this.schema_table}
-        WHERE guid = $1 AND instance_guid = $2
+        WHERE guid = ANY($1) AND instance_guid = $2
       `,
-      [templateGuid, this.instanceGuid],
+      [templateGuids, this.instanceGuid],
     );
-    return result.rows[0] ? this.toEntity(result.rows[0]) : null;
+    return result.rows.map((row) => this.toEntity(row));
   }
 
   async save(entity) {

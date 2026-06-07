@@ -4,15 +4,17 @@ const { getEventDispatcher } = require("../events/packageEvents");
 
 class BaseEntity {
   /**
-   * Input field definitions keyed by property name.
-   * Each spec: `{ label?, type, default?, required?, refs?, inputType? }`
-   * Types: `text`, `guid`, `number`, `integer`, `boolean`.
-   * `refs`: required on `guid` fields — entity class with `static getStorage()` for existence checks.
+   * Field definitions keyed by property name.
+   * Each spec: `{ label?, type?, default?, required?, refs?, inputType?, readOnly?, virtual? }`
+   *
+   * Types (when `type` is set): `text`, `guid`, `number`, `integer`, `boolean`.
+   * `refs`: required on editable `guid` fields — entity class with `static getStorage()` for existence checks.
+   *
+   * `readOnly`: loaded from storage but excluded from {@link BaseEntity#set} and form schemas.
+   * `virtual`: not a persisted core-table column (excluded from SELECT); used for enrichment/aggregates.
    *
    * Package extension fields (when {@link BaseEntity.key} is set) are merged at runtime from
-   * package entities.yml modules via {@link BaseEntity#extensionFieldSpecs}. Storage must pass
-   * extension values as top-level constructor options; {@link BaseEntity#packageData} is read-only
-   * metadata from the database, not used to hydrate input fields.
+   * package entities.yml modules via {@link BaseEntity#extensionFieldSpecs}.
    */
   static fields = {};
 
@@ -61,9 +63,6 @@ class BaseEntity {
     throw new Error(`${this.name} does not define static getStorage()`);
   }
 
-  /** @type {string[]} Loaded from storage; not applied by {@link BaseEntity#set}. */
-  static readOnlyFields = [];
-
   /**
    * Default HTML input type for a field spec. Explicit `spec.inputType` wins.
    */
@@ -90,6 +89,10 @@ class BaseEntity {
    * Builds a form field descriptor from a field spec for {@link BaseEntity.getFormSchema} metadata.
    */
   static formFieldFromSpec(key, spec, overrides = {}) {
+    if (spec.readOnly) {
+      throw new Error(`Cannot build form field for read-only property: ${key}`);
+    }
+
     const field = {
       key,
       label: spec.label || key,
@@ -137,7 +140,6 @@ class BaseEntity {
     storage = null,
     packageNames = [],
     extensionFieldSpecs = null,
-    packageData = null,
   } = {}) {
     this.instanceGuid = instanceGuid;
     this.guid = guid;
@@ -146,7 +148,6 @@ class BaseEntity {
     this.validated = false;
     this.packageNames = packageNames;
     this.extensionFieldSpecs = extensionFieldSpecs || {};
-    this.packageData = packageData || {};
     this.effectiveFields = {
       ...this.constructor.fields,
       ...this.extensionFieldSpecs,
@@ -155,7 +156,7 @@ class BaseEntity {
 
   /** @type {string[]} Keys applied by {@link BaseEntity#set}. */
   get inputFields() {
-    return Object.keys(this.effectiveFields);
+    return Object.keys(this.effectiveFields).filter((key) => !this.effectiveFields[key].readOnly);
   }
 
   assertHasStorage() {
@@ -178,11 +179,22 @@ class BaseEntity {
 
   initFields(options = {}) {
     for (const [key, spec] of Object.entries(this.effectiveFields)) {
-      const raw = options[key] !== undefined ? options[key] : EntityFieldTypes.defaultFor(spec);
-      this[key] = this.coerceField(key, raw, spec);
-    }
-    for (const key of this.constructor.readOnlyFields) {
-      this[key] = options[key] !== undefined ? options[key] : null;
+      let raw;
+      if (key in options) {
+        raw = options[key];
+      } else if (spec.default !== undefined) {
+        raw = spec.default;
+      } else if (spec.readOnly) {
+        raw = null;
+      } else {
+        raw = EntityFieldTypes.defaultFor(spec);
+      }
+
+      if (spec.readOnly || !spec.type) {
+        this[key] = raw;
+      } else {
+        this[key] = this.coerceField(key, raw, spec);
+      }
     }
   }
 
@@ -222,9 +234,10 @@ class BaseEntity {
       },
     };
     const messages = await Promise.all(
-      Object.entries(this.effectiveFields).map(async ([key, spec]) =>
-        EntityFieldTypes.validate(this[key], { ...spec, key }, context),
-      ),
+      this.inputFields.map(async (key) => {
+        const spec = this.effectiveFields[key];
+        return EntityFieldTypes.validate(this[key], { ...spec, key }, context);
+      }),
     );
     return messages.filter(Boolean);
   }
@@ -454,9 +467,11 @@ class EntityFieldTypes {
       return `${this.fieldLabel(spec)} must declare refs`;
     }
     const storageClass = spec.refs.getStorage();
-    const exists = await storageClass.forInstance(context.instance).exists(value);
+    const storage = storageClass.forInstance(context.instance);
+    const exists = await storage.exists(value);
     if (!exists) {
-      return `${this.fieldLabel(spec)} not found for this instance`;
+      const scope = storageClass.instanceScoped === false ? "" : " for this instance";
+      return `${this.fieldLabel(spec)} not found${scope}`;
     }
     return null;
   }
