@@ -35,14 +35,11 @@ class ItemCollectionContentStorage extends BaseStorage {
 
     query
       .where(`${t}.instance_guid = $1`, [this.instanceGuid])
-      .where(`${t}.collection_guid = $1`, [collectionGuid]);
+      .where(`${t}.collection_guid = $1`, [collectionGuid])
+      .orderBy(t, "position")
+      .orderBy(t, "create_datetime");
 
-    const result = await this.query(
-      `${query.toString()}
-        ORDER BY ${t}.position ASC, ${t}.create_datetime ASC
-      `,
-      query.params,
-    );
+    const result = await this.query(query.toString(), query.params);
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 

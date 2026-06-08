@@ -13,11 +13,10 @@ class UserStorage extends BaseStorage {
   async listEntities() {
     const query = await this.buildSelect();
     const t = this.tableAlias;
-    const result = await this.query(
-      `${query.toString()}
-        ORDER BY ${t}.display_name ASC NULLS LAST, ${t}.email ASC
-      `,
-    );
+
+    query.orderBy(t, "display_name", "ASC", "NULLS LAST").orderBy(t, "email");
+
+    const result = await this.query(query.toString());
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
@@ -27,14 +26,11 @@ class UserStorage extends BaseStorage {
 
     query
       .addJoin("genrpg", "instance_user_roles", "iur", `iur.user_guid = ${t}.guid`)
-      .where(`iur.instance_guid = $1`, [instanceGuid]);
+      .where(`iur.instance_guid = $1`, [instanceGuid])
+      .orderBy(t, "display_name", "ASC", "NULLS LAST")
+      .orderBy(t, "email");
 
-    const result = await this.query(
-      `${query.toString()}
-        ORDER BY ${t}.display_name ASC NULLS LAST, ${t}.email ASC
-      `,
-      query.params,
-    );
+    const result = await this.query(query.toString(), query.params);
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 

@@ -23,12 +23,9 @@ class InventoryStorage extends BaseStorage {
       query.where(`${t}.collection_guid = $1`, [collectionGuid]);
     }
 
-    const result = await this.query(
-      `${query.toString()}
-        ORDER BY ${t}.create_datetime ASC
-      `,
-      query.params,
-    );
+    query.orderBy(t, "create_datetime");
+
+    const result = await this.query(query.toString(), query.params);
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 

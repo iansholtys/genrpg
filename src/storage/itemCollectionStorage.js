@@ -1,5 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemCollectionEntity } = require("../entities/itemCollectionEntity");
+const { qualify } = require("../services/queryService");
 
 /**
  * Storage for item collections.
@@ -23,12 +24,12 @@ class ItemCollectionStorage extends BaseStorage {
       query.where(`${t}.type = $1`, [type]);
     }
 
-    const result = await this.query(
-      `${query.toString()}
-        ORDER BY ${t}.type ASC, COALESCE(${t}.name, '') ASC, ${t}.create_datetime ASC
-      `,
-      query.params,
-    );
+    query
+      .orderBy(t, "type")
+      .orderBy(null, `COALESCE(${qualify(t, "name")}, '')`)
+      .orderBy(t, "create_datetime");
+
+    const result = await this.query(query.toString(), query.params);
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 

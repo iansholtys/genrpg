@@ -10,14 +10,12 @@ class ItemStorage extends BaseStorage {
     const query = await this.buildSelect();
     const t = this.tableAlias;
 
-    query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+    query
+      .where(`${t}.instance_guid = $1`, [this.instanceGuid])
+      .orderBy(t, "name", "ASC", "NULLS LAST")
+      .orderBy(t, "create_datetime");
 
-    const result = await this.query(
-      `${query.toString()}
-        ORDER BY ${t}.name ASC NULLS LAST, ${t}.create_datetime ASC
-      `,
-      query.params,
-    );
+    const result = await this.query(query.toString(), query.params);
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 

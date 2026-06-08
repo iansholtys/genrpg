@@ -8,8 +8,12 @@ function normalizeToArray(value) {
   return [value];
 }
 
+function qualify(tableAlias, column) {
+  return `${quoteIdentifier(tableAlias)}.${quoteColumn(column)}`;
+}
+
 function formatField(tableAlias, field, alias) {
-  const part = `${quoteIdentifier(tableAlias)}.${quoteColumn(field)}`;
+  const part = qualify(tableAlias, field);
 
   if (alias !== undefined && alias !== null && alias !== "") {
     return `${part} AS ${quoteIdentifier(alias)}`;
@@ -18,47 +22,8 @@ function formatField(tableAlias, field, alias) {
   return part;
 }
 
-function formatFrom({ schema, table, alias }) {
-  let sql = `FROM ${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
-
-  if (alias) {
-    sql += ` ${quoteIdentifier(alias)}`;
-  }
-
-  return sql;
-}
-
-function formatJoin({ type = "INNER", schema, table, tableAlias, joinCondition }) {
-  const joinKeyword = type === "LEFT" ? "LEFT JOIN" : "JOIN";
-  let sql = `${joinKeyword} ${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
-
-  if (tableAlias) {
-    sql += ` ${quoteIdentifier(tableAlias)}`;
-  }
-
-  sql += ` ON ${joinCondition}`;
-  return sql;
-}
-
 function renumberPlaceholders(expression, startIndex) {
   return expression.replace(/\$(\d+)/g, (_, number) => `$${startIndex + Number(number) - 1}`);
-}
-
-function formatWhereClauses(clauses) {
-  let paramOffset = 1;
-  const params = [];
-  const parts = [];
-
-  for (const clause of clauses) {
-    parts.push(renumberPlaceholders(clause.expression, paramOffset));
-    params.push(...clause.args);
-    paramOffset += clause.args.length;
-  }
-
-  return {
-    sql: parts.join(" AND "),
-    params,
-  };
 }
 
 class QueryObject {
@@ -68,18 +33,20 @@ class QueryObject {
     this._from = null;
     this._joins = [];
     this._whereClauses = [];
+    this._whereParams = [];
+    this._orderByClauses = [];
   }
 
-  from(schema, table, alias) {
-    this._from = { schema, table, alias };
+  from(schema, table, tableAlias) {
+    this._from = { schema, table, tableAlias };
     return this;
   }
 
   addFields(tableAlias, fields, aliases) {
     this._fieldGroups.push({
       tableAlias,
-      fields,
-      aliases,
+      fields: normalizeToArray(fields),
+      aliases: aliases !== undefined ? normalizeToArray(aliases) : undefined,
     });
     return this;
   }
@@ -89,34 +56,23 @@ class QueryObject {
     return this;
   }
 
-  _addJoin(type, schema, table, tableAliasOrCondition, joinCondition) {
-    let tableAlias;
-    let condition;
-
-    if (joinCondition !== undefined) {
-      tableAlias = tableAliasOrCondition;
-      condition = joinCondition;
-    } else {
-      tableAlias = undefined;
-      condition = tableAliasOrCondition;
-    }
-
+  _addJoin(type, schema, table, tableAlias, joinCondition) {
     this._joins.push({
       type,
       schema,
       table,
       tableAlias,
-      joinCondition: condition,
+      joinCondition,
     });
     return this;
   }
 
-  addJoin(schema, table, tableAliasOrCondition, joinCondition) {
-    return this._addJoin("INNER", schema, table, tableAliasOrCondition, joinCondition);
+  addJoin(schema, table, tableAlias, joinCondition) {
+    return this._addJoin("INNER", schema, table, tableAlias, joinCondition);
   }
 
-  addLeftJoin(schema, table, tableAliasOrCondition, joinCondition) {
-    return this._addJoin("LEFT", schema, table, tableAliasOrCondition, joinCondition);
+  addLeftJoin(schema, table, tableAlias, joinCondition) {
+    return this._addJoin("LEFT", schema, table, tableAlias, joinCondition);
   }
 
   where(expression, args = []) {
@@ -127,20 +83,42 @@ class QueryObject {
     return this;
   }
 
-  get params() {
-    return formatWhereClauses(this._whereClauses).params;
+  orderBy(tableAlias, column, direction = "ASC", nullsOrdering = null) {
+    if (!column) {
+      throw new Error("orderBy requires a column or expression");
+    }
+
+    const clause = {};
+    clause.direction = (direction ?? "ASC").trim().toUpperCase();
+    if (!["ASC", "DESC"].includes(clause.direction)) {
+      throw new Error(`Invalid order direction: ${direction}`);
+    }
+
+    clause.nullsOrdering = nullsOrdering?.trim().toUpperCase().replace(/\s+/g, " ") ?? null;
+    if (clause.nullsOrdering && !["NULLS FIRST", "NULLS LAST"].includes(clause.nullsOrdering)) {
+      throw new Error(`Invalid nulls ordering: ${nullsOrdering}`);
+    }
+
+    if (!tableAlias) {
+      clause.expression = column;
+    } else {
+      clause.tableAlias = tableAlias;
+      clause.column = column;
+    }
+    this._orderByClauses.push(clause);
+
+    return this;
   }
 
-  toString() {
+  formatSelect() {
     const selectParts = [];
 
     for (const group of this._fieldGroups) {
-      const fields = normalizeToArray(group.fields);
-      const aliases = group.aliases !== undefined ? normalizeToArray(group.aliases) : [];
+      const aliases = group.aliases ?? [];
 
-      for (let index = 0; index < fields.length; index += 1) {
+      for (let index = 0; index < group.fields.length; index += 1) {
         const alias = index in aliases ? aliases[index] : undefined;
-        selectParts.push(formatField(group.tableAlias, fields[index], alias));
+        selectParts.push(formatField(group.tableAlias, group.fields[index], alias));
       }
     }
 
@@ -152,7 +130,82 @@ class QueryObject {
       }
     }
 
-    if (selectParts.length === 0) {
+    return selectParts.join(", ");
+  }
+
+  formatFrom() {
+    const { schema, table, tableAlias } = this._from;
+    let sql = `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
+
+    if (tableAlias) {
+      sql += ` ${quoteIdentifier(tableAlias)}`;
+    }
+
+    return sql;
+  }
+
+  formatJoins() {
+    return this._joins.map(({ type = "INNER", schema, table, tableAlias, joinCondition }) => {
+      const joinKeyword = type === "LEFT" ? "LEFT JOIN" : "JOIN";
+      let sql = `${joinKeyword} ${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
+
+      if (tableAlias) {
+        sql += ` ${quoteIdentifier(tableAlias)}`;
+      }
+
+      sql += ` ON ${joinCondition}`;
+      return sql;
+    });
+  }
+
+  formatWhere() {
+    if (!this._whereClauses.length) {
+      this._whereParams = [];
+      return null;
+    }
+
+    let paramOffset = 1;
+    const params = [];
+    const parts = [];
+
+    for (const clause of this._whereClauses) {
+      parts.push(renumberPlaceholders(clause.expression, paramOffset));
+      params.push(...clause.args);
+      paramOffset += clause.args.length;
+    }
+
+    this._whereParams = params;
+    return parts.join(" AND ");
+  }
+
+  formatOrderBy() {
+    const parts = [];
+
+    for (const { expression, tableAlias, column, direction, nullsOrdering } of this._orderByClauses) {
+      const clauseParts = [
+        expression ?? qualify(tableAlias, column),
+        direction,
+      ];
+
+      if (nullsOrdering) {
+        clauseParts.push(nullsOrdering);
+      }
+
+      parts.push(clauseParts.join(" "));
+    }
+
+    return parts.join(", ");
+  }
+
+  get params() {
+    this.formatWhere();
+    return this._whereParams;
+  }
+
+  toString() {
+    const select = this.formatSelect();
+
+    if (!select) {
       throw new Error("Query requires at least one select field or expression");
     }
 
@@ -161,13 +214,19 @@ class QueryObject {
     }
 
     const parts = [
-      `SELECT ${selectParts.join(", ")}`,
-      formatFrom(this._from),
-      ...this._joins.map(formatJoin),
+      `SELECT ${select}`,
+      `FROM ${this.formatFrom()}`,
+      ...this.formatJoins(),
     ];
 
-    if (this._whereClauses.length > 0) {
-      parts.push(`WHERE ${formatWhereClauses(this._whereClauses).sql}`);
+    const where = this.formatWhere();
+    if (where) {
+      parts.push(`WHERE ${where}`);
+    }
+
+    const orderBy = this.formatOrderBy();
+    if (orderBy) {
+      parts.push(`ORDER BY ${orderBy}`);
     }
 
     return parts.join("\n");
@@ -180,4 +239,5 @@ function select() {
 
 module.exports = {
   select,
+  qualify,
 };
