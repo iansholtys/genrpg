@@ -31,6 +31,7 @@ class InventoryStorage extends BaseStorage {
   }
 
   async save(entity) {
+    const { guid, instanceGuid, collectionGuid, characterGuid } = entity;
     if (entity.isNew) {
       await this.query(
         `
@@ -42,13 +43,12 @@ class InventoryStorage extends BaseStorage {
           )
           VALUES ($1, $2, $3, $4)
         `,
-        [entity.guid, entity.instanceGuid, entity.collectionGuid, entity.characterGuid],
+        [guid, instanceGuid, collectionGuid, characterGuid],
       );
       entity.isNew = false;
     } else {
       const { schema, table } = this.constructor;
       const t = this.tableAlias;
-      const { collectionGuid, characterGuid, guid } = entity;
       const query = updateQuery()
         .from(schema, table, t)
         .set(t, ["collection_guid", "character_guid"], [collectionGuid, characterGuid])
@@ -64,7 +64,7 @@ class InventoryStorage extends BaseStorage {
 
     await this.saveExtensionRowsForEntity(entity);
 
-    const reloaded = await this.load(entity.guid);
+    const reloaded = await this.load(guid);
     if (reloaded) {
       Object.assign(entity, {
         collectionGuid: reloaded.collectionGuid,

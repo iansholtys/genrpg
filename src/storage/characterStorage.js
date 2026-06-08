@@ -23,7 +23,7 @@ class CharacterStorage extends BaseStorage {
   }
 
   async save(entity) {
-    const { userGuid, displayName, fullName, appearance, pronouns, guid } = entity;
+    const { guid, instanceGuid, userGuid, displayName, fullName, appearance, pronouns } = entity;
     if (entity.isNew) {
       await this.query(
         `
@@ -38,15 +38,7 @@ class CharacterStorage extends BaseStorage {
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7)
         `,
-        [
-          guid,
-          entity.instanceGuid,
-          userGuid,
-          displayName,
-          fullName,
-          appearance,
-          pronouns,
-        ],
+        [guid, instanceGuid, userGuid, displayName, fullName, appearance, pronouns],
       );
       entity.isNew = false;
     } else {
@@ -68,7 +60,7 @@ class CharacterStorage extends BaseStorage {
 
     await this.saveExtensionRowsForEntity(entity);
 
-    const reloaded = await this.load(entity.guid);
+    const reloaded = await this.load(guid);
     if (reloaded) {
       Object.assign(entity, {
         userGuid: reloaded.userGuid,

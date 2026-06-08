@@ -45,20 +45,20 @@ class UserStorage extends BaseStorage {
       throw new Error("Users are created via OIDC login, not entity.save()");
     }
 
-    const tableAlias = "u";
-    const { email, displayName, admin } = entity;
+    const t = this.tableAlias;
+    const { guid, email, displayName, admin } = entity;
     const query = updateQuery()
-      .from("genrpg", "users", tableAlias)
-      .set(tableAlias, ["email", "display_name", "admin"], [email, displayName, admin])
-      .whereColumn(tableAlias, "guid", entity.guid)
-      .returning(tableAlias, "guid");
+      .from("genrpg", "users", t)
+      .set(t, ["email", "display_name", "admin"], [email, displayName, admin])
+      .whereColumn(t, "guid", guid)
+      .returning(t, "guid");
 
     const result = await this.query(query.toString(), query.params);
     if (!result.rows.length) {
       return null;
     }
 
-    const reloaded = await this.load(entity.guid);
+    const reloaded = await this.load(guid);
     if (reloaded) {
       Object.assign(entity, {
         email: reloaded.email,
