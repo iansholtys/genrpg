@@ -3,7 +3,10 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { pool } = require("./db/pool");
-const { isGlobalAdmin } = require("./auth");
+const {
+  loadAccessibleInstance,
+  userHasPermission,
+} = require("./services/permissionService");
 const { deleteQuery, selectQuery, qualify } = require("./services/queryService");
 
 const RESERVED_ALIAS_PREFIXES = ["api", "static", "auth", "login", "logout", "healthz"];
@@ -115,54 +118,8 @@ async function createCustomInstanceAlias(client, instanceGuid, slugSegment) {
   throw new Error("Unable to allocate a unique instance URL alias");
 }
 
-async function loadAccessibleInstance(instanceGuid, user) {
-  const isAdmin = await isGlobalAdmin(user.guid);
-  const result = await pool.query(
-    `
-      SELECT
-        i.guid,
-        i.name,
-        i.description,
-        i.packages
-      FROM genrpg.instances i
-      LEFT JOIN genrpg.instance_user_roles iur
-        ON iur.instance_guid = i.guid
-        AND iur.user_guid = $1
-      WHERE i.guid = $2
-        AND ($3::boolean OR iur.user_guid IS NOT NULL)
-    `,
-    [user.guid, instanceGuid, isAdmin],
-  );
-
-  return result.rows[0] || null;
-}
-
-async function getUserInstancePermissions(instanceGuid, userGuid) {
-  const instanceUserRoleAlias = "iur";
-  const rolePermissionAlias = "rp";
-  const permissionAlias = "p";
-  const query = selectQuery()
-    .from("genrpg", "instance_user_roles", instanceUserRoleAlias)
-    .addJoin("genrpg", "role_permissions", rolePermissionAlias,
-      `${qualify(rolePermissionAlias, "role_id")} = ${qualify(instanceUserRoleAlias, "role_id")}`,
-    )
-    .addJoin("genrpg", "permissions", permissionAlias,
-      `${qualify(permissionAlias, "id")} = ${qualify(rolePermissionAlias, "permission_id")}`,
-    )
-    .addExpression(`DISTINCT ${qualify(permissionAlias, "name")}`)
-    .whereColumn(instanceUserRoleAlias, "instance_guid", instanceGuid)
-    .whereColumn(instanceUserRoleAlias, "user_guid", userGuid);
-
-  const result = await pool.query(query.toString(), query.params);
-  return new Set(result.rows.map((row) => row.name));
-}
-
 async function canUserRunInstance(instanceGuid, user) {
-  if (await isGlobalAdmin(user.guid)) {
-    return true;
-  }
-  const permissions = await getUserInstancePermissions(instanceGuid, user.guid);
-  return permissions.has("instance.run");
+  return userHasPermission(user.guid, instanceGuid, "instance.run");
 }
 
 async function lookupAlias(alias) {
@@ -209,7 +166,9 @@ async function lookupCanonicalAliasForPath(pathValue) {
 }
 
 async function resolveInstancePath(instanceGuid, user) {
-  const instance = await loadAccessibleInstance(instanceGuid, user);
+  const instance = await loadAccessibleInstance(instanceGuid, user, {
+    fields: ["guid", "name"],
+  });
   if (!instance) {
     return null;
   }

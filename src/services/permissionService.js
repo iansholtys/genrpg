@@ -8,35 +8,23 @@ const {
   loadPackages,
   resolveInstancePackages,
 } = require("../packages");
-const DEFAULT_INSTANCE_FIELDS = ["i.guid"];
-
-function buildInstanceSelect(fields) {
-  const selectFields = fields.map((field) => {
-    if (field.startsWith("i.")) {
-      return field;
-    }
-    return `i.${field}`;
-  });
-  return selectFields.join(",\n        ");
-}
 
 async function loadAccessibleInstance(instanceGuid, user, { fields } = {}) {
   const isAdmin = await isGlobalAdmin(user.guid);
-  const selectClause = buildInstanceSelect(fields ?? DEFAULT_INSTANCE_FIELDS);
-  const result = await pool.query(
-    `
-      SELECT
-        ${selectClause}
-      FROM genrpg.instances i
-      LEFT JOIN genrpg.instance_user_roles iur
-        ON iur.instance_guid = i.guid
-        AND iur.user_guid = $1
-      WHERE i.guid = $2
-        AND ($3::boolean OR iur.user_guid IS NOT NULL)
-    `,
-    [user.guid, instanceGuid, isAdmin],
-  );
+  const instanceAlias = "i";
+  const query = selectQuery()
+    .from("genrpg", "instances", instanceAlias)
+    .addFields(instanceAlias, fields ?? ["guid"])
+    .whereColumn(instanceAlias, "guid", instanceGuid);
 
+  if (!isAdmin) {
+    const instanceUserRoleAlias = "iur";
+    query.addJoin("genrpg", "instance_user_roles", instanceUserRoleAlias,
+        `${qualify(instanceUserRoleAlias, "instance_guid")} = ${qualify(instanceAlias, "guid")}`,
+      ).whereColumn(instanceUserRoleAlias, "user_guid", user.guid);
+  }
+
+  const result = await pool.query(query.toString(), query.params);
   return result.rows[0] || null;
 }
 
