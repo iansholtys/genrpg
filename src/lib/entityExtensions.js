@@ -2,28 +2,7 @@ const { mergeExtensionFieldSpecs } = require("./entityExtensionIndex");
 const { ValidationError } = require("../errors/ValidationError");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
-
-const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
-
-function quoteIdentifier(identifier) {
-  if (!IDENTIFIER_PATTERN.test(identifier)) {
-    throw new Error(`Invalid database identifier: ${identifier}`);
-  }
-
-  return `"${identifier}"`;
-}
-
-function quoteColumn(identifier) {
-  if (!/^[a-z_][a-z0-9_]*$/.test(identifier)) {
-    throw new Error(`Invalid database column: ${identifier}`);
-  }
-
-  return `"${identifier}"`;
-}
-
-function isNonEmptyValue(value) {
-  return value !== null && value !== undefined && value !== "";
-}
+const { quoteIdentifier, quoteColumn, selectQuery, updateQuery } = require("../services/queryService");
 
 async function metadataQuery(text, params = []) {
   const executor = getTransactionClient() || pool;
@@ -36,7 +15,7 @@ function extensionRowAlias(spec) {
 
 async function loadExtensionSchemas(coreSchema, coreTable, parentKeyColumn, packageNames) {
   const schemas = [...new Set([coreSchema, ...packageNames])];
-  const invalidSchema = schemas.find((schema) => !IDENTIFIER_PATTERN.test(schema));
+  const invalidSchema = schemas.find((schema) => !/^[a-z][a-z0-9_]*$/.test(schema));
   if (invalidSchema) {
     throw new Error(`Invalid package schema name: ${invalidSchema}`);
   }
@@ -73,22 +52,23 @@ async function loadExtensionSchemas(coreSchema, coreTable, parentKeyColumn, pack
 }
 
 async function loadExtensionColumns(coreTable, schemas) {
-  const result = await metadataQuery(
-    `
-      SELECT
-        table_schema,
-        column_name,
-        column_default,
-        is_nullable,
-        data_type,
-        udt_name
-      FROM information_schema.columns
-      WHERE table_schema = ANY($1::text[])
-        AND table_name = $2
-      ORDER BY table_schema ASC, ordinal_position ASC
-    `,
-    [schemas, coreTable],
-  );
+  const tableAlias = "c";
+  const query = selectQuery()
+    .from("information_schema", "columns", tableAlias)
+    .addFields(tableAlias, [
+      "table_schema",
+      "column_name",
+      "column_default",
+      "is_nullable",
+      "data_type",
+      "udt_name",
+    ])
+    .whereColumn(tableAlias, "table_schema", schemas)
+    .whereColumn(tableAlias, "table_name", coreTable)
+    .orderBy(tableAlias, "table_schema")
+    .orderBy(tableAlias, "ordinal_position");
+
+  const result = await metadataQuery(query.toString(), query.params);
 
   const columnsBySchema = new Map();
   for (const row of result.rows) {
@@ -164,7 +144,7 @@ function collectExtensionValues(entity, extensionFieldSpecs) {
     }
 
     const value = entity[property];
-    if (!isNonEmptyValue(value)) {
+    if (value === null || value === undefined || value === "") {
       continue;
     }
 
@@ -191,23 +171,20 @@ function buildInsertQuery(schema, table, values) {
   };
 }
 
-function buildUpdateQuery(schema, table, values, whereColumn, whereValue) {
+function buildUpdateQuery(schema, table, values, whereColumnName, whereValue) {
   const columns = Object.keys(values);
   if (!columns.length) {
     return null;
   }
 
-  const setSql = columns.map((column, index) => `${quoteColumn(column)} = $${index + 1}`).join(", ");
-  const params = columns.map((column) => values[column]);
-  params.push(whereValue);
+  const query = updateQuery()
+    .from(schema, table, null)
+    .set(null, columns, columns.map((column) => values[column]))
+    .whereExpression(quoteColumn(whereColumnName), whereValue);
 
   return {
-    sql: `
-      UPDATE ${quoteIdentifier(schema)}.${quoteIdentifier(table)}
-      SET ${setSql}
-      WHERE ${quoteColumn(whereColumn)} = $${columns.length + 1}
-    `,
-    params,
+    sql: query.toString(),
+    params: query.params,
   };
 }
 
@@ -237,21 +214,23 @@ async function saveExtensionRows(StorageClass, packageNames, parentGuid, entity,
     }
 
     if (!activeSchemas.has(schema)) {
-      const columnResult = await metadataQuery(
-        `
-          SELECT column_name
-          FROM information_schema.columns
-          WHERE table_schema = $1
-            AND table_name = $2
-          ORDER BY ordinal_position ASC
-        `,
-        [schema, coreTable],
-      );
+      const columnAlias = "c";
+      const columnQuery = selectQuery()
+        .from("information_schema", "columns", columnAlias)
+        .addFields(columnAlias, "column_name")
+        .whereColumn(columnAlias, "table_schema", schema)
+        .whereColumn(columnAlias, "table_name", coreTable)
+        .orderBy(columnAlias, "ordinal_position");
+
+      const columnResult = await metadataQuery(columnQuery.toString(), columnQuery.params);
       const columnsFound = columnResult.rows.map((row) => row.column_name).join(", ") || "(table missing)";
-      const versionResult = await metadataQuery(
-        `SELECT version FROM genrpg.packages WHERE package = $1`,
-        [schema],
-      );
+      const tableAlias = "p";
+      const versionQuery = selectQuery()
+        .from("genrpg", "packages", tableAlias)
+        .addFields(tableAlias, "version")
+        .whereColumn(tableAlias, "package", schema);
+
+      const versionResult = await metadataQuery(versionQuery.toString(), versionQuery.params);
       const packageDbVersion = versionResult.rows[0]?.version ?? "not recorded";
 
       throw new ValidationError([
@@ -286,6 +265,4 @@ module.exports = {
   saveExtensionRows,
   extensionRowAlias,
   loadExtensionSchemas,
-  quoteIdentifier,
-  quoteColumn,
 };

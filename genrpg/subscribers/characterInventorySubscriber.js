@@ -25,12 +25,10 @@ class CharacterInventorySubscriber {
       )
       .whereColumn("i", "character_guid", characterGuid)
       .whereColumn("i", "instance_guid", instance.guid)
-      .whereColumn("c", "type", INVENTORY_COLLECTION_TYPE);
+      .whereColumn("c", "type", INVENTORY_COLLECTION_TYPE)
+      .limit(1);
 
-    const existing = await inventoryStorage.query(
-      `${existingQuery.toString()} LIMIT 1`,
-      existingQuery.params,
-    );
+    const existing = await inventoryStorage.query(existingQuery.toString(), existingQuery.params);
     if (existing.rows.length) {
       return;
     }

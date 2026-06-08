@@ -76,10 +76,13 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
     if (latestVersion) {
       const versionClient = await pool.connect();
       try {
-        const applied = await versionClient.query(
-          `SELECT version FROM genrpg.packages WHERE package = $1`,
-          [machineName],
-        );
+        const tableAlias = "p";
+        const versionQuery = selectQuery()
+          .from("genrpg", "packages", tableAlias)
+          .addFields(tableAlias, "version")
+          .whereColumn(tableAlias, "package", machineName);
+
+        const applied = await versionClient.query(versionQuery.toString(), versionQuery.params);
         const currentVersion = applied.rows[0]?.version ?? 0;
         if (currentVersion < latestVersion) {
           updateWarning =

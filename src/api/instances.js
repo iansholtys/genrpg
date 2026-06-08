@@ -1,7 +1,7 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const { pool } = require("../db/pool");
-const { deleteQuery, updateQuery, selectQuery } = require("../services/queryService");
+const { deleteQuery, updateQuery, selectQuery, qualify } = require("../services/queryService");
 const { isGlobalAdmin } = require("../auth");
 const {
   loadAccessibleInstance,
@@ -187,9 +187,13 @@ instancesRouter.post("/instances", async (req, res, next) => {
       );
 
       // Assign Instance_Owner role to the creator
-      const ownerRole = await client.query(
-        `SELECT id FROM genrpg.roles WHERE name = 'Instance_Owner'`,
-      );
+      const roleTableAlias = "r";
+      const ownerRoleQuery = selectQuery()
+        .from("genrpg", "roles", roleTableAlias)
+        .addFields(roleTableAlias, "id")
+        .whereColumn(roleTableAlias, "name", "Instance_Owner");
+
+      const ownerRole = await client.query(ownerRoleQuery.toString(), ownerRoleQuery.params);
       if (ownerRole.rows.length > 0) {
         await client.query(
           `
@@ -328,22 +332,24 @@ instancesRouter.get("/instances/:guid/users", async (req, res, next) => {
       return;
     }
 
-    const result = await pool.query(
-      `
-        SELECT
-          u.guid,
-          u.email,
-          u.display_name,
-          r.id AS role_id,
-          r.name AS role_name
-        FROM genrpg.instance_user_roles iur
-        JOIN genrpg.users u ON u.guid = iur.user_guid
-        JOIN genrpg.roles r ON r.id = iur.role_id
-        WHERE iur.instance_guid = $1
-        ORDER BY r.id, u.display_name
-      `,
-      [instanceGuid],
-    );
+    const instanceUserRoleAlias = "iur";
+    const userTableAlias = "u";
+    const roleTableAlias = "r";
+    const usersQuery = selectQuery()
+      .from("genrpg", "instance_user_roles", instanceUserRoleAlias)
+      .addJoin("genrpg", "users", userTableAlias,
+        `${qualify(userTableAlias, "guid")} = ${qualify(instanceUserRoleAlias, "user_guid")}`,
+      )
+      .addJoin("genrpg", "roles", roleTableAlias,
+        `${qualify(roleTableAlias, "id")} = ${qualify(instanceUserRoleAlias, "role_id")}`,
+      )
+      .addFields(userTableAlias, ["guid", "email", "display_name"])
+      .addFields(roleTableAlias, ["id", "name"], ["role_id", "role_name"])
+      .whereColumn(instanceUserRoleAlias, "instance_guid", instanceGuid)
+      .orderBy(roleTableAlias, "id")
+      .orderBy(userTableAlias, "display_name");
+
+    const result = await pool.query(usersQuery.toString(), usersQuery.params);
 
     res.json({
       users: result.rows.map((row) => ({

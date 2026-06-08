@@ -41,16 +41,22 @@ async function loadAccessibleInstance(instanceGuid, user, { fields } = {}) {
 }
 
 async function getInstancePermissions(instanceGuid, userGuid) {
-  const result = await pool.query(
-    `
-      SELECT DISTINCT p.name
-      FROM genrpg.instance_user_roles iur
-      JOIN genrpg.role_permissions rp ON rp.role_id = iur.role_id
-      JOIN genrpg.permissions p ON p.id = rp.permission_id
-      WHERE iur.instance_guid = $1 AND iur.user_guid = $2
-    `,
-    [instanceGuid, userGuid],
-  );
+  const instanceUserRoleAlias = "iur";
+  const rolePermissionAlias = "rp";
+  const permissionAlias = "p";
+  const query = selectQuery()
+    .from("genrpg", "instance_user_roles", instanceUserRoleAlias)
+    .addJoin("genrpg", "role_permissions", rolePermissionAlias,
+      `${qualify(rolePermissionAlias, "role_id")} = ${qualify(instanceUserRoleAlias, "role_id")}`,
+    )
+    .addJoin("genrpg", "permissions", permissionAlias,
+      `${qualify(permissionAlias, "id")} = ${qualify(rolePermissionAlias, "permission_id")}`,
+    )
+    .addExpression(`DISTINCT ${qualify(permissionAlias, "name")}`)
+    .whereColumn(instanceUserRoleAlias, "instance_guid", instanceGuid)
+    .whereColumn(instanceUserRoleAlias, "user_guid", userGuid);
+
+  const result = await pool.query(query.toString(), query.params);
   return new Set(result.rows.map((row) => row.name));
 }
 

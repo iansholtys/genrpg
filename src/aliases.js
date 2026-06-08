@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const { pool } = require("./db/pool");
 const { isGlobalAdmin } = require("./auth");
-const { deleteQuery } = require("./services/queryService");
+const { deleteQuery, selectQuery, qualify } = require("./services/queryService");
 
 const RESERVED_ALIAS_PREFIXES = ["api", "static", "auth", "login", "logout", "healthz"];
 
@@ -138,17 +138,23 @@ async function loadAccessibleInstance(instanceGuid, user) {
 }
 
 async function getUserInstancePermissions(instanceGuid, userGuid) {
-  const result = await pool.query(
-    `
-      SELECT DISTINCT p.name
-      FROM genrpg.instance_user_roles iur
-      JOIN genrpg.role_permissions rp ON rp.role_id = iur.role_id
-      JOIN genrpg.permissions p ON p.id = rp.permission_id
-      WHERE iur.instance_guid = $1 AND iur.user_guid = $2
-    `,
-    [instanceGuid, userGuid],
-  );
-  return new Set(result.rows.map((r) => r.name));
+  const instanceUserRoleAlias = "iur";
+  const rolePermissionAlias = "rp";
+  const permissionAlias = "p";
+  const query = selectQuery()
+    .from("genrpg", "instance_user_roles", instanceUserRoleAlias)
+    .addJoin("genrpg", "role_permissions", rolePermissionAlias,
+      `${qualify(rolePermissionAlias, "role_id")} = ${qualify(instanceUserRoleAlias, "role_id")}`,
+    )
+    .addJoin("genrpg", "permissions", permissionAlias,
+      `${qualify(permissionAlias, "id")} = ${qualify(rolePermissionAlias, "permission_id")}`,
+    )
+    .addExpression(`DISTINCT ${qualify(permissionAlias, "name")}`)
+    .whereColumn(instanceUserRoleAlias, "instance_guid", instanceGuid)
+    .whereColumn(instanceUserRoleAlias, "user_guid", userGuid);
+
+  const result = await pool.query(query.toString(), query.params);
+  return new Set(result.rows.map((row) => row.name));
 }
 
 async function canUserRunInstance(instanceGuid, user) {
@@ -165,15 +171,13 @@ async function lookupAlias(alias) {
     return null;
   }
 
-  const result = await pool.query(
-    `
-      SELECT guid, alias, path
-      FROM genrpg.url_aliases
-      WHERE alias = $1
-    `,
-    [normalized],
-  );
+  const tableAlias = "ua";
+  const query = selectQuery()
+    .from("genrpg", "url_aliases", tableAlias)
+    .addFields(tableAlias, ["guid", "alias", "path"])
+    .whereColumn(tableAlias, "alias", normalized);
 
+  const result = await pool.query(query.toString(), query.params);
   return result.rows[0] || null;
 }
 
@@ -191,17 +195,16 @@ async function isAliasAvailable(alias, { excludeInstanceGuid } = {}) {
 }
 
 async function lookupCanonicalAliasForPath(pathValue) {
-  const result = await pool.query(
-    `
-      SELECT alias
-      FROM genrpg.url_aliases
-      WHERE path = $1
-      ORDER BY length(alias) ASC, alias ASC
-      LIMIT 1
-    `,
-    [pathValue],
-  );
+  const tableAlias = "ua";
+  const query = selectQuery()
+    .from("genrpg", "url_aliases", tableAlias)
+    .addFields(tableAlias, "alias")
+    .whereColumn(tableAlias, "path", pathValue)
+    .orderBy(null, `length(${qualify(tableAlias, "alias")})`)
+    .orderBy(tableAlias, "alias")
+    .limit(1);
 
+  const result = await pool.query(query.toString(), query.params);
   return result.rows[0]?.alias || null;
 }
 
@@ -305,16 +308,17 @@ async function deleteAliasesForInstance(client, instanceGuid) {
 async function lookupCustomInstanceUrlSegment(instanceGuid) {
   const pathValue = defaultInstancePath(instanceGuid);
   const defaultAlias = defaultInstanceAlias(instanceGuid);
-  const result = await pool.query(
-    `
-      SELECT alias
-      FROM genrpg.url_aliases
-      WHERE path = $1 AND alias <> $2
-      ORDER BY length(alias) ASC, alias ASC
-      LIMIT 1
-    `,
-    [pathValue, defaultAlias],
-  );
+  const tableAlias = "ua";
+  const query = selectQuery()
+    .from("genrpg", "url_aliases", tableAlias)
+    .addFields(tableAlias, "alias")
+    .whereColumn(tableAlias, "path", pathValue)
+    .whereColumn(tableAlias, "alias", defaultAlias, "<>")
+    .orderBy(null, `length(${qualify(tableAlias, "alias")})`)
+    .orderBy(tableAlias, "alias")
+    .limit(1);
+
+  const result = await pool.query(query.toString(), query.params);
 
   const alias = result.rows[0]?.alias;
   if (!alias || !alias.startsWith("instance/")) {

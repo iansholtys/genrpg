@@ -1,4 +1,28 @@
-const { quoteIdentifier, quoteColumn } = require("../lib/entityExtensions");
+/**
+ * Quote a schema, table, or alias identifier for safe SQL interpolation.
+ *
+ * @param {string} identifier
+ */
+function quoteIdentifier(identifier) {
+  if (!/^[a-z][a-z0-9_]*$/.test(identifier)) {
+    throw new Error(`Invalid database identifier: ${identifier}`);
+  }
+
+  return `"${identifier}"`;
+}
+
+/**
+ * Quote a column name for safe SQL interpolation.
+ *
+ * @param {string} identifier
+ */
+function quoteColumn(identifier) {
+  if (!/^[a-z_][a-z0-9_]*$/.test(identifier)) {
+    throw new Error(`Invalid database column: ${identifier}`);
+  }
+
+  return `"${identifier}"`;
+}
 
 /**
  * Fluent builder for PostgreSQL SELECT, UPDATE, and DELETE queries.
@@ -60,6 +84,7 @@ class QueryObject {
     this._whereClauses = [];
     this._params = [];
     this._orderByClauses = [];
+    this._limit = null;
     this._returning = null;
   }
 
@@ -328,6 +353,22 @@ class QueryObject {
   }
 
   /**
+   * Limit the number of rows returned (SELECT only). Value is inlined as a literal, not a bound param.
+   *
+   * @param {number} count non-negative integer
+   */
+  limit(count) {
+    this._requireType("SELECT", "limit");
+    const limit = Number(count);
+    if (!Number.isInteger(limit) || limit < 0) {
+      throw new Error("limit() requires a non-negative integer");
+    }
+
+    this._limit = limit;
+    return this;
+  }
+
+  /**
    * Add a RETURNING clause (UPDATE or DELETE).
    *
    * @param {string} tableAlias
@@ -546,6 +587,10 @@ class QueryObject {
       parts.push(`ORDER BY ${orderBy}`);
     }
 
+    if (this._limit !== null) {
+      parts.push(`LIMIT ${this._limit}`);
+    }
+
     return parts.join("\n");
   }
 
@@ -589,4 +634,6 @@ module.exports = {
   updateQuery,
   deleteQuery,
   qualify,
+  quoteIdentifier,
+  quoteColumn,
 };

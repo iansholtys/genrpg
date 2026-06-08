@@ -3,6 +3,7 @@ const path = require("node:path");
 
 const { loadPackages } = require("./packages");
 const { applySchemaVersions, applyPendingSchemaVersionsForPackage } = require("./db/versions");
+const { selectQuery } = require("./services/queryService");
 
 const REPO_ROOT = path.join(__dirname, "..");
 
@@ -88,7 +89,12 @@ function sortPackagesByDependencies(packages) {
 }
 
 async function getAppliedVersions(client) {
-  const result = await client.query(`SELECT package, version FROM genrpg.packages`);
+  const tableAlias = "p";
+  const query = selectQuery()
+    .from("genrpg", "packages", tableAlias)
+    .addFields(tableAlias, ["package", "version"]);
+
+  const result = await client.query(query.toString(), query.params);
   return new Map(result.rows.map((row) => [row.package, row.version]));
 }
 

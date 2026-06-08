@@ -1,7 +1,10 @@
 const { pool } = require("../db/pool");
+const { selectQuery, deleteQuery, qualify } = require("./queryService");
 
 /** @type {Map<string, unknown>} */
 const memory = new Map();
+
+const tableAlias = "c";
 
 function memoryKey(cacheKey, instanceGuid) {
   return `${cacheKey}\0${instanceGuid ?? ""}`;
@@ -45,15 +48,16 @@ async function get(cacheKey, { instanceGuid = null } = {}) {
     return memory.get(key);
   }
 
-  const result = await pool.query(
-    `
-      SELECT value
-      FROM genrpg.cache
-      WHERE cache_key = $1
-        AND instance_guid IS NOT DISTINCT FROM $2
-    `,
-    [cacheKey, instanceGuid],
-  );
+  const query = selectQuery()
+    .from("genrpg", "cache", tableAlias)
+    .addFields(tableAlias, "value")
+    .whereColumn(tableAlias, "cache_key", cacheKey)
+    .where(
+      `${qualify(tableAlias, "instance_guid")} IS NOT DISTINCT FROM $1`,
+      [instanceGuid],
+    );
+
+  const result = await pool.query(query.toString(), query.params);
 
   if (!result.rows.length) {
     return undefined;
@@ -90,14 +94,15 @@ async function set(cacheKey, value, { instanceGuid = null } = {}) {
  * @param {{ instanceGuid?: string | null }} [options]
  */
 async function deleteKey(cacheKey, { instanceGuid = null } = {}) {
-  await pool.query(
-    `
-      DELETE FROM genrpg.cache
-      WHERE cache_key = $1
-        AND instance_guid IS NOT DISTINCT FROM $2
-    `,
-    [cacheKey, instanceGuid],
-  );
+  const query = deleteQuery()
+    .from("genrpg", "cache", tableAlias)
+    .whereColumn(tableAlias, "cache_key", cacheKey)
+    .where(
+      `${qualify(tableAlias, "instance_guid")} IS NOT DISTINCT FROM $1`,
+      [instanceGuid],
+    );
+
+  await pool.query(query.toString(), query.params);
 
   memory.delete(memoryKey(cacheKey, instanceGuid));
 }
@@ -107,36 +112,20 @@ async function deleteKey(cacheKey, { instanceGuid = null } = {}) {
  * @returns {Promise<number>}
  */
 async function clear({ instanceGuid, keyPrefix } = {}) {
-  let result;
+  const query = deleteQuery().from("genrpg", "cache", tableAlias);
 
-  if (instanceGuid !== undefined && keyPrefix !== undefined) {
-    result = await pool.query(
-      `
-        DELETE FROM genrpg.cache
-        WHERE instance_guid IS NOT DISTINCT FROM $1
-          AND cache_key LIKE $2
-      `,
-      [instanceGuid, `${keyPrefix}%`],
-    );
-  } else if (instanceGuid !== undefined) {
-    result = await pool.query(
-      `
-        DELETE FROM genrpg.cache
-        WHERE instance_guid IS NOT DISTINCT FROM $1
-      `,
+  if (instanceGuid !== undefined) {
+    query.where(
+      `${qualify(tableAlias, "instance_guid")} IS NOT DISTINCT FROM $1`,
       [instanceGuid],
     );
-  } else if (keyPrefix !== undefined) {
-    result = await pool.query(
-      `
-        DELETE FROM genrpg.cache
-        WHERE cache_key LIKE $1
-      `,
-      [`${keyPrefix}%`],
-    );
-  } else {
-    result = await pool.query(`DELETE FROM genrpg.cache`);
   }
+
+  if (keyPrefix !== undefined) {
+    query.whereColumn(tableAlias, "cache_key", `${keyPrefix}%`, "LIKE");
+  }
+
+  const result = await pool.query(query.toString(), query.params);
 
   evictMemoryMatching({ instanceGuid, keyPrefix });
   return result.rowCount;
