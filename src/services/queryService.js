@@ -1,12 +1,12 @@
 const { quoteIdentifier, quoteColumn } = require("../lib/entityExtensions");
 
 /**
- * Fluent builder for PostgreSQL SELECT and DELETE queries.
+ * Fluent builder for PostgreSQL SELECT, UPDATE, and DELETE queries.
  *
- * Call {@link selectQuery} or {@link deleteQuery} to obtain a {@link QueryObject}, chain
- * configuration methods, then pass {@link QueryObject#toString toString()} and
- * {@link QueryObject#params params} to pg. This module only builds SQL strings; it does not
- * execute them.
+ * Call {@link selectQuery}, {@link updateQuery}, or {@link deleteQuery} to obtain a
+ * {@link QueryObject}, chain configuration methods, then pass
+ * {@link QueryObject#toString toString()} and {@link QueryObject#params params} to pg.
+ * This module only builds SQL strings; it does not execute them.
  */
 
 /** Wrap a single value in a one-element array for field/alias handling. */
@@ -47,7 +47,7 @@ function renumberPlaceholders(expression, startIndex) {
 }
 
 /**
- * Builds a SELECT or DELETE query through a chainable API.
+ * Builds a SELECT, UPDATE, or DELETE query through a chainable API.
  */
 class QueryObject {
   constructor(queryType = "SELECT") {
@@ -56,16 +56,21 @@ class QueryObject {
     this._expressions = [];
     this._from = null;
     this._joins = [];
+    this._setClauses = [];
     this._whereClauses = [];
-    this._whereParams = [];
+    this._params = [];
     this._orderByClauses = [];
     this._returning = null;
   }
 
-  /** @param {"SELECT"|"DELETE"} queryType @param {string} methodName */
+  /**
+   * @param {"SELECT"|"UPDATE"|"DELETE"|("SELECT"|"UPDATE"|"DELETE")[]} queryType
+   * @param {string} methodName
+   */
   _requireType(queryType, methodName) {
-    if (this._queryType !== queryType) {
-      throw new Error(`${methodName}() is only valid on ${queryType} queries`);
+    const allowed = Array.isArray(queryType) ? queryType : [queryType];
+    if (!allowed.includes(this._queryType)) {
+      throw new Error(`${methodName}() is only valid on ${allowed.join(" or ")} queries`);
     }
   }
 
@@ -233,6 +238,57 @@ class QueryObject {
   }
 
   /**
+   * Add SET assignments for an UPDATE. Always pass three arguments.
+   *
+   * Column form: `set(tableAlias, columns, values)` — sets quoted columns to bound values.
+   * Pass `null` as `tableAlias` when columns are unqualified. `columns` and `values` may be
+   * strings or arrays (mapped in order; lengths must match). Each value becomes one `$n` param.
+   *
+   * Expression form: `set(null, expression, args)` — a full assignment fragment including `=`
+   * and local `$1`, `$2`, … placeholders; `args` is the array of values for those placeholders.
+   * Caller must quote identifiers in `expression`.
+   *
+   * @param {string|null} tableAlias
+   * @param {string|string[]} columnsOrExpression
+   * @param {unknown|unknown[]} valuesOrArgs column value(s), or bound args for an expression
+   */
+  set(tableAlias, columnsOrExpression, valuesOrArgs) {
+    this._requireType("UPDATE", "set");
+
+    if (
+      tableAlias === null
+      && typeof columnsOrExpression === "string"
+      && columnsOrExpression.includes("=")
+    ) {
+      this._setClauses.push({
+        expression: columnsOrExpression,
+        args: valuesOrArgs ?? [],
+      });
+      return this;
+    }
+
+    const columns = normalizeToArray(columnsOrExpression);
+    const columnValues = normalizeToArray(valuesOrArgs);
+
+    if (columns.length !== columnValues.length) {
+      throw new Error("set() columns and values must be the same length");
+    }
+
+    for (let index = 0; index < columns.length; index += 1) {
+      const columnSql = tableAlias
+        ? qualify(tableAlias, columns[index])
+        : quoteColumn(columns[index]);
+
+      this._setClauses.push({
+        expression: `${columnSql} = $1`,
+        args: [columnValues[index]],
+      });
+    }
+
+    return this;
+  }
+
+  /**
    * Append one sort key to ORDER BY.
    *
    * Arguments are fixed-order; use `null` as `tableAlias` for expression sorts (pass the
@@ -272,13 +328,13 @@ class QueryObject {
   }
 
   /**
-   * Add a RETURNING clause (DELETE only).
+   * Add a RETURNING clause (UPDATE or DELETE).
    *
    * @param {string} tableAlias
    * @param {string|string[]} fields column names to return
    */
   returning(tableAlias, fields) {
-    this._requireType("DELETE", "returning");
+    this._requireType(["UPDATE", "DELETE"], "returning");
 
     this._returning = {
       tableAlias,
@@ -338,29 +394,50 @@ class QueryObject {
     });
   }
 
+  /** Clear bound parameters before {@link QueryObject#formatSet} / {@link QueryObject#formatWhere}. */
+  _resetParams() {
+    this._params = [];
+  }
+
   /**
-   * Render WHERE conditions joined with AND, renumber placeholders, and update {@link QueryObject#params}.
+   * Renumber clause expressions and append bound values to {@link QueryObject#params}.
+   *
+   * @param {{ expression: string, args: unknown[] }[]} clauses
+   * @returns {string[]}
+   */
+  _formatClauseGroup(clauses) {
+    const parts = [];
+    let offset = this._params.length + 1;
+
+    for (const clause of clauses) {
+      parts.push(renumberPlaceholders(clause.expression, offset));
+      this._params.push(...clause.args);
+      offset += clause.args.length;
+    }
+
+    return parts;
+  }
+
+  /** Render SET assignments joined with commas (without the `SET` keyword), or null when empty. */
+  formatSet() {
+    if (!this._setClauses.length) {
+      return null;
+    }
+
+    return this._formatClauseGroup(this._setClauses).join(", ");
+  }
+
+  /**
+   * Render WHERE conditions joined with AND and renumber placeholders into {@link QueryObject#params}.
    *
    * @returns {string|null} SQL after `WHERE`, or null when there are no conditions
    */
   formatWhere() {
     if (!this._whereClauses.length) {
-      this._whereParams = [];
       return null;
     }
 
-    let paramOffset = 1;
-    const params = [];
-    const parts = [];
-
-    for (const clause of this._whereClauses) {
-      parts.push(renumberPlaceholders(clause.expression, paramOffset));
-      params.push(...clause.args);
-      paramOffset += clause.args.length;
-    }
-
-    this._whereParams = params;
-    return parts.join(" AND ");
+    return this._formatClauseGroup(this._whereClauses).join(" AND ");
   }
 
   /** Render ORDER BY sort keys joined with commas (without the `ORDER BY` keyword). */
@@ -393,10 +470,39 @@ class QueryObject {
     return fields.map((field) => qualify(tableAlias, field)).join(", ");
   }
 
-  /** Bound parameters for all WHERE clauses, in placeholder order. */
+  /** Bound parameters accumulated by {@link QueryObject#formatSet} and {@link QueryObject#formatWhere}. */
   get params() {
+    this._resetParams();
+    if (this._queryType === "UPDATE") {
+      this.formatSet();
+    }
     this.formatWhere();
-    return this._whereParams;
+    return this._params;
+  }
+
+  /** Assemble and return an UPDATE statement. @returns {string} */
+  toStringUpdate() {
+    const set = this.formatSet();
+    if (!set) {
+      throw new Error("Query requires at least one set() assignment");
+    }
+
+    const parts = [
+      `UPDATE ${this.formatFrom()}`,
+      `SET ${set}`,
+    ];
+
+    const where = this.formatWhere();
+    if (where) {
+      parts.push(`WHERE ${where}`);
+    }
+
+    const returning = this.formatReturning();
+    if (returning) {
+      parts.push(`RETURNING ${returning}`);
+    }
+
+    return parts.join("\n");
   }
 
   /** Assemble and return a DELETE statement. @returns {string} */
@@ -449,9 +555,12 @@ class QueryObject {
       throw new Error("Query requires from()");
     }
 
+    this._resetParams();
     switch (this._queryType) {
       case "SELECT":
         return this.toStringSelect();
+      case "UPDATE":
+        return this.toStringUpdate();
       case "DELETE":
         return this.toStringDelete();
       default:
@@ -465,6 +574,11 @@ function selectQuery() {
   return new QueryObject("SELECT");
 }
 
+/** Create a new {@link QueryObject} for building an UPDATE query. @returns {QueryObject} */
+function updateQuery() {
+  return new QueryObject("UPDATE");
+}
+
 /** Create a new {@link QueryObject} for building a DELETE query. @returns {QueryObject} */
 function deleteQuery() {
   return new QueryObject("DELETE");
@@ -472,6 +586,7 @@ function deleteQuery() {
 
 module.exports = {
   selectQuery,
+  updateQuery,
   deleteQuery,
   qualify,
 };

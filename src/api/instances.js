@@ -1,7 +1,7 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const { pool } = require("../db/pool");
-const { deleteQuery } = require("../services/queryService");
+const { deleteQuery, updateQuery } = require("../services/queryService");
 const { isGlobalAdmin } = require("../auth");
 const {
   loadAccessibleInstance,
@@ -271,15 +271,21 @@ instancesRouter.put("/instances/:guid", async (req, res, next) => {
     try {
       await client.query("BEGIN");
 
-      const updated = await client.query(
-        `
-          UPDATE genrpg.instances
-          SET name = $2, description = $3
-          WHERE guid = $1
-          RETURNING guid, name, description, packages, create_datetime, update_datetime
-        `,
-        [instanceGuid, name, description],
-      );
+      const tableAlias = "i";
+      const updateInstanceQuery = updateQuery()
+        .from("genrpg", "instances", tableAlias)
+        .set(tableAlias, ["name", "description"], [name, description])
+        .whereColumn(tableAlias, "guid", instanceGuid)
+        .returning(tableAlias, [
+          "guid",
+          "name",
+          "description",
+          "packages",
+          "create_datetime",
+          "update_datetime",
+        ]);
+
+      const updated = await client.query(updateInstanceQuery.toString(), updateInstanceQuery.params);
 
       if (urlSegment !== currentUrlSegment) {
         await syncCustomInstanceAlias(client, instanceGuid, urlSegment);
@@ -478,7 +484,12 @@ instancesRouter.delete("/instances/:guid", async (req, res, next) => {
     try {
       await client.query("BEGIN");
       await deleteAliasesForInstance(client, instanceGuid);
-      await client.query(`DELETE FROM genrpg.instances WHERE guid = $1`, [instanceGuid]);
+      const tableAlias = "i";
+      const deleteInstanceQuery = deleteQuery()
+        .from("genrpg", "instances", tableAlias)
+        .whereColumn(tableAlias, "guid", instanceGuid);
+
+      await client.query(deleteInstanceQuery.toString(), deleteInstanceQuery.params);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");

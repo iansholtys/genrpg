@@ -1,6 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { UserEntity } = require("../entities/userEntity");
-const { qualify } = require("../services/queryService");
+const { updateQuery, qualify } = require("../services/queryService");
 
 class UserStorage extends BaseStorage {
   static schema = "genrpg";
@@ -45,15 +45,15 @@ class UserStorage extends BaseStorage {
       throw new Error("Users are created via OIDC login, not entity.save()");
     }
 
-    const result = await this.query(
-      `
-        UPDATE ${this.schema_table}
-        SET email = $1, display_name = $2, admin = $3
-        WHERE guid = $4
-        RETURNING guid
-      `,
-      [entity.email, entity.displayName, entity.admin, entity.guid],
-    );
+    const tableAlias = "u";
+    const { email, displayName, admin } = entity;
+    const query = updateQuery()
+      .from("genrpg", "users", tableAlias)
+      .set(tableAlias, ["email", "display_name", "admin"], [email, displayName, admin])
+      .whereColumn(tableAlias, "guid", entity.guid)
+      .returning(tableAlias, "guid");
+
+    const result = await this.query(query.toString(), query.params);
     if (!result.rows.length) {
       return null;
     }
