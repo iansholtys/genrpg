@@ -14,14 +14,14 @@ class ItemCollectionStorage extends BaseStorage {
     const query = await this.buildSelect();
     const t = this.tableAlias;
 
-    query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+    query.whereColumn(t, "instance_guid", this.instanceGuid);
 
     if (itemGuid) {
-      query.where(`${t}.item_guid = $1`, [itemGuid]);
+      query.whereColumn(t, "item_guid", itemGuid);
     }
 
     if (type) {
-      query.where(`${t}.type = $1`, [type]);
+      query.whereColumn(t, "type", type);
     }
 
     query

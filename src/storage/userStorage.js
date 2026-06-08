@@ -1,5 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { UserEntity } = require("../entities/userEntity");
+const { qualify } = require("../services/queryService");
 
 class UserStorage extends BaseStorage {
   static schema = "genrpg";
@@ -25,8 +26,13 @@ class UserStorage extends BaseStorage {
     const t = this.tableAlias;
 
     query
-      .addJoin("genrpg", "instance_user_roles", "iur", `iur.user_guid = ${t}.guid`)
-      .where(`iur.instance_guid = $1`, [instanceGuid])
+      .addJoin(
+        "genrpg",
+        "instance_user_roles",
+        "iur",
+        `${qualify("iur", "user_guid")} = ${qualify(t, "guid")}`,
+      )
+      .whereColumn("iur", "instance_guid", instanceGuid)
       .orderBy(t, "display_name", "ASC", "NULLS LAST")
       .orderBy(t, "email");
 

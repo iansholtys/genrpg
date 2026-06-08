@@ -13,14 +13,14 @@ class InventoryStorage extends BaseStorage {
     const query = await this.buildSelect();
     const t = this.tableAlias;
 
-    query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+    query.whereColumn(t, "instance_guid", this.instanceGuid);
 
     if (characterGuid) {
-      query.where(`${t}.character_guid = $1`, [characterGuid]);
+      query.whereColumn(t, "character_guid", characterGuid);
     }
 
     if (collectionGuid) {
-      query.where(`${t}.collection_guid = $1`, [collectionGuid]);
+      query.whereColumn(t, "collection_guid", collectionGuid);
     }
 
     query.orderBy(t, "create_datetime");

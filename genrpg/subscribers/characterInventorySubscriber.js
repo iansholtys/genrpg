@@ -1,6 +1,6 @@
 const InventoryStorage = require("../../src/storage/inventoryStorage");
 const ItemCollectionStorage = require("../../src/storage/itemCollectionStorage");
-const { select } = require("../../src/services/queryService");
+const { select, qualify } = require("../../src/services/queryService");
 
 const INVENTORY_COLLECTION_TYPE = "inventory";
 
@@ -17,10 +17,15 @@ class CharacterInventorySubscriber {
     const existingQuery = select()
       .from("genrpg", "inventories", "i")
       .addFields("i", ["guid"])
-      .addJoin("genrpg", "item_collections", "c", "c.guid = i.collection_guid")
-      .where("i.character_guid = $1", [characterGuid])
-      .where("i.instance_guid = $1", [instance.guid])
-      .where("c.type = $1", [INVENTORY_COLLECTION_TYPE]);
+      .addJoin(
+        "genrpg",
+        "item_collections",
+        "c",
+        `${qualify("c", "guid")} = ${qualify("i", "collection_guid")}`,
+      )
+      .whereColumn("i", "character_guid", characterGuid)
+      .whereColumn("i", "instance_guid", instance.guid)
+      .whereColumn("c", "type", INVENTORY_COLLECTION_TYPE);
 
     const existing = await inventoryStorage.query(
       `${existingQuery.toString()} LIMIT 1`,

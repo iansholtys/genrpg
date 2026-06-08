@@ -1,5 +1,14 @@
 const { quoteIdentifier, quoteColumn } = require("../lib/entityExtensions");
 
+/**
+ * Fluent builder for PostgreSQL SELECT queries.
+ *
+ * Call {@link select} to obtain a {@link QueryObject}, chain configuration methods,
+ * then pass {@link QueryObject#toString toString()} and {@link QueryObject#params params}
+ * to pg. This module only builds SQL strings; it does not execute them.
+ */
+
+/** Wrap a single value in a one-element array for field/alias handling. */
 function normalizeToArray(value) {
   if (Array.isArray(value)) {
     return value;
@@ -8,10 +17,19 @@ function normalizeToArray(value) {
   return [value];
 }
 
+/**
+ * Returns `"tableAlias"."column"` with identifiers quoted for safe SQL interpolation.
+ * Use for join ON clauses and other raw fragments; prefer {@link QueryObject#whereColumn}
+ * for simple WHERE comparisons on a qualified column.
+ *
+ * @param {string} tableAlias
+ * @param {string} column
+ */
 function qualify(tableAlias, column) {
   return `${quoteIdentifier(tableAlias)}.${quoteColumn(column)}`;
 }
 
+/** Format one SELECT list entry as `"alias"."field"` or `"alias"."field" AS "name"`. */
 function formatField(tableAlias, field, alias) {
   const part = qualify(tableAlias, field);
 
@@ -22,10 +40,14 @@ function formatField(tableAlias, field, alias) {
   return part;
 }
 
+/** Renumber `$1`, `$2`, … placeholders in a clause to continue a running parameter offset. */
 function renumberPlaceholders(expression, startIndex) {
   return expression.replace(/\$(\d+)/g, (_, number) => `$${startIndex + Number(number) - 1}`);
 }
 
+/**
+ * Builds a SELECT query through a chainable API.
+ */
 class QueryObject {
   constructor() {
     this._fieldGroups = [];
@@ -37,11 +59,25 @@ class QueryObject {
     this._orderByClauses = [];
   }
 
+  /**
+   * Set the query's primary FROM table.
+   *
+   * @param {string} schema
+   * @param {string} table
+   * @param {string} [tableAlias] alias used in SELECT fields and WHERE/ORDER BY references
+   */
   from(schema, table, tableAlias) {
     this._from = { schema, table, tableAlias };
     return this;
   }
 
+  /**
+   * Add quoted columns from a table to the SELECT list.
+   *
+   * @param {string} tableAlias
+   * @param {string|string[]} fields column names on the joined table
+   * @param {string|string[]} [aliases] optional output names (AS); maps to fields in order
+   */
   addFields(tableAlias, fields, aliases) {
     this._fieldGroups.push({
       tableAlias,
@@ -51,11 +87,18 @@ class QueryObject {
     return this;
   }
 
+  /**
+   * Add a raw SQL expression to the SELECT list.
+   *
+   * @param {string} expression raw SQL for the SELECT list; caller must quote identifiers
+   * @param {string} [alias] optional output column name
+   */
   addExpression(expression, alias) {
     this._expressions.push({ expression, alias });
     return this;
   }
 
+  /** Record one JOIN clause (used by {@link QueryObject#addJoin} and {@link QueryObject#addLeftJoin}). */
   _addJoin(type, schema, table, tableAlias, joinCondition) {
     this._joins.push({
       type,
@@ -67,14 +110,31 @@ class QueryObject {
     return this;
   }
 
+  /**
+   * Add an INNER JOIN.
+   *
+   * @param {string} schema
+   * @param {string} table
+   * @param {string|null} tableAlias pass `null` when the joined table has no alias
+   * @param {string} joinCondition raw SQL for the ON clause; use {@link qualify} for column refs
+   */
   addJoin(schema, table, tableAlias, joinCondition) {
     return this._addJoin("INNER", schema, table, tableAlias, joinCondition);
   }
 
+  /** Add a LEFT JOIN. @see {@link QueryObject#addJoin} */
   addLeftJoin(schema, table, tableAlias, joinCondition) {
     return this._addJoin("LEFT", schema, table, tableAlias, joinCondition);
   }
 
+  /**
+   * Append a raw WHERE fragment. Placeholders start at `$1` per clause; renumbered in
+   * {@link QueryObject#toString toString()}. Prefer {@link QueryObject#whereColumn} or
+   * {@link QueryObject#whereExpression} for simple comparisons.
+   *
+   * @param {string} expression SQL after WHERE; caller must quote identifiers
+   * @param {unknown[]} [args] bound parameter values
+   */
   where(expression, args = []) {
     this._whereClauses.push({
       expression,
@@ -83,6 +143,93 @@ class QueryObject {
     return this;
   }
 
+  /** Build SQL and args for {@link QueryObject#whereColumn} and {@link QueryObject#whereExpression}. */
+  _whereComparison(leftSql, comparison, value) {
+    let operator = comparison.trim().toUpperCase();
+    const isArray = Array.isArray(value);
+
+    if (operator === "=" && isArray) {
+      operator = "IN";
+    }
+
+    let expression;
+    let args;
+
+    switch (operator) {
+      case "=":
+      case ">":
+      case "<":
+      case ">=":
+      case "<=":
+      case "!=":
+      case "<>":
+        expression = `${leftSql} ${operator} $1`;
+        args = [value];
+        break;
+      case "LIKE":
+        expression = `${leftSql} LIKE $1`;
+        args = [value];
+        break;
+      case "ANY":
+      case "IN":
+        if (!isArray) {
+          throw new Error("IN comparison requires an array value");
+        }
+        expression = `${leftSql} = ANY($1)`;
+        args = [value];
+        break;
+      case "BETWEEN":
+        if (!isArray || value.length !== 2) {
+          throw new Error("BETWEEN comparison requires a two-item array value");
+        }
+        expression = `${leftSql} BETWEEN $1 AND $2`;
+        args = value;
+        break;
+      default:
+        throw new Error(`Unsupported where comparison: ${comparison}`);
+    }
+
+    return this.where(expression, args);
+  }
+
+  /**
+   * WHERE on a qualified column. Comparison is the last argument (defaults to `"="`).
+   * When comparison is `"="` and `value` is an array, uses `IN` (`= ANY($1)`).
+   *
+   * Supported comparisons: `=`, `>`, `<`, `>=`, `<=`, `!=`, `<>`, `LIKE`, `IN`, `ANY`, `BETWEEN`.
+   * `BETWEEN` expects `value` as a two-item array.
+   *
+   * @param {string} tableAlias
+   * @param {string} column
+   * @param {unknown} value
+   * @param {string} [comparison]
+   */
+  whereColumn(tableAlias, column, value, comparison = "=") {
+    return this._whereComparison(qualify(tableAlias, column), comparison, value);
+  }
+
+  /**
+   * WHERE on a raw left-hand expression. Same comparison rules as {@link QueryObject#whereColumn}.
+   *
+   * @param {string} expression SQL for the column side; caller must quote identifiers
+   * @param {unknown} value
+   * @param {string} [comparison]
+   */
+  whereExpression(expression, value, comparison = "=") {
+    return this._whereComparison(expression, comparison, value);
+  }
+
+  /**
+   * Append one sort key to ORDER BY.
+   *
+   * Arguments are fixed-order; use `null` as `tableAlias` for expression sorts (pass the
+   * full expression as `column`, including functions such as COALESCE).
+   *
+   * @param {string|null} tableAlias `null` for expression sorts; otherwise the table alias
+   * @param {string} column column name, or a full SQL expression when `tableAlias` is null
+   * @param {string} [direction] `ASC` or `DESC`
+   * @param {string|null} [nullsOrdering] `NULLS FIRST` or `NULLS LAST`; omit for default null ordering
+   */
   orderBy(tableAlias, column, direction = "ASC", nullsOrdering = null) {
     if (!column) {
       throw new Error("orderBy requires a column or expression");
@@ -110,6 +257,7 @@ class QueryObject {
     return this;
   }
 
+  /** Render the SELECT column list (without the `SELECT` keyword). */
   formatSelect() {
     const selectParts = [];
 
@@ -133,6 +281,7 @@ class QueryObject {
     return selectParts.join(", ");
   }
 
+  /** Render `"schema"."table"` and optional table alias (without the `FROM` keyword). */
   formatFrom() {
     const { schema, table, tableAlias } = this._from;
     let sql = `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
@@ -144,6 +293,7 @@ class QueryObject {
     return sql;
   }
 
+  /** Render all JOIN lines, or an empty array when there are none. */
   formatJoins() {
     return this._joins.map(({ type = "INNER", schema, table, tableAlias, joinCondition }) => {
       const joinKeyword = type === "LEFT" ? "LEFT JOIN" : "JOIN";
@@ -158,6 +308,11 @@ class QueryObject {
     });
   }
 
+  /**
+   * Render WHERE conditions joined with AND, renumber placeholders, and update {@link QueryObject#params}.
+   *
+   * @returns {string|null} SQL after `WHERE`, or null when there are no conditions
+   */
   formatWhere() {
     if (!this._whereClauses.length) {
       this._whereParams = [];
@@ -178,6 +333,7 @@ class QueryObject {
     return parts.join(" AND ");
   }
 
+  /** Render ORDER BY sort keys joined with commas (without the `ORDER BY` keyword). */
   formatOrderBy() {
     const parts = [];
 
@@ -197,11 +353,13 @@ class QueryObject {
     return parts.join(", ");
   }
 
+  /** Bound parameters for all WHERE clauses, in placeholder order. */
   get params() {
     this.formatWhere();
     return this._whereParams;
   }
 
+  /** Assemble and return the full SELECT statement. @returns {string} */
   toString() {
     const select = this.formatSelect();
 
@@ -233,6 +391,7 @@ class QueryObject {
   }
 }
 
+/** Create a new {@link QueryObject} for building a SELECT query. @returns {QueryObject} */
 function select() {
   return new QueryObject();
 }

@@ -13,7 +13,7 @@ class CharacterStorage extends BaseStorage {
     const t = this.tableAlias;
 
     query
-      .where(`${t}.instance_guid = $1`, [this.instanceGuid])
+      .whereColumn(t, "instance_guid", this.instanceGuid)
       .orderBy(t, "display_name", "ASC", "NULLS LAST")
       .orderBy(t, "create_datetime");
 

@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
 const { getOrCompute } = require("../services/cacheService");
-const { select } = require("../services/queryService");
+const { select, qualify } = require("../services/queryService");
 const {
   buildExtensionFieldSpecs,
   saveExtensionRows,
@@ -212,7 +212,7 @@ class BaseStorage {
         schema,
         this.constructor.table,
         joinAlias,
-        `${joinAlias}.${quoteColumn(parentKeyColumn)} = ${coreTableAlias}.guid`,
+        `${qualify(joinAlias, parentKeyColumn)} = ${qualify(coreTableAlias, "guid")}`,
       );
 
       query.addFields(
@@ -306,9 +306,9 @@ class BaseStorage {
     const query = await this.buildSelect();
     const t = this.tableAlias;
 
-    query.where(`${t}.guid = ANY($1)`, [entityGuids]);
+    query.whereColumn(t, "guid", entityGuids);
     if (this.instanceGuid) {
-      query.where(`${t}.instance_guid = $1`, [this.instanceGuid]);
+      query.whereColumn(t, "instance_guid", this.instanceGuid);
     }
 
     const result = await this.query(query.toString(), query.params);
@@ -479,10 +479,10 @@ class BaseStorage {
     const query = select()
       .from(schema, table, tableAlias)
       .addFields(tableAlias, "guid")
-      .where(`"guid" = $1`, [entityGuid]);
+      .whereColumn(tableAlias, "guid", entityGuid);
 
     if (this.instanceGuid) {
-      query.where(`"instance_guid" = $1`, [this.instanceGuid]);
+      query.whereColumn(tableAlias, "instance_guid", this.instanceGuid);
     }
 
     const result = await this.query(query.toString(), query.params);

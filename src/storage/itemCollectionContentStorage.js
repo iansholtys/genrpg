@@ -34,8 +34,8 @@ class ItemCollectionContentStorage extends BaseStorage {
     const t = this.tableAlias;
 
     query
-      .where(`${t}.instance_guid = $1`, [this.instanceGuid])
-      .where(`${t}.collection_guid = $1`, [collectionGuid])
+      .whereColumn(t, "instance_guid", this.instanceGuid)
+      .whereColumn(t, "collection_guid", collectionGuid)
       .orderBy(t, "position")
       .orderBy(t, "create_datetime");
 
