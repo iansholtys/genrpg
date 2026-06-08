@@ -1,5 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { InventoryEntity } = require("../entities/inventoryEntity");
+const { updateQuery } = require("../services/queryService");
 
 /**
  * Storage for character inventories (links a collection to a character).
@@ -45,15 +46,17 @@ class InventoryStorage extends BaseStorage {
       );
       entity.isNew = false;
     } else {
-      const result = await this.query(
-        `
-          UPDATE ${this.schema_table}
-          SET collection_guid = $1, character_guid = $2
-          WHERE guid = $3 AND instance_guid = $4
-          RETURNING guid
-        `,
-        [entity.collectionGuid, entity.characterGuid, entity.guid, entity.instanceGuid],
-      );
+      const { schema, table } = this.constructor;
+      const t = this.tableAlias;
+      const { collectionGuid, characterGuid, guid } = entity;
+      const query = updateQuery()
+        .from(schema, table, t)
+        .set(t, ["collection_guid", "character_guid"], [collectionGuid, characterGuid])
+        .whereColumn(t, "guid", guid)
+        .whereColumn(t, "instance_guid", this.instanceGuid)
+        .returning(t, "guid");
+
+      const result = await this.query(query.toString(), query.params);
       if (!result.rows.length) {
         return null;
       }

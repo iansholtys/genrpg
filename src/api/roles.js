@@ -1,22 +1,40 @@
 const express = require("express");
 const { pool } = require("../db/pool");
 const { requireAdmin } = require("../auth");
+const {
+  deleteQuery,
+  qualify,
+  selectQuery,
+  updateQuery,
+} = require("../services/queryService");
 
 const rolesRouter = express.Router();
 
 rolesRouter.get("/roles", async (req, res, next) => {
   try {
-    const rolesResult = await pool.query(
-      `SELECT id, name, description FROM genrpg.roles ORDER BY id`,
-    );
-    const rpResult = await pool.query(
-      `
-        SELECT rp.role_id, p.id AS permission_id, p.name AS permission_name
-        FROM genrpg.role_permissions rp
-        JOIN genrpg.permissions p ON p.id = rp.permission_id
-        ORDER BY rp.role_id, p.id
-      `,
-    );
+    const roleAlias = "r";
+    const rolesQuery = selectQuery()
+      .from("genrpg", "roles", roleAlias)
+      .addFields(roleAlias, ["id", "name", "description"])
+      .orderBy(roleAlias, "id");
+
+    const rolePermissionAlias = "rp";
+    const permissionAlias = "p";
+    const permissionsQuery = selectQuery()
+      .from("genrpg", "role_permissions", rolePermissionAlias)
+      .addFields(rolePermissionAlias, "role_id")
+      .addJoin(
+        "genrpg",
+        "permissions",
+        permissionAlias,
+        `${qualify(permissionAlias, "id")} = ${qualify(rolePermissionAlias, "permission_id")}`,
+      )
+      .addFields(permissionAlias, ["id", "name"], ["permission_id", "permission_name"])
+      .orderBy(rolePermissionAlias, "role_id")
+      .orderBy(permissionAlias, "id");
+
+    const rolesResult = await pool.query(rolesQuery.toString(), rolesQuery.params);
+    const rpResult = await pool.query(permissionsQuery.toString(), permissionsQuery.params);
     const permissionsByRole = new Map();
     for (const row of rpResult.rows) {
       if (!permissionsByRole.has(row.role_id)) {
@@ -39,9 +57,13 @@ rolesRouter.get("/roles", async (req, res, next) => {
 
 rolesRouter.get("/permissions", async (req, res, next) => {
   try {
-    const result = await pool.query(
-      `SELECT id, name, description FROM genrpg.permissions ORDER BY id`,
-    );
+    const tableAlias = "p";
+    const query = selectQuery()
+      .from("genrpg", "permissions", tableAlias)
+      .addFields(tableAlias, ["id", "name", "description"])
+      .orderBy(tableAlias, "id");
+
+    const result = await pool.query(query.toString(), query.params);
     res.json({ permissions: result.rows });
   } catch (error) {
     next(error);
@@ -110,10 +132,14 @@ rolesRouter.put("/roles/:id", requireAdmin, async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const roleResult = await client.query(
-        `UPDATE genrpg.roles SET name = $1, description = $2 WHERE id = $3 RETURNING id, name, description`,
-        [name, description, roleId],
-      );
+      const tableAlias = "r";
+      const updateRoleQuery = updateQuery()
+        .from("genrpg", "roles", tableAlias)
+        .set(tableAlias, ["name", "description"], [name, description])
+        .whereColumn(tableAlias, "id", roleId)
+        .returning(tableAlias, ["id", "name", "description"]);
+
+      const roleResult = await client.query(updateRoleQuery.toString(), updateRoleQuery.params);
       if (!roleResult.rows.length) {
         await client.query("ROLLBACK");
         res.status(404).json({ error: "Role not found" });
@@ -121,10 +147,11 @@ rolesRouter.put("/roles/:id", requireAdmin, async (req, res, next) => {
       }
 
       // Replace all permissions for this role
-      await client.query(
-        `DELETE FROM genrpg.role_permissions WHERE role_id = $1`,
-        [roleId],
-      );
+      const deletePermissionsQuery = deleteQuery()
+        .from("genrpg", "role_permissions", "rp")
+        .whereColumn("rp", "role_id", roleId);
+
+      await client.query(deletePermissionsQuery.toString(), deletePermissionsQuery.params);
       if (permissionIds.length > 0) {
         const values = permissionIds.map((pid, i) => `($1, $${i + 2})`).join(", ");
         await client.query(
@@ -155,10 +182,13 @@ rolesRouter.delete("/roles/:id", requireAdmin, async (req, res, next) => {
     const roleId = Number(req.params.id);
 
     // Prevent deleting roles that are in use
-    const usageResult = await pool.query(
-      `SELECT COUNT(*) AS count FROM genrpg.instance_user_roles WHERE role_id = $1`,
-      [roleId],
-    );
+    const tableAlias = "iur";
+    const usageQuery = selectQuery()
+      .from("genrpg", "instance_user_roles", tableAlias)
+      .addExpression("COUNT(*)", "count")
+      .whereColumn(tableAlias, "role_id", roleId);
+
+    const usageResult = await pool.query(usageQuery.toString(), usageQuery.params);
     if (Number(usageResult.rows[0].count) > 0) {
       res.status(400).json({
         error: "Cannot delete this role because it is assigned to users on one or more instances",
@@ -166,10 +196,13 @@ rolesRouter.delete("/roles/:id", requireAdmin, async (req, res, next) => {
       return;
     }
 
-    const result = await pool.query(
-      `DELETE FROM genrpg.roles WHERE id = $1 RETURNING id`,
-      [roleId],
-    );
+    const roleAlias = "r";
+    const deleteRoleQuery = deleteQuery()
+      .from("genrpg", "roles", roleAlias)
+      .whereColumn(roleAlias, "id", roleId)
+      .returning(roleAlias, "id");
+
+    const result = await pool.query(deleteRoleQuery.toString(), deleteRoleQuery.params);
     if (!result.rows.length) {
       res.status(404).json({ error: "Role not found" });
       return;

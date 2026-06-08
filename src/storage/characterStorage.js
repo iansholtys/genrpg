@@ -1,4 +1,5 @@
 const { BaseStorage } = require("./baseStorage");
+const { updateQuery } = require("../services/queryService");
 
 class CharacterStorage extends BaseStorage {
   static schema = "genrpg";
@@ -22,6 +23,7 @@ class CharacterStorage extends BaseStorage {
   }
 
   async save(entity) {
+    const { userGuid, displayName, fullName, appearance, pronouns, guid } = entity;
     if (entity.isNew) {
       await this.query(
         `
@@ -37,39 +39,28 @@ class CharacterStorage extends BaseStorage {
           VALUES ($1, $2, $3, $4, $5, $6, $7)
         `,
         [
-          entity.guid,
+          guid,
           entity.instanceGuid,
-          entity.userGuid,
-          entity.displayName,
-          entity.fullName,
-          entity.appearance,
-          entity.pronouns,
+          userGuid,
+          displayName,
+          fullName,
+          appearance,
+          pronouns,
         ],
       );
       entity.isNew = false;
     } else {
-      const result = await this.query(
-        `
-          UPDATE ${this.schema_table}
-          SET
-            user_guid = $1,
-            display_name = $2,
-            full_name = $3,
-            appearance = $4,
-            pronouns = $5
-          WHERE guid = $6 AND instance_guid = $7
-          RETURNING guid
-        `,
-        [
-          entity.userGuid,
-          entity.displayName,
-          entity.fullName,
-          entity.appearance,
-          entity.pronouns,
-          entity.guid,
-          entity.instanceGuid,
-        ],
-      );
+      const { schema, table } = this.constructor;
+      const t = this.tableAlias;
+      const query = updateQuery()
+        .from(schema, table, t)
+        .set(t, ["user_guid", "display_name", "full_name", "appearance", "pronouns"],
+          [userGuid, displayName, fullName, appearance, pronouns])
+        .whereColumn(t, "guid", guid)
+        .whereColumn(t, "instance_guid", this.instanceGuid)
+        .returning(t, "guid");
+
+      const result = await this.query(query.toString(), query.params);
       if (!result.rows.length) {
         return null;
       }

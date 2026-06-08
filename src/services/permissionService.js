@@ -3,6 +3,7 @@
  */
 const { pool } = require("../db/pool");
 const { isGlobalAdmin } = require("../auth");
+const { qualify, selectQuery } = require("./queryService");
 const {
   loadPackages,
   resolveInstancePackages,
@@ -54,15 +55,18 @@ async function getInstancePermissions(instanceGuid, userGuid) {
 }
 
 async function getUserInstanceRole(instanceGuid, userGuid) {
-  const result = await pool.query(
-    `
-      SELECT r.name AS role_name
-      FROM genrpg.instance_user_roles iur
-      JOIN genrpg.roles r ON r.id = iur.role_id
-      WHERE iur.instance_guid = $1 AND iur.user_guid = $2
-    `,
-    [instanceGuid, userGuid],
-  );
+  const tableAlias = "iur";
+  const roleTableAlias = "r";
+  const query = selectQuery()
+    .from("genrpg", "instance_user_roles", tableAlias)
+    .addJoin("genrpg", "roles", roleTableAlias,
+      `${qualify(roleTableAlias, "id")} = ${qualify(tableAlias, "role_id")}`,
+    )
+    .addFields(roleTableAlias, "name", "role_name")
+    .whereColumn(tableAlias, "instance_guid", instanceGuid)
+    .whereColumn(tableAlias, "user_guid", userGuid);
+
+  const result = await pool.query(query.toString(), query.params);
   return result.rows[0]?.role_name || null;
 }
 

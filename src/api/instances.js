@@ -1,7 +1,7 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const { pool } = require("../db/pool");
-const { deleteQuery, updateQuery } = require("../services/queryService");
+const { deleteQuery, updateQuery, selectQuery } = require("../services/queryService");
 const { isGlobalAdmin } = require("../auth");
 const {
   loadAccessibleInstance,
@@ -378,10 +378,13 @@ instancesRouter.put("/instances/:guid/users/:userGuid", async (req, res, next) =
     }
 
     // Verify the role exists
-    const roleResult = await pool.query(
-      `SELECT id, name FROM genrpg.roles WHERE id = $1`,
-      [roleId],
-    );
+    const roleTableAlias = "r";
+    const roleLookupQuery = selectQuery()
+      .from("genrpg", "roles", roleTableAlias)
+      .addFields(roleTableAlias, ["id", "name"])
+      .whereColumn(roleTableAlias, "id", roleId);
+
+    const roleResult = await pool.query(roleLookupQuery.toString(), roleLookupQuery.params);
     if (!roleResult.rows.length) {
       res.status(400).json({ error: "Invalid role" });
       return;

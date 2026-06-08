@@ -11,6 +11,7 @@ const express = require("express");
 const { pool } = require("../db/pool");
 const { applySchemaVersions, reapplyPackageSchemaVersions } = require("../db/versions");
 const { requireAdmin } = require("../auth");
+const { selectQuery } = require("../services/queryService");
 const {
   PackageLoadError,
   loadPackages,
@@ -98,7 +99,12 @@ packagesRouter.get("/packages", async (req, res, next) => {
     const data = await loadPackages({ strict: false });
     const client = await pool.connect();
     try {
-      const result = await client.query(`SELECT package FROM genrpg.packages`);
+      const tableAlias = "p";
+      const query = selectQuery()
+        .from("genrpg", "packages", tableAlias)
+        .addFields(tableAlias, "package");
+
+      const result = await client.query(query.toString(), query.params);
       const installedSet = new Set(result.rows.map((r) => r.package));
       data.packages = data.packages.map((pkg) => ({
         ...pkg,
@@ -160,7 +166,12 @@ packagesRouter.get("/packages/git/status", requireAdmin, async (req, res, next) 
     const client = await pool.connect();
     let installedSet;
     try {
-      const result = await client.query(`SELECT package FROM genrpg.packages`);
+      const tableAlias = "p";
+      const query = selectQuery()
+        .from("genrpg", "packages", tableAlias)
+        .addFields(tableAlias, "package");
+
+      const result = await client.query(query.toString(), query.params);
       installedSet = new Set(result.rows.map((r) => r.package));
     } finally {
       client.release();
@@ -347,10 +358,13 @@ packagesRouter.post("/packages/install", requireAdmin, async (req, res, next) =>
     // Check if already installed
     const checkClient = await pool.connect();
     try {
-      const result = await checkClient.query(
-        `SELECT package FROM genrpg.packages WHERE package = $1`,
-        [machineName],
-      );
+      const tableAlias = "p";
+      const query = selectQuery()
+        .from("genrpg", "packages", tableAlias)
+        .addFields(tableAlias, "package")
+        .whereColumn(tableAlias, "package", machineName);
+
+      const result = await checkClient.query(query.toString(), query.params);
       if (result.rows.length > 0) {
         return res.status(400).json({ error: `Package "${machineName}" is already installed` });
       }

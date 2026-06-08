@@ -1,6 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemCollectionEntity } = require("../entities/itemCollectionEntity");
-const { qualify } = require("../services/queryService");
+const { qualify, updateQuery } = require("../services/queryService");
 
 /**
  * Storage for item collections.
@@ -60,28 +60,18 @@ class ItemCollectionStorage extends BaseStorage {
       );
       entity.isNew = false;
     } else {
-      const result = await this.query(
-        `
-          UPDATE ${this.schema_table}
-          SET
-            type = $1,
-            name = $2,
-            item_guid = $3,
-            capacity_used = $4,
-            capacity_max = $5
-          WHERE guid = $6 AND instance_guid = $7
-          RETURNING guid
-        `,
-        [
-          entity.type,
-          entity.name,
-          entity.itemGuid,
-          entity.capacityUsed,
-          entity.capacityMax,
-          entity.guid,
-          entity.instanceGuid,
-        ],
-      );
+      const { schema, table } = this.constructor;
+      const t = this.tableAlias;
+      const { type, name, itemGuid, capacityUsed, capacityMax, guid } = entity;
+      const query = updateQuery()
+        .from(schema, table, t)
+        .set(t, ["type", "name", "item_guid", "capacity_used", "capacity_max"],
+          [type, name, itemGuid, capacityUsed, capacityMax])
+        .whereColumn(t, "guid", guid)
+        .whereColumn(t, "instance_guid", this.instanceGuid)
+        .returning(t, "guid");
+
+      const result = await this.query(query.toString(), query.params);
       if (!result.rows.length) {
         return null;
       }

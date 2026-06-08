@@ -1,5 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemTemplateEntity } = require("../entities/itemTemplateEntity");
+const { updateQuery } = require("../services/queryService");
 
 class ItemTemplateStorage extends BaseStorage {
   static schema = "genrpg";
@@ -36,15 +37,17 @@ class ItemTemplateStorage extends BaseStorage {
       );
       entity.isNew = false;
     } else {
-      const result = await this.query(
-        `
-          UPDATE ${this.schema_table}
-          SET name = $1, description = $2, weight = $3
-          WHERE guid = $4 AND instance_guid = $5
-          RETURNING guid
-        `,
-        [entity.name, entity.description, entity.weight, entity.guid, entity.instanceGuid],
-      );
+      const { schema, table } = this.constructor;
+      const t = this.tableAlias;
+      const { name, description, weight, guid } = entity;
+      const query = updateQuery()
+        .from(schema, table, t)
+        .set(t, ["name", "description", "weight"], [name, description, weight])
+        .whereColumn(t, "guid", guid)
+        .whereColumn(t, "instance_guid", this.instanceGuid)
+        .returning(t, "guid");
+
+      const result = await this.query(query.toString(), query.params);
       if (!result.rows.length) {
         return null;
       }

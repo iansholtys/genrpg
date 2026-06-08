@@ -4,6 +4,7 @@ const path = require("node:path");
 
 const { pool } = require("./db/pool");
 const { isGlobalAdmin } = require("./auth");
+const { deleteQuery } = require("./services/queryService");
 
 const RESERVED_ALIAS_PREFIXES = ["api", "static", "auth", "login", "logout", "healthz"];
 
@@ -293,9 +294,12 @@ async function createDefaultInstanceAlias(client, instanceGuid) {
 }
 
 async function deleteAliasesForInstance(client, instanceGuid) {
-  await client.query(`DELETE FROM genrpg.url_aliases WHERE path = $1`, [
-    defaultInstancePath(instanceGuid),
-  ]);
+  const tableAlias = "ua";
+  const query = deleteQuery()
+    .from("genrpg", "url_aliases", tableAlias)
+    .whereColumn(tableAlias, "path", defaultInstancePath(instanceGuid));
+
+  await client.query(query.toString(), query.params);
 }
 
 async function lookupCustomInstanceUrlSegment(instanceGuid) {
@@ -321,13 +325,13 @@ async function lookupCustomInstanceUrlSegment(instanceGuid) {
 }
 
 async function deleteCustomInstanceAlias(client, instanceGuid) {
-  await client.query(
-    `
-      DELETE FROM genrpg.url_aliases
-      WHERE path = $1 AND alias <> $2
-    `,
-    [defaultInstancePath(instanceGuid), defaultInstanceAlias(instanceGuid)],
-  );
+  const tableAlias = "ua";
+  const query = deleteQuery()
+    .from("genrpg", "url_aliases", tableAlias)
+    .whereColumn(tableAlias, "path", defaultInstancePath(instanceGuid))
+    .whereColumn(tableAlias, "alias", defaultInstanceAlias(instanceGuid), "<>");
+
+  await client.query(query.toString(), query.params);
 }
 
 async function syncCustomInstanceAlias(client, instanceGuid, slugSegment) {
