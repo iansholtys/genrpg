@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const { pool } = require("../db/pool");
+const { deleteQuery } = require("../services/queryService");
 const { isGlobalAdmin } = require("../auth");
 const {
   loadAccessibleInstance,
@@ -431,10 +432,13 @@ instancesRouter.delete("/instances/:guid/users/:userGuid", async (req, res, next
       }
     }
 
-    await pool.query(
-      `DELETE FROM genrpg.instance_user_roles WHERE instance_guid = $1 AND user_guid = $2`,
-      [instanceGuid, targetUserGuid],
-    );
+    const tableAlias = "r";
+    const removeRoleQuery = deleteQuery()
+      .from("genrpg", "instance_user_roles", tableAlias)
+      .whereColumn(tableAlias, "instance_guid", instanceGuid)
+      .whereColumn(tableAlias, "user_guid", targetUserGuid);
+
+    await pool.query(removeRoleQuery.toString(), removeRoleQuery.params);
 
     res.json({ success: true });
   } catch (error) {

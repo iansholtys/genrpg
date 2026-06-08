@@ -2,14 +2,12 @@ const crypto = require("node:crypto");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
 const { getOrCompute } = require("../services/cacheService");
-const { select, qualify } = require("../services/queryService");
+const { selectQuery, deleteQuery, qualify } = require("../services/queryService");
 const {
   buildExtensionFieldSpecs,
   saveExtensionRows,
   extensionRowAlias,
   loadExtensionSchemas,
-  quoteColumn,
-  quoteIdentifier,
 } = require("../lib/entityExtensions");
 const { propertyToColumnName } = require("../lib/entityExtensionIndex");
 
@@ -176,7 +174,7 @@ class BaseStorage {
     const { schema, table } = this.constructor;
     const { tableAlias } = this;
 
-    const query = select()
+    const query = selectQuery()
       .from(schema, table, tableAlias)
       .addFields(tableAlias, this.getCoreEntityFields());
     await this.addExtensionFields(query, tableAlias);
@@ -413,7 +411,7 @@ class BaseStorage {
    * Delete by guid + instance_guid. Removes package extension rows when {@link BaseStorage.Entity} is set.
    */
   async delete(entityGuid) {
-    const { constructor, packageNames } = this;
+    const { constructor, packageNames, tableAlias } = this;
     if (constructor.Entity) {
       const { schema: coreSchema, table } = constructor;
       const parentKeyColumn = `${constructor.Entity.key}_guid`;
@@ -423,13 +421,11 @@ class BaseStorage {
         .filter((schema) => schema !== coreSchema);
 
       for (const schema of schemas) {
-        await this.query(
-          `
-            DELETE FROM ${quoteIdentifier(schema)}.${quoteIdentifier(table)}
-            WHERE ${quoteColumn(parentKeyColumn)} = $1
-          `,
-          [entityGuid],
-        );
+        const query = deleteQuery()
+          .from(schema, table, tableAlias)
+          .whereColumn(tableAlias, parentKeyColumn, entityGuid);
+
+        await this.query(query.toString(), query.params);
       }
     }
     return this.deleteRow(entityGuid);
@@ -439,31 +435,21 @@ class BaseStorage {
    * DELETE … WHERE guid and instance_guid match; returns whether a row was removed.
    *
    * @param {string} entityGuid
-   * @param {string} [qualifiedTable] defaults to `this.schema_table`
    */
-  async deleteRow(entityGuid, qualifiedTable) {
-    const table = qualifiedTable ?? this.schema_table;
+  async deleteRow(entityGuid) {
+    const { schema, table } = this.constructor;
+    const { tableAlias } = this;
+
+    const query = deleteQuery()
+      .from(schema, table, tableAlias)
+      .whereColumn(tableAlias, "guid", entityGuid)
+      .returning(tableAlias, "guid");
 
     if (this.instanceGuid) {
-      const result = await this.query(
-        `
-          DELETE FROM ${table}
-          WHERE guid = $1 AND instance_guid = $2
-          RETURNING guid
-        `,
-        [entityGuid, this.instanceGuid],
-      );
-      return result.rows.length > 0;
+      query.whereColumn(tableAlias, "instance_guid", this.instanceGuid);
     }
 
-    const result = await this.query(
-      `
-        DELETE FROM ${table}
-        WHERE guid = $1
-        RETURNING guid
-      `,
-      [entityGuid],
-    );
+    const result = await this.query(query.toString(), query.params);
     return result.rows.length > 0;
   }
 
@@ -474,9 +460,9 @@ class BaseStorage {
    */
   async exists(entityGuid) {
     const { schema, table } = this.constructor;
-    const tableAlias = "t";
+    const { tableAlias } = this;
 
-    const query = select()
+    const query = selectQuery()
       .from(schema, table, tableAlias)
       .addFields(tableAlias, "guid")
       .whereColumn(tableAlias, "guid", entityGuid);

@@ -1,11 +1,12 @@
 const { quoteIdentifier, quoteColumn } = require("../lib/entityExtensions");
 
 /**
- * Fluent builder for PostgreSQL SELECT queries.
+ * Fluent builder for PostgreSQL SELECT and DELETE queries.
  *
- * Call {@link select} to obtain a {@link QueryObject}, chain configuration methods,
- * then pass {@link QueryObject#toString toString()} and {@link QueryObject#params params}
- * to pg. This module only builds SQL strings; it does not execute them.
+ * Call {@link selectQuery} or {@link deleteQuery} to obtain a {@link QueryObject}, chain
+ * configuration methods, then pass {@link QueryObject#toString toString()} and
+ * {@link QueryObject#params params} to pg. This module only builds SQL strings; it does not
+ * execute them.
  */
 
 /** Wrap a single value in a one-element array for field/alias handling. */
@@ -46,10 +47,11 @@ function renumberPlaceholders(expression, startIndex) {
 }
 
 /**
- * Builds a SELECT query through a chainable API.
+ * Builds a SELECT or DELETE query through a chainable API.
  */
 class QueryObject {
-  constructor() {
+  constructor(queryType = "SELECT") {
+    this._queryType = queryType;
     this._fieldGroups = [];
     this._expressions = [];
     this._from = null;
@@ -57,6 +59,14 @@ class QueryObject {
     this._whereClauses = [];
     this._whereParams = [];
     this._orderByClauses = [];
+    this._returning = null;
+  }
+
+  /** @param {"SELECT"|"DELETE"} queryType @param {string} methodName */
+  _requireType(queryType, methodName) {
+    if (this._queryType !== queryType) {
+      throw new Error(`${methodName}() is only valid on ${queryType} queries`);
+    }
   }
 
   /**
@@ -64,7 +74,7 @@ class QueryObject {
    *
    * @param {string} schema
    * @param {string} table
-   * @param {string} [tableAlias] alias used in SELECT fields and WHERE/ORDER BY references
+   * @param {string|null} [tableAlias] alias used in SELECT fields and WHERE/ORDER BY references
    */
   from(schema, table, tableAlias) {
     this._from = { schema, table, tableAlias };
@@ -79,6 +89,7 @@ class QueryObject {
    * @param {string|string[]} [aliases] optional output names (AS); maps to fields in order
    */
   addFields(tableAlias, fields, aliases) {
+    this._requireType("SELECT", "addFields");
     this._fieldGroups.push({
       tableAlias,
       fields: normalizeToArray(fields),
@@ -94,12 +105,14 @@ class QueryObject {
    * @param {string} [alias] optional output column name
    */
   addExpression(expression, alias) {
+    this._requireType("SELECT", "addExpression");
     this._expressions.push({ expression, alias });
     return this;
   }
 
   /** Record one JOIN clause (used by {@link QueryObject#addJoin} and {@link QueryObject#addLeftJoin}). */
   _addJoin(type, schema, table, tableAlias, joinCondition) {
+    this._requireType("SELECT", "addJoin");
     this._joins.push({
       type,
       schema,
@@ -231,6 +244,7 @@ class QueryObject {
    * @param {string|null} [nullsOrdering] `NULLS FIRST` or `NULLS LAST`; omit for default null ordering
    */
   orderBy(tableAlias, column, direction = "ASC", nullsOrdering = null) {
+    this._requireType("SELECT", "orderBy");
     if (!column) {
       throw new Error("orderBy requires a column or expression");
     }
@@ -254,6 +268,22 @@ class QueryObject {
     }
     this._orderByClauses.push(clause);
 
+    return this;
+  }
+
+  /**
+   * Add a RETURNING clause (DELETE only).
+   *
+   * @param {string} tableAlias
+   * @param {string|string[]} fields column names to return
+   */
+  returning(tableAlias, fields) {
+    this._requireType("DELETE", "returning");
+
+    this._returning = {
+      tableAlias,
+      fields: normalizeToArray(fields),
+    };
     return this;
   }
 
@@ -353,22 +383,45 @@ class QueryObject {
     return parts.join(", ");
   }
 
+  /** Render RETURNING column list (without the `RETURNING` keyword), or null when omitted. */
+  formatReturning() {
+    if (!this._returning) {
+      return null;
+    }
+
+    const { tableAlias, fields } = this._returning;
+    return fields.map((field) => qualify(tableAlias, field)).join(", ");
+  }
+
   /** Bound parameters for all WHERE clauses, in placeholder order. */
   get params() {
     this.formatWhere();
     return this._whereParams;
   }
 
-  /** Assemble and return the full SELECT statement. @returns {string} */
-  toString() {
+  /** Assemble and return a DELETE statement. @returns {string} */
+  toStringDelete() {
+    const parts = [`DELETE FROM ${this.formatFrom()}`];
+
+    const where = this.formatWhere();
+    if (where) {
+      parts.push(`WHERE ${where}`);
+    }
+
+    const returning = this.formatReturning();
+    if (returning) {
+      parts.push(`RETURNING ${returning}`);
+    }
+
+    return parts.join("\n");
+  }
+
+  /** Assemble and return a SELECT statement. @returns {string} */
+  toStringSelect() {
     const select = this.formatSelect();
 
     if (!select) {
       throw new Error("Query requires at least one select field or expression");
-    }
-
-    if (!this._from) {
-      throw new Error("Query requires from()");
     }
 
     const parts = [
@@ -389,14 +442,36 @@ class QueryObject {
 
     return parts.join("\n");
   }
+
+  /** Assemble and return the full query statement. @returns {string} */
+  toString() {
+    if (!this._from) {
+      throw new Error("Query requires from()");
+    }
+
+    switch (this._queryType) {
+      case "SELECT":
+        return this.toStringSelect();
+      case "DELETE":
+        return this.toStringDelete();
+      default:
+        throw new Error(`Unknown query type: ${this._queryType}`);
+    }
+  }
 }
 
 /** Create a new {@link QueryObject} for building a SELECT query. @returns {QueryObject} */
-function select() {
-  return new QueryObject();
+function selectQuery() {
+  return new QueryObject("SELECT");
+}
+
+/** Create a new {@link QueryObject} for building a DELETE query. @returns {QueryObject} */
+function deleteQuery() {
+  return new QueryObject("DELETE");
 }
 
 module.exports = {
-  select,
+  selectQuery,
+  deleteQuery,
   qualify,
 };

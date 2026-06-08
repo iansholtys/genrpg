@@ -1,6 +1,6 @@
 const InventoryStorage = require("../../src/storage/inventoryStorage");
 const ItemCollectionStorage = require("../../src/storage/itemCollectionStorage");
-const { select, qualify } = require("../../src/services/queryService");
+const { selectQuery, qualify } = require("../../src/services/queryService");
 
 const INVENTORY_COLLECTION_TYPE = "inventory";
 
@@ -14,7 +14,7 @@ class CharacterInventorySubscriber {
 
     const inventoryStorage = InventoryStorage.forInstance(instance);
 
-    const existingQuery = select()
+    const existingQuery = selectQuery()
       .from("genrpg", "inventories", "i")
       .addFields("i", ["guid"])
       .addJoin(
