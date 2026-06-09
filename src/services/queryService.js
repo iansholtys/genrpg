@@ -300,12 +300,9 @@ class QueryObject {
     }
 
     for (let index = 0; index < columns.length; index += 1) {
-      const columnSql = tableAlias
-        ? qualify(tableAlias, columns[index])
-        : quoteColumn(columns[index]);
-
+      // PostgreSQL UPDATE SET targets must not be table-qualified (alias or name).
       this._setClauses.push({
-        expression: `${columnSql} = $1`,
+        expression: `${quoteColumn(columns[index])} = $1`,
         args: [columnValues[index]],
       });
     }
