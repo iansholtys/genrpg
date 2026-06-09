@@ -68,7 +68,7 @@ class ItemCollectionContentStorage extends BaseStorage {
       const t = this.tableAlias;
       const query = updateQuery()
         .from(schema, table, t)
-        .set(t, ["item_guid", "subcollection_guid", "quantity", "position"], [
+        .set(["item_guid", "subcollection_guid", "quantity", "position"], [
           itemGuid,
           subcollectionGuid,
           quantity,

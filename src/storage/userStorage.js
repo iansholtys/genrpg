@@ -49,7 +49,7 @@ class UserStorage extends BaseStorage {
     const { guid, email, displayName, admin } = entity;
     const query = updateQuery()
       .from("genrpg", "users", t)
-      .set(t, ["email", "display_name", "admin"], [email, displayName, admin])
+      .set(["email", "display_name", "admin"], [email, displayName, admin])
       .whereColumn(t, "guid", guid)
       .returning(t, "guid");
 

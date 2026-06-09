@@ -179,7 +179,7 @@ function buildUpdateQuery(schema, table, values, whereColumnName, whereValue) {
 
   const query = updateQuery()
     .from(schema, table, null)
-    .set(null, columns, columns.map((column) => values[column]))
+    .set(columns, columns.map((column) => values[column]))
     .whereExpression(quoteColumn(whereColumnName), whereValue);
 
   return {

@@ -42,7 +42,7 @@ class ItemTemplateStorage extends BaseStorage {
       const t = this.tableAlias;
       const query = updateQuery()
         .from(schema, table, t)
-        .set(t, ["name", "description", "weight"], [name, description, weight])
+        .set(["name", "description", "weight"], [name, description, weight])
         .whereColumn(t, "guid", guid)
         .whereColumn(t, "instance_guid", this.instanceGuid)
         .returning(t, "guid");

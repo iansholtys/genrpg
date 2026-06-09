@@ -263,50 +263,51 @@ class QueryObject {
   }
 
   /**
-   * Add SET assignments for an UPDATE. Always pass three arguments.
+   * Add SET assignments for an UPDATE from column names and bound values.
    *
-   * Column form: `set(tableAlias, columns, values)` — sets quoted columns to bound values.
-   * Pass `null` as `tableAlias` when columns are unqualified. `columns` and `values` may be
-   * strings or arrays (mapped in order; lengths must match). Each value becomes one `$n` param.
+   * `columns` and `values` may be strings or arrays (mapped in order; lengths must match).
+   * Each value becomes one `$n` param.
    *
-   * Expression form: `set(null, expression, args)` — a full assignment fragment including `=`
-   * and local `$1`, `$2`, … placeholders; `args` is the array of values for those placeholders.
-   * Caller must quote identifiers in `expression`.
-   *
-   * @param {string|null} tableAlias
-   * @param {string|string[]} columnsOrExpression
-   * @param {unknown|unknown[]} valuesOrArgs column value(s), or bound args for an expression
+   * @param {string|string[]} columns
+   * @param {unknown|unknown[]} values
    */
-  set(tableAlias, columnsOrExpression, valuesOrArgs) {
+  set(columns, values) {
     this._requireType("UPDATE", "set");
 
-    if (
-      tableAlias === null
-      && typeof columnsOrExpression === "string"
-      && columnsOrExpression.includes("=")
-    ) {
-      this._setClauses.push({
-        expression: columnsOrExpression,
-        args: valuesOrArgs ?? [],
-      });
-      return this;
-    }
+    const columnNames = normalizeToArray(columns);
+    const columnValues = normalizeToArray(values);
 
-    const columns = normalizeToArray(columnsOrExpression);
-    const columnValues = normalizeToArray(valuesOrArgs);
-
-    if (columns.length !== columnValues.length) {
+    if (columnNames.length !== columnValues.length) {
       throw new Error("set() columns and values must be the same length");
     }
 
-    for (let index = 0; index < columns.length; index += 1) {
+    for (let index = 0; index < columnNames.length; index += 1) {
       // PostgreSQL UPDATE SET targets must not be table-qualified (alias or name).
       this._setClauses.push({
-        expression: `${quoteColumn(columns[index])} = $1`,
+        expression: `${quoteColumn(columnNames[index])} = $1`,
         args: [columnValues[index]],
       });
     }
 
+    return this;
+  }
+
+  /**
+   * Add a raw SET assignment fragment for an UPDATE.
+   *
+   * Pass a full assignment including `=` and local `$1`, `$2`, … placeholders; `args` supplies
+   * bound values. Caller must quote identifiers in `expression`.
+   *
+   * @param {string} expression
+   * @param {unknown[]} [args]
+   */
+  setExpression(expression, args = []) {
+    this._requireType("UPDATE", "setExpression");
+
+    this._setClauses.push({
+      expression,
+      args,
+    });
     return this;
   }
 
@@ -522,7 +523,7 @@ class QueryObject {
   toStringUpdate() {
     const set = this.formatSet();
     if (!set) {
-      throw new Error("Query requires at least one set() assignment");
+      throw new Error("Query requires at least one set() or setExpression() assignment");
     }
 
     const parts = [

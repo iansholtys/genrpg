@@ -46,7 +46,7 @@ class CharacterStorage extends BaseStorage {
       const t = this.tableAlias;
       const query = updateQuery()
         .from(schema, table, t)
-        .set(t, ["user_guid", "display_name", "full_name", "appearance", "pronouns"],
+        .set(["user_guid", "display_name", "full_name", "appearance", "pronouns"],
           [userGuid, displayName, fullName, appearance, pronouns])
         .whereColumn(t, "guid", guid)
         .whereColumn(t, "instance_guid", this.instanceGuid)

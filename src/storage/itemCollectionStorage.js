@@ -57,7 +57,7 @@ class ItemCollectionStorage extends BaseStorage {
       const t = this.tableAlias;
       const query = updateQuery()
         .from(schema, table, t)
-        .set(t, ["type", "name", "item_guid", "capacity_used", "capacity_max"],
+        .set(["type", "name", "item_guid", "capacity_used", "capacity_max"],
           [type, name, itemGuid, capacityUsed, capacityMax])
         .whereColumn(t, "guid", guid)
         .whereColumn(t, "instance_guid", this.instanceGuid)

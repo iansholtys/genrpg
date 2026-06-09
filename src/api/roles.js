@@ -135,7 +135,7 @@ rolesRouter.put("/roles/:id", requireAdmin, async (req, res, next) => {
       const tableAlias = "r";
       const updateRoleQuery = updateQuery()
         .from("genrpg", "roles", tableAlias)
-        .set(tableAlias, ["name", "description"], [name, description])
+        .set(["name", "description"], [name, description])
         .whereColumn(tableAlias, "id", roleId)
         .returning(tableAlias, ["id", "name", "description"]);
 

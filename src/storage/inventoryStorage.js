@@ -51,7 +51,7 @@ class InventoryStorage extends BaseStorage {
       const t = this.tableAlias;
       const query = updateQuery()
         .from(schema, table, t)
-        .set(t, ["collection_guid", "character_guid"], [collectionGuid, characterGuid])
+        .set(["collection_guid", "character_guid"], [collectionGuid, characterGuid])
         .whereColumn(t, "guid", guid)
         .whereColumn(t, "instance_guid", this.instanceGuid)
         .returning(t, "guid");

@@ -278,7 +278,7 @@ instancesRouter.put("/instances/:guid", async (req, res, next) => {
       const tableAlias = "i";
       const updateInstanceQuery = updateQuery()
         .from("genrpg", "instances", tableAlias)
-        .set(tableAlias, ["name", "description"], [name, description])
+        .set(["name", "description"], [name, description])
         .whereColumn(tableAlias, "guid", instanceGuid)
         .returning(tableAlias, [
           "guid",
