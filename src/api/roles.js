@@ -11,6 +11,19 @@ const {
 
 const rolesRouter = express.Router();
 
+function rolePermissionInsertQuery(roleId, permissionIds) {
+  if (!permissionIds.length) {
+    return null;
+  }
+
+  return insertQuery()
+    .into("genrpg", "role_permissions")
+    .values(["role_id", "permission_id"],
+      ...permissionIds.map((permissionId) => [roleId, permissionId]),
+    )
+    .onConflict([], "DO NOTHING");
+}
+
 rolesRouter.get("/roles", async (req, res, next) => {
   try {
     const roleAlias = "r";
@@ -94,12 +107,9 @@ rolesRouter.post("/roles", requireAdmin, async (req, res, next) => {
       const roleResult = await client.query(createRoleQuery.toString(), createRoleQuery.params);
       const roleId = roleResult.rows[0].id;
 
-      if (permissionIds.length > 0) {
-        const values = permissionIds.map((pid, i) => `($1, $${i + 2})`).join(", ");
-        await client.query(
-          `INSERT INTO genrpg.role_permissions (role_id, permission_id) VALUES ${values} ON CONFLICT DO NOTHING`,
-          [roleId, ...permissionIds],
-        );
+      const permissionInsert = rolePermissionInsertQuery(roleId, permissionIds);
+      if (permissionInsert) {
+        await client.query(permissionInsert.toString(), permissionInsert.params);
       }
 
       await client.query("COMMIT");
@@ -155,12 +165,9 @@ rolesRouter.put("/roles/:id", requireAdmin, async (req, res, next) => {
         .whereColumn("rp", "role_id", roleId);
 
       await client.query(deletePermissionsQuery.toString(), deletePermissionsQuery.params);
-      if (permissionIds.length > 0) {
-        const values = permissionIds.map((pid, i) => `($1, $${i + 2})`).join(", ");
-        await client.query(
-          `INSERT INTO genrpg.role_permissions (role_id, permission_id) VALUES ${values} ON CONFLICT DO NOTHING`,
-          [roleId, ...permissionIds],
-        );
+      const permissionInsert = rolePermissionInsertQuery(roleId, permissionIds);
+      if (permissionInsert) {
+        await client.query(permissionInsert.toString(), permissionInsert.params);
       }
 
       await client.query("COMMIT");

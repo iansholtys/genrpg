@@ -278,26 +278,58 @@ class QueryObject {
   }
 
   /**
-   * Add INSERT column names and bound values.
+   * Set INSERT column names and optionally add one or more rows.
    *
-   * `columns` and `values` may be strings or arrays (mapped in order; lengths must match).
-   * Each value becomes one `$n` param. May be called more than once to append columns.
+   * `columns` may be a string or array. Each subsequent argument is one row of bound values
+   * (string or array); row length must match the column count. May be called only once.
+   * Use {@link QueryObject#addRows} to append more rows afterward.
    *
    * @param {string|string[]} columns
-   * @param {unknown|unknown[]} values
+   * @param {...unknown|unknown[]} rowSets
    */
-  values(columns, columnValues) {
+  values(columns, ...rowSets) {
     this._requireType("INSERT", "values");
 
-    const columnNames = normalizeToArray(columns);
-    const boundValues = normalizeToArray(columnValues);
-
-    if (columnNames.length !== boundValues.length) {
-      throw new Error("values() columns and values must be the same length");
+    if (this._insertColumnNames.length > 0) {
+      throw new Error("values() columns can only be set once");
     }
 
-    this._insertColumnNames.push(...columnNames);
-    this._insertValues.push(...boundValues);
+    this._insertColumnNames = normalizeToArray(columns);
+
+    if (rowSets.length > 0) {
+      this.addRows(...rowSets);
+    }
+
+    return this;
+  }
+
+  /**
+   * Append one or more INSERT rows. Each row may be a string or array; length must match
+   * the column count set by {@link QueryObject#values}. May be called more than once.
+   *
+   * @param {...unknown|unknown[]} rows
+   */
+  addRows(...rows) {
+    this._requireType("INSERT", "addRows");
+
+    if (!this._insertColumnNames.length) {
+      throw new Error("addRows() requires columns to be set via values() first");
+    }
+
+    const columnCount = this._insertColumnNames.length;
+
+    for (const row of rows) {
+      const boundValues = normalizeToArray(row);
+
+      if (boundValues.length !== columnCount) {
+        throw new Error(
+          `addRows() row length ${boundValues.length} does not match column count ${columnCount}`,
+        );
+      }
+
+      this._insertValues.push(boundValues);
+    }
+
     return this;
   }
 
@@ -541,14 +573,20 @@ class QueryObject {
       return null;
     }
 
-    const placeholders = [];
+    const tuples = [];
 
-    for (const value of this._insertValues) {
-      placeholders.push(`$${this._params.length + 1}`);
-      this._params.push(value);
+    for (const row of this._insertValues) {
+      const placeholders = [];
+
+      for (const value of row) {
+        placeholders.push(`$${this._params.length + 1}`);
+        this._params.push(value);
+      }
+
+      tuples.push(`(${placeholders.join(", ")})`);
     }
 
-    return placeholders.join(", ");
+    return tuples.join(", ");
   }
 
   /** Render ON CONFLICT clause (without trailing semicolon), or null when omitted. */
@@ -655,13 +693,13 @@ class QueryObject {
     const columns = this.formatColumns();
     const placeholders = this.formatValues();
     if (!columns || !placeholders) {
-      throw new Error("Query requires at least one values() assignment");
+      throw new Error("Query requires at least one row via values() or addRows()");
     }
 
     const parts = [
       `INSERT INTO ${this.formatFrom()}`,
       `(${columns})`,
-      `VALUES (${placeholders})`,
+      `VALUES ${placeholders}`,
     ];
 
     const onConflict = this.formatOnConflict();

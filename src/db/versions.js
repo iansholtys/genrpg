@@ -3,7 +3,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { pool: defaultPool } = require("./pool");
-const { insertQuery } = require("../services/queryService");
+const { insertQuery, selectQuery } = require("../services/queryService");
 
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
 
@@ -111,10 +111,12 @@ async function ensureSchemaVersionTable(client) {
 }
 
 async function getAppliedSchemaVersions(client) {
-  const result = await client.query(`
-    SELECT package_name, file_name, checksum
-    FROM schema_versions
-  `);
+  const tableAlias = "sv";
+  const query = selectQuery()
+    .from("public", "schema_versions", tableAlias)
+    .addFields(tableAlias, ["package_name", "file_name", "checksum"]);
+
+  const result = await client.query(query.toString(), query.params);
   const applied = new Map();
 
   for (const row of result.rows) {
@@ -130,24 +132,21 @@ async function readSchemaVersion(schemaVersion) {
   return { sql, checksum };
 }
 
-async function applySchemaVersion(client, schemaVersion, sql, checksum) {
+async function applySchemaVersion(client, schemaVersion, sql, checksum, { onConflict = false } = {}) {
   await client.query("BEGIN");
   try {
     await client.query(sql);
-    await client.query(
-      `
-        INSERT INTO schema_versions
-          (package_name, file_name, file_order, name, checksum)
-        VALUES ($1, $2, $3, $4, $5)
-      `,
-      [
-        schemaVersion.packageName,
-        schemaVersion.fileName,
-        schemaVersion.fileOrder,
-        schemaVersion.name,
-        checksum,
-      ],
-    );
+    const { packageName, fileName, fileOrder, name } = schemaVersion;
+    const schemaVersionInsert = insertQuery()
+      .into("public", "schema_versions")
+      .values(
+        ["package_name", "file_name", "file_order", "name", "checksum"],
+        [packageName, fileName, fileOrder, name, checksum],
+      );
+    if (onConflict) {
+      schemaVersionInsert.onConflict(["package_name", "file_name"], "DO UPDATE");
+    }
+    await client.query(schemaVersionInsert.toString(), schemaVersionInsert.params);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -177,27 +176,10 @@ async function reapplyPackageSchemaVersions({
     for (const filePath of filePaths) {
       const schemaVersion = parseVersionFile(packageName, filePath);
       const { sql, checksum } = await readSchemaVersion(schemaVersion);
-      const { packageName, fileName, fileOrder, name } = schemaVersion;
-      const key = `${packageName}:${fileName}`;
+      const key = `${schemaVersion.packageName}:${schemaVersion.fileName}`;
 
-      await client.query("BEGIN");
-      try {
-        await client.query(sql);
-        const schemaVersionInsert = insertQuery()
-          .into("public", "schema_versions")
-          .values(
-            ["package_name", "file_name", "file_order", "name", "checksum"],
-            [packageName, fileName, fileOrder, name, checksum],
-          )
-          .onConflict(["package_name", "file_name"], "DO UPDATE");
-
-        await client.query(schemaVersionInsert.toString(), schemaVersionInsert.params);
-        await client.query("COMMIT");
-        appliedNow.push(key);
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      }
+      await applySchemaVersion(client, schemaVersion, sql, checksum, { onConflict: true });
+      appliedNow.push(key);
     }
 
     return { applied: appliedNow };
