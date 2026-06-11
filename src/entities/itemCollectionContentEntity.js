@@ -15,7 +15,12 @@ class ItemCollectionContentEntity extends BaseEntity {
     subcollectionGuid: { label: "Subcollection", type: "guid", refs: ItemCollectionEntity },
     quantity: { label: "Quantity", type: "integer", required: true, default: 1 },
     position: { label: "Position", type: "integer", required: true, default: 0 },
-    collectionGuid: { readOnly: true },
+    collectionGuid: {
+      label: "Collection",
+      type: "guid",
+      refs: ItemCollectionEntity,
+      required: true,
+    },
     createDatetime: { readOnly: true },
     updateDatetime: { readOnly: true },
     packageData: { readOnly: true, virtual: true, default: {} },
@@ -44,6 +49,15 @@ class ItemCollectionContentEntity extends BaseEntity {
     const coreFields = Object.entries(ItemCollectionContentEntity.fields)
       .filter(([, spec]) => !spec.readOnly)
       .map(([key, spec]) => {
+        if (key === "collectionGuid") {
+          return this.formFieldFromSpec(key, spec, {
+            inputType: "select",
+            options: collections.map((collection) => ({
+              value: collection.guid,
+              label: collection.name || collection.type || collection.guid,
+            })),
+          });
+        }
         if (key === "itemGuid") {
           return this.formFieldFromSpec(key, spec, {
             inputType: "select",

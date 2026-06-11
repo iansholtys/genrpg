@@ -1,5 +1,4 @@
 const { BaseStorage } = require("./baseStorage");
-const { insertQuery, updateQuery } = require("../services/queryService");
 
 class CharacterStorage extends BaseStorage {
   static schema = "genrpg";
@@ -20,77 +19,6 @@ class CharacterStorage extends BaseStorage {
 
     const result = await this.query(query.toString(), query.params);
     return Promise.all(result.rows.map((row) => this.toEntity(row)));
-  }
-
-  async save(entity) {
-    const { guid, instanceGuid, userGuid, displayName, fullName, appearance, pronouns } = entity;
-    if (entity.isNew) {
-      const { schema, table } = this.constructor;
-      const insert = insertQuery()
-        .into(schema, table)
-        .values(
-          ["guid", "instance_guid", "user_guid", "display_name", "full_name", "appearance", "pronouns"],
-          [guid, instanceGuid, userGuid, displayName, fullName, appearance, pronouns],
-        );
-
-      await this.query(insert.toString(), insert.params);
-      entity.isNew = false;
-    } else {
-      const { schema, table } = this.constructor;
-      const t = this.tableAlias;
-      const query = updateQuery()
-        .from(schema, table, t)
-        .set(["user_guid", "display_name", "full_name", "appearance", "pronouns"],
-          [userGuid, displayName, fullName, appearance, pronouns])
-        .whereColumn(t, "guid", guid)
-        .whereColumn(t, "instance_guid", this.instanceGuid)
-        .returning(t, "guid");
-
-      const result = await this.query(query.toString(), query.params);
-      if (!result.rows.length) {
-        return null;
-      }
-    }
-
-    await this.saveExtensionRowsForEntity(entity);
-
-    const reloaded = await this.load(guid);
-    if (reloaded) {
-      Object.assign(entity, {
-        userGuid: reloaded.userGuid,
-        displayName: reloaded.displayName,
-        fullName: reloaded.fullName,
-        appearance: reloaded.appearance,
-        pronouns: reloaded.pronouns,
-        createDatetime: reloaded.createDatetime,
-        updateDatetime: reloaded.updateDatetime,
-        packageData: reloaded.packageData,
-      });
-      this.assignExtensionFieldsFromReload(entity, reloaded);
-    }
-
-    return entity;
-  }
-
-  async toEntity(row) {
-    const { extensionFieldSpecs, packageData, extensionValues } = await this.extensionContextFromRow(row);
-
-    return new this.constructor.Entity({
-      instanceGuid: row.instance_guid,
-      guid: row.guid,
-      isNew: false,
-      storage: this,
-      extensionFieldSpecs,
-      packageData,
-      userGuid: row.user_guid,
-      displayName: row.display_name,
-      fullName: row.full_name,
-      appearance: row.appearance,
-      pronouns: row.pronouns,
-      createDatetime: row.create_datetime,
-      updateDatetime: row.update_datetime,
-      ...extensionValues,
-    });
   }
 }
 

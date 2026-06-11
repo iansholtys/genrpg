@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
 const { getOrCompute } = require("../services/cacheService");
-const { selectQuery, deleteQuery, qualify } = require("../services/queryService");
+const { selectQuery, deleteQuery, insertQuery, updateQuery, qualify } = require("../services/queryService");
 const {
   buildExtensionFieldSpecs,
   saveExtensionRows,
@@ -151,6 +151,118 @@ class BaseStorage {
     }
 
     return [...new Set(columns)];
+  }
+
+  /**
+   * Persisted core-table fields from {@link BaseStorage#entityClass} (excludes virtual).
+   * @returns {{ property: string, column: string }[]}
+   */
+  getCoreFieldEntries() {
+    return Object.entries(this.entityClass.fields)
+      .filter(([, spec]) => !spec.virtual)
+      .map(([property]) => ({
+        property,
+        column: propertyToColumnName(property),
+      }));
+  }
+
+  /**
+   * Core fields written on INSERT/UPDATE (excludes virtual and read-only).
+   * @returns {{ property: string, column: string }[]}
+   */
+  getWritableCoreFieldEntries() {
+    return Object.entries(this.entityClass.fields)
+      .filter(([, spec]) => !spec.virtual && !spec.readOnly)
+      .map(([property]) => ({
+        property,
+        column: propertyToColumnName(property),
+      }));
+  }
+
+  /**
+   * Map a core-table SQL row to entity constructor options (guid, instanceGuid, field values).
+   */
+  coreOptionsFromRow(row) {
+    const options = { guid: row.guid };
+    if (this.constructor.instanceScoped) {
+      options.instanceGuid = row.instance_guid;
+    }
+
+    for (const { property, column } of this.getCoreFieldEntries()) {
+      if (column in row) {
+        options[property] = row[column];
+      }
+    }
+
+    return options;
+  }
+
+  /**
+   * INSERT or UPDATE the core entity row from {@link BaseStorage#getWritableCoreFieldEntries}.
+   * @returns {Promise<object | null>} entity on success, or null when UPDATE matched no row
+   */
+  async saveCoreRow(entity) {
+    const { schema, table } = this.constructor;
+    const writable = this.getWritableCoreFieldEntries();
+    const columns = writable.map((entry) => entry.column);
+    const values = writable.map((entry) => entity[entry.property]);
+
+    if (entity.isNew) {
+      const insertColumns = ["guid", ...columns];
+      const insertValues = [entity.guid, ...values];
+      if (this.constructor.instanceScoped) {
+        insertColumns.push("instance_guid");
+        insertValues.push(entity.instanceGuid);
+      }
+
+      const insert = insertQuery()
+        .into(schema, table)
+        .values(insertColumns, insertValues);
+
+      await this.query(insert.toString(), insert.params);
+      entity.isNew = false;
+      return entity;
+    }
+
+    const t = this.tableAlias;
+    const query = updateQuery()
+      .from(schema, table, t)
+      .set(columns, values)
+      .whereColumn(t, "guid", entity.guid);
+
+    if (this.instanceGuid) {
+      query.whereColumn(t, "instance_guid", this.instanceGuid);
+    }
+
+    query.returning(t, "guid");
+
+    const result = await this.query(query.toString(), query.params);
+    return result.rows.length ? entity : null;
+  }
+
+  assignCoreFieldsFromReload(entity, reloaded) {
+    for (const { property } of this.getCoreFieldEntries()) {
+      entity[property] = reloaded[property];
+    }
+    if (reloaded.packageData !== undefined) {
+      entity.packageData = reloaded.packageData;
+    }
+  }
+
+  /**
+   * Persist extension rows, reload the entity, and copy core + extension values back.
+   */
+  async reloadEntityAfterSave(entity, { skipEvents = true } = {}) {
+    await this.saveExtensionRowsForEntity(entity);
+
+    const reloaded = await this.load(entity.guid, { skipEvents });
+    if (!reloaded) {
+      return entity;
+    }
+
+    this.assignCoreFieldsFromReload(entity, reloaded);
+    this.assignExtensionFieldsFromReload(entity, reloaded);
+    return entity;
   }
 
   /** Alias for the core table in SELECT queries built by {@link BaseStorage.buildSelect}. */
@@ -302,12 +414,19 @@ class BaseStorage {
   }
 
   /**
-   * Map a SQL row to an entity instance. Required when using the default {@link BaseStorage.loadEntity}.
-   *
-   * @throws {Error} when not overridden
+   * Map a SQL row to an entity instance. Uses {@link BaseStorage#coreOptionsFromRow} and extension fields.
+   * Override when row mapping does not follow the standard core-table pattern (e.g. {@link UserStorage}).
    */
-  toEntity(row) {
-    throw new Error(`toEntity() not implemented for ${this.constructor.name}`);
+  async toEntity(row) {
+    const { extensionFieldSpecs, packageData, extensionValues } = await this.extensionContextFromRow(row);
+
+    return new this.entityClass({
+      ...this.coreOptionsFromRow(row),
+      storage: this,
+      extensionFieldSpecs,
+      packageData,
+      ...extensionValues,
+    });
   }
 
   /**
@@ -389,10 +508,15 @@ class BaseStorage {
   }
 
   /**
-   * @throws {Error} when not overridden
+   * INSERT or UPDATE the core row, extension rows, then reload field values onto the entity.
+   * Override when persistence does not follow the standard core-table pattern (e.g. {@link UserStorage}).
    */
-  async save() {
-    throw new Error(`save() not implemented for ${this.constructor.name}`);
+  async save(entity) {
+    const saved = await this.saveCoreRow(entity);
+    if (saved === null) {
+      return null;
+    }
+    return this.reloadEntityAfterSave(entity);
   }
 
   /**
