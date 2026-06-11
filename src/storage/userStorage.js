@@ -11,14 +11,11 @@ class UserStorage extends BaseStorage {
     return false;
   }
 
-  async listEntities() {
-    const query = await this.buildSelect();
-    const t = this.tableAlias;
-
-    query.orderBy(t, "display_name", "ASC", "NULLS LAST").orderBy(t, "email");
-
-    const result = await this.query(query.toString());
-    return Promise.all(result.rows.map((row) => this.toEntity(row)));
+  async listEntities(options = {}) {
+    return super.listEntities({
+      ...options,
+      orderBy: [{ field: "display_name", nulls: "LAST" }, { field: "email" }],
+    });
   }
 
   async listForInstance(instanceGuid) {

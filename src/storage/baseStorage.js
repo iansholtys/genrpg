@@ -29,7 +29,7 @@ const { propertyToColumnName } = require("../lib/entityExtensionIndex");
  *
  * | Method | Purpose |
  * |--------|---------|
- * | `listEntities(…)` | Query and map rows to entities (override in subclasses) |
+ * | `listEntities(…)` | Query and map rows to entities; override to set `orderBy` / filters |
  * | `loadEntity(entityGuids, …)` | Load entities for the given guids (always an array) |
  * | `list(…)` | Calls `listEntities()`, then preGet/postGet when configured |
  * | `load(entityGuid \| entityGuids, …)` | Calls `loadEntity()`, then preGet/postGet when configured |
@@ -37,9 +37,10 @@ const { propertyToColumnName } = require("../lib/entityExtensionIndex");
  * | `save(entity)` | INSERT or UPDATE (called from `entity.save()`) |
  * | `delete(entityGuid, …)` | Delete; `true` if a row was removed |
  *
- * Subclasses implement `listEntities(…)` and `toEntity()` (SQL, filters, ordering for list;
- * default `loadEntity()` uses `buildSelect()` + guid filter). Override `loadEntity()` only
- * for non-standard load queries.
+ * Default `listEntities(…)` applies instance filtering, optional column filters, and
+ * `orderBy`. Subclasses override to pass defaults or add validation; override fully for
+ * non-standard list queries. Default `loadEntity()` uses `buildSelect()` + guid filter.
+ * Override `loadEntity()` only for non-standard load queries.
  * Callers use `list()` / `load()` — the base class runs get lifecycle events there.
  * Pass `{ skipEvents: true }` only when hydration must bypass package get handlers
  * (rare; most reloads after save should use plain `load()` so postGet enrichment runs).
@@ -379,15 +380,45 @@ class BaseStorage {
   }
 
   /**
-   * Load all entities for this instance from the database.
+   * List entities using {@link BaseStorage.buildSelect}, optional instance and column
+   * filters, and ordering. Override in subclasses for non-standard queries or to
+   * supply default `orderBy` / filter validation.
    *
-   * Subclasses implement query + `toEntity()` here. Do not dispatch get events —
-   * {@link BaseStorage.list} wraps this and runs preGet/postGet for callers.
+   * Do not dispatch get events — {@link BaseStorage.list} wraps this and runs
+   * preGet/postGet for callers.
    *
-   * @throws {Error} when not overridden
+   * @param {object} [options]
+   * @param {{ field?: string, order?: "ASC"|"DESC", nulls?: "FIRST"|"LAST", expression?: string }[]} [options.orderBy]
+   * @param {Record<string, unknown>} [options] additional keys are column filters (camelCase);
+   *   skipped when `undefined`, `null`, or `""`
    */
-  async listEntities() {
-    throw new Error(`listEntities() not implemented for ${this.constructor.name}`);
+  async listEntities({ orderBy = [], ...filters } = {}) {
+    const query = await this.buildSelect();
+    const t = this.tableAlias;
+
+    if (this.instanceGuid) {
+      query.whereColumn(t, "instance_guid", this.instanceGuid);
+    }
+
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && value !== "") {
+        query.whereColumn(t, propertyToColumnName(key), value);
+      }
+    }
+
+    for (const entry of orderBy) {
+      const direction = entry.order ?? "ASC";
+      const nullsOrdering = entry.nulls ? `NULLS ${entry.nulls.toUpperCase()}` : null;
+
+      if (entry.expression) {
+        query.orderBy(null, entry.expression, direction, nullsOrdering);
+      } else if (entry.field) {
+        query.orderBy(t, entry.field, direction, nullsOrdering);
+      }
+    }
+
+    const result = await this.query(query.toString(), query.params);
+    return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 
   /**

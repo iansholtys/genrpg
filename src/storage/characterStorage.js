@@ -8,17 +8,11 @@ class CharacterStorage extends BaseStorage {
     return require("../entities/characterEntity").CharacterEntity;
   }
 
-  async listEntities() {
-    const query = await this.buildSelect();
-    const t = this.tableAlias;
-
-    query
-      .whereColumn(t, "instance_guid", this.instanceGuid)
-      .orderBy(t, "display_name", "ASC", "NULLS LAST")
-      .orderBy(t, "create_datetime");
-
-    const result = await this.query(query.toString(), query.params);
-    return Promise.all(result.rows.map((row) => this.toEntity(row)));
+  async listEntities(options = {}) {
+    return super.listEntities({
+      ...options,
+      orderBy: [{ field: "display_name", nulls: "LAST" }, { field: "create_datetime" }],
+    });
   }
 }
 

@@ -223,8 +223,8 @@ itemCollectionsRouter.post(
       await assertCollectionExists(context, collectionGuid);
       const content = await withTransaction(async () => {
         const storage = ItemCollectionContentStorage.forInstance(context.instance);
-        const entity = await storage.create({ collectionGuid });
-        entity.set(req.body);
+        const entity = await storage.create();
+        entity.set({ ...req.body, collectionGuid });
         const validationErrors = await entity.validate();
         if (validationErrors.length) {
           throw new ValidationError(validationErrors);

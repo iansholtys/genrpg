@@ -9,38 +9,19 @@ class ItemCollectionContentStorage extends BaseStorage {
   static table = "item_collection_contents";
   static Entity = ItemCollectionContentEntity;
 
-  async create({ collectionGuid } = {}) {
+  async listEntities({ collectionGuid, ...options } = {}) {
     if (!collectionGuid) {
       throw new Error("collectionGuid is required");
     }
 
-    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
-    return new this.constructor.Entity({
-      instanceGuid: this.instanceGuid,
-      guid: this.newGuid(),
-      isNew: true,
-      storage: this,
-      extensionFieldSpecs,
+    return super.listEntities({
+      ...options,
       collectionGuid,
+      orderBy: [
+        { field: "position" },
+        { field: "create_datetime" },
+      ],
     });
-  }
-
-  async listEntities({ collectionGuid } = {}) {
-    if (!collectionGuid) {
-      throw new Error("collectionGuid is required");
-    }
-
-    const query = await this.buildSelect();
-    const t = this.tableAlias;
-
-    query
-      .whereColumn(t, "instance_guid", this.instanceGuid)
-      .whereColumn(t, "collection_guid", collectionGuid)
-      .orderBy(t, "position")
-      .orderBy(t, "create_datetime");
-
-    const result = await this.query(query.toString(), query.params);
-    return Promise.all(result.rows.map((row) => this.toEntity(row)));
   }
 }
 
