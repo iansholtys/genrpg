@@ -1,6 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemCollectionContentEntity } = require("../entities/itemCollectionContentEntity");
-const { updateQuery } = require("../services/queryService");
+const { insertQuery, updateQuery } = require("../services/queryService");
 
 /**
  * Storage for rows in item_collection_contents.
@@ -47,21 +47,15 @@ class ItemCollectionContentStorage extends BaseStorage {
   async save(entity) {
     const { guid, instanceGuid, collectionGuid, itemGuid, subcollectionGuid, quantity, position } = entity;
     if (entity.isNew) {
-      await this.query(
-        `
-          INSERT INTO ${this.schema_table} (
-            guid,
-            instance_guid,
-            collection_guid,
-            item_guid,
-            subcollection_guid,
-            quantity,
-            position
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `,
-        [guid, instanceGuid, collectionGuid, itemGuid, subcollectionGuid, quantity, position],
-      );
+      const { schema, table } = this.constructor;
+      const insert = insertQuery()
+        .into(schema, table)
+        .values(
+          ["guid", "instance_guid", "collection_guid", "item_guid", "subcollection_guid", "quantity", "position"],
+          [guid, instanceGuid, collectionGuid, itemGuid, subcollectionGuid, quantity, position],
+        );
+
+      await this.query(insert.toString(), insert.params);
       entity.isNew = false;
     } else {
       const { schema, table } = this.constructor;

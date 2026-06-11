@@ -11,7 +11,7 @@ const express = require("express");
 const { pool } = require("../db/pool");
 const { applySchemaVersions, reapplyPackageSchemaVersions } = require("../db/versions");
 const { requireAdmin } = require("../auth");
-const { selectQuery } = require("../services/queryService");
+const { insertQuery, selectQuery } = require("../services/queryService");
 const {
   PackageLoadError,
   loadPackages,
@@ -34,14 +34,12 @@ const packagesRouter = express.Router();
 async function registerPackageVersion(machineName) {
   const registerClient = await pool.connect();
   try {
-    await registerClient.query(
-      `
-        INSERT INTO genrpg.packages (package, version)
-        VALUES ($1, 0)
-        ON CONFLICT (package) DO NOTHING
-      `,
-      [machineName],
-    );
+    const registerQuery = insertQuery()
+      .into("genrpg", "packages")
+      .values(["package", "version"], [machineName, 0])
+      .onConflict(["package"], "DO NOTHING");
+
+    await registerClient.query(registerQuery.toString(), registerQuery.params);
   } finally {
     registerClient.release();
   }

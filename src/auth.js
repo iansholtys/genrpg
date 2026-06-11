@@ -1,8 +1,7 @@
-const crypto = require("node:crypto");
 const { Issuer } = require("openid-client");
 const { pool } = require("./db/pool");
 const UserStorage = require("./storage/userStorage");
-
+const { insertQuery, updateQuery } = require("./services/queryService");
 const OIDC_CONFIGURATION_URL = process.env.OIDC_CONFIGURATION_URL;
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID;
 const OIDC_CLIENT_SECRET = process.env.OIDC_CLIENT_SECRET;
@@ -83,22 +82,31 @@ function ensureAuthenticated(req, res, next) {
 async function upsertUser({ issuer, subject, email, displayName }) {
   const normalizedEmail = email ? email.toLowerCase() : null;
   const configuredAdmin = normalizedEmail ? ADMIN_EMAILS.has(normalizedEmail) : false;
-  const userGuid = crypto.randomUUID();
-  const result = await pool.query(
-    `
-      INSERT INTO genrpg.users (guid, oidc_issuer, oidc_subject, email, display_name, admin)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (oidc_issuer, oidc_subject)
-      DO UPDATE SET
-        email = EXCLUDED.email,
-        display_name = EXCLUDED.display_name,
-        admin = genrpg.users.admin OR EXCLUDED.admin
-      RETURNING guid, email, display_name, admin
-    `,
-    [userGuid, issuer, subject, normalizedEmail, displayName, configuredAdmin],
-  );
+  const query = insertQuery()
+    .into("genrpg", "users")
+    .values(
+      ["oidc_issuer", "oidc_subject", "email", "display_name"],
+      [issuer, subject, normalizedEmail, displayName],
+    )
+    .onConflict(["oidc_issuer", "oidc_subject"], "DO UPDATE")
+    .returning(null, ["guid", "email", "display_name", "admin"]);
 
-  return result.rows[0];
+  const result = await pool.query(query.toString(), query.params);
+  let user = result.rows[0];
+
+  if (configuredAdmin && !user.admin) {
+    const userAlias = "u";
+    const promoteQuery = updateQuery()
+      .from("genrpg", "users", userAlias)
+      .set("admin", true)
+      .whereColumn(userAlias, "guid", user.guid)
+      .returning(userAlias, ["guid", "email", "display_name", "admin"]);
+
+    const promoted = await pool.query(promoteQuery.toString(), promoteQuery.params);
+    user = promoted.rows[0];
+  }
+
+  return user;
 }
 
 function userSummary(row) {

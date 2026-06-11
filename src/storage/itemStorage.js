@@ -1,6 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { ItemEntity } = require("../entities/itemEntity");
-const { updateQuery } = require("../services/queryService");
+const { insertQuery, updateQuery } = require("../services/queryService");
 
 class ItemStorage extends BaseStorage {
   static schema = "genrpg";
@@ -23,20 +23,15 @@ class ItemStorage extends BaseStorage {
   async save(entity) {
     const { guid, instanceGuid, itemTemplateGuid, name, description, weight } = entity;
     if (entity.isNew) {
-      await this.query(
-        `
-          INSERT INTO ${this.schema_table} (
-            guid,
-            instance_guid,
-            item_template_guid,
-            name,
-            description,
-            weight
-          )
-          VALUES ($1, $2, $3, $4, $5, $6)
-        `,
-        [guid, instanceGuid, itemTemplateGuid, name, description, weight],
-      );
+      const { schema, table } = this.constructor;
+      const insert = insertQuery()
+        .into(schema, table)
+        .values(
+          ["guid", "instance_guid", "item_template_guid", "name", "description", "weight"],
+          [guid, instanceGuid, itemTemplateGuid, name, description, weight],
+        );
+
+      await this.query(insert.toString(), insert.params);
       entity.isNew = false;
     } else {
       const { schema, table } = this.constructor;

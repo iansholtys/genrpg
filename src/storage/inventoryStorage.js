@@ -1,6 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const { InventoryEntity } = require("../entities/inventoryEntity");
-const { updateQuery } = require("../services/queryService");
+const { insertQuery, updateQuery } = require("../services/queryService");
 
 /**
  * Storage for character inventories (links a collection to a character).
@@ -33,18 +33,15 @@ class InventoryStorage extends BaseStorage {
   async save(entity) {
     const { guid, instanceGuid, collectionGuid, characterGuid } = entity;
     if (entity.isNew) {
-      await this.query(
-        `
-          INSERT INTO ${this.schema_table} (
-            guid,
-            instance_guid,
-            collection_guid,
-            character_guid
-          )
-          VALUES ($1, $2, $3, $4)
-        `,
-        [guid, instanceGuid, collectionGuid, characterGuid],
-      );
+      const { schema, table } = this.constructor;
+      const insert = insertQuery()
+        .into(schema, table)
+        .values(
+          ["guid", "instance_guid", "collection_guid", "character_guid"],
+          [guid, instanceGuid, collectionGuid, characterGuid],
+        );
+
+      await this.query(insert.toString(), insert.params);
       entity.isNew = false;
     } else {
       const { schema, table } = this.constructor;

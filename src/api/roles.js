@@ -3,6 +3,7 @@ const { pool } = require("../db/pool");
 const { requireAdmin } = require("../auth");
 const {
   deleteQuery,
+  insertQuery,
   qualify,
   selectQuery,
   updateQuery,
@@ -85,10 +86,12 @@ rolesRouter.post("/roles", requireAdmin, async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const roleResult = await client.query(
-        `INSERT INTO genrpg.roles (name, description) VALUES ($1, $2) RETURNING id, name, description`,
-        [name, description],
-      );
+      const createRoleQuery = insertQuery()
+        .into("genrpg", "roles")
+        .values(["name", "description"], [name, description])
+        .returning(null, ["id", "name", "description"]);
+
+      const roleResult = await client.query(createRoleQuery.toString(), createRoleQuery.params);
       const roleId = roleResult.rows[0].id;
 
       if (permissionIds.length > 0) {

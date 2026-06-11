@@ -10,3 +10,16 @@ CREATE TABLE IF NOT EXISTS genrpg.cache (
 
 CREATE INDEX IF NOT EXISTS idx_cache_instance ON genrpg.cache(instance_guid)
   WHERE instance_guid IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION genrpg.set_cached_datetime()
+RETURNS trigger AS $$
+BEGIN
+  NEW.cached_datetime = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS cache_cached_datetime ON genrpg.cache;
+CREATE TRIGGER cache_cached_datetime
+  BEFORE UPDATE ON genrpg.cache
+  FOR EACH ROW EXECUTE FUNCTION genrpg.set_cached_datetime();

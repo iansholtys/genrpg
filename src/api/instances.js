@@ -1,7 +1,7 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const { pool } = require("../db/pool");
-const { deleteQuery, updateQuery, selectQuery, qualify } = require("../services/queryService");
+const { deleteQuery, insertQuery, updateQuery, selectQuery, qualify } = require("../services/queryService");
 const { isGlobalAdmin } = require("../auth");
 const {
   loadAccessibleInstance,
@@ -177,14 +177,22 @@ instancesRouter.post("/instances", async (req, res, next) => {
 
     try {
       await client.query("BEGIN");
-      const instance = await client.query(
-        `
-          INSERT INTO genrpg.instances (guid, name, description, packages)
-          VALUES ($1, $2, $3, $4)
-          RETURNING guid, name, description, packages, create_datetime, update_datetime
-        `,
-        [instanceGuid, name, description, packageSelection.packageCsv],
-      );
+      const instanceInsert = insertQuery()
+        .into("genrpg", "instances")
+        .values(
+          ["guid", "name", "description", "packages"],
+          [instanceGuid, name, description, packageSelection.packageCsv],
+        )
+        .returning(null, [
+          "guid",
+          "name",
+          "description",
+          "packages",
+          "create_datetime",
+          "update_datetime",
+        ]);
+
+      const instance = await client.query(instanceInsert.toString(), instanceInsert.params);
 
       // Assign Instance_Owner role to the creator
       const roleTableAlias = "r";
@@ -195,13 +203,14 @@ instancesRouter.post("/instances", async (req, res, next) => {
 
       const ownerRole = await client.query(ownerRoleQuery.toString(), ownerRoleQuery.params);
       if (ownerRole.rows.length > 0) {
-        await client.query(
-          `
-            INSERT INTO genrpg.instance_user_roles (instance_guid, user_guid, role_id)
-            VALUES ($1, $2, $3)
-          `,
-          [instanceGuid, req.session.user.guid, ownerRole.rows[0].id],
-        );
+        const ownerRoleInsert = insertQuery()
+          .into("genrpg", "instance_user_roles")
+          .values(
+            ["instance_guid", "user_guid", "role_id"],
+            [instanceGuid, req.session.user.guid, ownerRole.rows[0].id],
+          );
+
+        await client.query(ownerRoleInsert.toString(), ownerRoleInsert.params);
       }
 
       await createDefaultInstanceAlias(client, instanceGuid);
@@ -408,15 +417,12 @@ instancesRouter.put("/instances/:guid/users/:userGuid", async (req, res, next) =
       }
     }
 
-    await pool.query(
-      `
-        INSERT INTO genrpg.instance_user_roles (instance_guid, user_guid, role_id)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (instance_guid, user_guid)
-        DO UPDATE SET role_id = EXCLUDED.role_id
-      `,
-      [instanceGuid, targetUserGuid, roleId],
-    );
+    const roleAssignment = insertQuery()
+      .into("genrpg", "instance_user_roles")
+      .values(["instance_guid", "user_guid", "role_id"], [instanceGuid, targetUserGuid, roleId])
+      .onConflict(["instance_guid", "user_guid"], "DO UPDATE");
+
+    await pool.query(roleAssignment.toString(), roleAssignment.params);
 
     res.json({ success: true });
   } catch (error) {

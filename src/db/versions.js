@@ -3,6 +3,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { pool: defaultPool } = require("./pool");
+const { insertQuery } = require("../services/queryService");
 
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
 
@@ -176,31 +177,21 @@ async function reapplyPackageSchemaVersions({
     for (const filePath of filePaths) {
       const schemaVersion = parseVersionFile(packageName, filePath);
       const { sql, checksum } = await readSchemaVersion(schemaVersion);
-      const key = `${schemaVersion.packageName}:${schemaVersion.fileName}`;
+      const { packageName, fileName, fileOrder, name } = schemaVersion;
+      const key = `${packageName}:${fileName}`;
 
       await client.query("BEGIN");
       try {
         await client.query(sql);
-        await client.query(
-          `
-            INSERT INTO schema_versions
-              (package_name, file_name, file_order, name, checksum)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (package_name, file_name)
-            DO UPDATE SET
-              file_order = EXCLUDED.file_order,
-              name = EXCLUDED.name,
-              checksum = EXCLUDED.checksum,
-              applied_at = now()
-          `,
-          [
-            schemaVersion.packageName,
-            schemaVersion.fileName,
-            schemaVersion.fileOrder,
-            schemaVersion.name,
-            checksum,
-          ],
-        );
+        const schemaVersionInsert = insertQuery()
+          .into("public", "schema_versions")
+          .values(
+            ["package_name", "file_name", "file_order", "name", "checksum"],
+            [packageName, fileName, fileOrder, name, checksum],
+          )
+          .onConflict(["package_name", "file_name"], "DO UPDATE");
+
+        await client.query(schemaVersionInsert.toString(), schemaVersionInsert.params);
         await client.query("COMMIT");
         appliedNow.push(key);
       } catch (error) {
@@ -305,14 +296,12 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
     if (freshlyInstalledPackages.size > 0) {
       for (const packageName of freshlyInstalledPackages) {
         try {
-          await client.query(
-            `
-              INSERT INTO genrpg.packages (package, version)
-              VALUES ($1, 0)
-              ON CONFLICT (package) DO NOTHING
-            `,
-            [packageName],
-          );
+          const packageInsert = insertQuery()
+            .into("genrpg", "packages")
+            .values(["package", "version"], [packageName, 0])
+            .onConflict(["package"], "DO NOTHING");
+
+          await client.query(packageInsert.toString(), packageInsert.params);
         } catch (error) {
           console.error(
             `Failed to initialize version for freshly installed package ${packageName}:`,

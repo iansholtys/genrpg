@@ -25,7 +25,7 @@ const { propertyToColumnName } = require("../lib/entityExtensionIndex");
  * ## Instance-scoped entity convention
  *
  * For a single table keyed by `(guid, instance_guid)`, define `static schema` and
- * `static table` (see `schema_table`). Implement:
+ * `static table`. Implement:
  *
  * | Method | Purpose |
  * |--------|---------|
@@ -66,14 +66,6 @@ class BaseStorage {
    * @type {typeof import("../entities/baseEntity").BaseEntity | undefined}
    */
   static Entity;
-
-  static get schema_table() {
-    const { schema, table } = this;
-    if (!schema || !table) {
-      throw new Error(`${this.name} must define static schema and table`);
-    }
-    return `${schema}.${table}`;
-  }
 
   /**
    * When false, storage is global (not keyed by instance_guid). {@link BaseStorage.forInstance}
@@ -122,10 +114,6 @@ class BaseStorage {
 
   get pool() {
     return pool;
-  }
-
-  get schema_table() {
-    return this.constructor.schema_table;
   }
 
   /** @returns {typeof import("../entities/baseEntity").BaseEntity} */

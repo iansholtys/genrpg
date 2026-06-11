@@ -2,7 +2,7 @@ const { mergeExtensionFieldSpecs } = require("./entityExtensionIndex");
 const { ValidationError } = require("../errors/ValidationError");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
-const { quoteIdentifier, quoteColumn, selectQuery, updateQuery } = require("../services/queryService");
+const { quoteColumn, selectQuery, insertQuery, updateQuery } = require("../services/queryService");
 
 async function metadataQuery(text, params = []) {
   const executor = getTransactionClient() || pool;
@@ -163,11 +163,13 @@ function buildInsertQuery(schema, table, values) {
     throw new Error(`No values supplied for ${schema}.${table}`);
   }
 
-  const columnSql = columns.map(quoteColumn).join(", ");
-  const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
+  const query = insertQuery()
+    .into(schema, table)
+    .values(columns, columns.map((column) => values[column]));
+
   return {
-    sql: `INSERT INTO ${quoteIdentifier(schema)}.${quoteIdentifier(table)} (${columnSql}) VALUES (${placeholders})`,
-    params: columns.map((column) => values[column]),
+    sql: query.toString(),
+    params: query.params,
   };
 }
 

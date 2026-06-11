@@ -1,4 +1,3 @@
-const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
@@ -7,7 +6,7 @@ const {
   loadAccessibleInstance,
   userHasPermission,
 } = require("./services/permissionService");
-const { deleteQuery, selectQuery, qualify } = require("./services/queryService");
+const { deleteQuery, insertQuery, selectQuery, qualify } = require("./services/queryService");
 
 const RESERVED_ALIAS_PREFIXES = ["api", "static", "auth", "login", "logout", "healthz"];
 
@@ -98,15 +97,13 @@ async function createCustomInstanceAlias(client, instanceGuid, slugSegment) {
       continue;
     }
 
-    const result = await client.query(
-      `
-        INSERT INTO genrpg.url_aliases (guid, alias, path)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (alias) DO NOTHING
-        RETURNING alias
-      `,
-      [crypto.randomUUID(), validation.alias, pathValue],
-    );
+    const insert = insertQuery()
+      .into("genrpg", "url_aliases")
+      .values(["alias", "path"], [validation.alias, pathValue])
+      .onConflict(["alias"], "DO NOTHING")
+      .returning(null, ["alias"]);
+
+    const result = await client.query(insert.toString(), insert.params);
 
     if (result.rowCount > 0) {
       return validation.alias;
@@ -245,14 +242,12 @@ async function createDefaultInstanceAlias(client, instanceGuid) {
     throw new Error(validation.error);
   }
 
-  await client.query(
-    `
-      INSERT INTO genrpg.url_aliases (guid, alias, path)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (alias) DO NOTHING
-    `,
-    [crypto.randomUUID(), validation.alias, pathValue],
-  );
+  const insert = insertQuery()
+    .into("genrpg", "url_aliases")
+    .values(["alias", "path"], [validation.alias, pathValue])
+    .onConflict(["alias"], "DO NOTHING");
+
+  await client.query(insert.toString(), insert.params);
 }
 
 async function deleteAliasesForInstance(client, instanceGuid) {

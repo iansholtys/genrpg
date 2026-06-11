@@ -451,4 +451,40 @@ module.exports = {
       `);
     }
   },
+
+  10: async (client) => {
+    await client.query(`
+      CREATE OR REPLACE FUNCTION genrpg.set_cached_datetime()
+      RETURNS trigger AS $$
+      BEGIN
+        NEW.cached_datetime = now();
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await client.query(`
+      DROP TRIGGER IF EXISTS cache_cached_datetime ON genrpg.cache;
+      CREATE TRIGGER cache_cached_datetime
+        BEFORE UPDATE ON genrpg.cache
+        FOR EACH ROW EXECUTE FUNCTION genrpg.set_cached_datetime();
+    `);
+  },
+
+  11: async (client) => {
+    await client.query(`
+      CREATE OR REPLACE FUNCTION genrpg.set_applied_at()
+      RETURNS trigger AS $$
+      BEGIN
+        NEW.applied_at = now();
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await client.query(`
+      DROP TRIGGER IF EXISTS schema_versions_applied_at ON schema_versions;
+      CREATE TRIGGER schema_versions_applied_at
+        BEFORE UPDATE ON schema_versions
+        FOR EACH ROW EXECUTE FUNCTION genrpg.set_applied_at();
+    `);
+  },
 };

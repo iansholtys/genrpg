@@ -1,5 +1,5 @@
 const { pool } = require("../db/pool");
-const { selectQuery, deleteQuery, qualify } = require("./queryService");
+const { selectQuery, insertQuery, deleteQuery, qualify } = require("./queryService");
 
 /** @type {Map<string, unknown>} */
 const memory = new Map();
@@ -74,17 +74,12 @@ async function get(cacheKey, { instanceGuid = null } = {}) {
  * @param {{ instanceGuid?: string | null }} [options]
  */
 async function set(cacheKey, value, { instanceGuid = null } = {}) {
-  await pool.query(
-    `
-      INSERT INTO genrpg.cache (cache_key, instance_guid, value, cached_datetime)
-      VALUES ($1, $2, $3, now())
-      ON CONFLICT (cache_key, instance_guid)
-      DO UPDATE SET
-        value = EXCLUDED.value,
-        cached_datetime = now()
-    `,
-    [cacheKey, instanceGuid, value],
-  );
+  const query = insertQuery()
+    .into("genrpg", "cache")
+    .values(["cache_key", "instance_guid", "value"], [cacheKey, instanceGuid, value])
+    .onConflict(["cache_key", "instance_guid"], "DO UPDATE");
+
+  await pool.query(query.toString(), query.params);
 
   memory.set(memoryKey(cacheKey, instanceGuid), value);
 }

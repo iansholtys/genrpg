@@ -25,10 +25,10 @@ function quoteColumn(identifier) {
 }
 
 /**
- * Fluent builder for PostgreSQL SELECT, UPDATE, and DELETE queries.
+ * Fluent builder for PostgreSQL SELECT, INSERT, UPDATE, and DELETE queries.
  *
- * Call {@link selectQuery}, {@link updateQuery}, or {@link deleteQuery} to obtain a
- * {@link QueryObject}, chain configuration methods, then pass
+ * Call {@link selectQuery}, {@link insertQuery}, {@link updateQuery}, or {@link deleteQuery}
+ * to obtain a {@link QueryObject}, chain configuration methods, then pass
  * {@link QueryObject#toString toString()} and {@link QueryObject#params params} to pg.
  * This module only builds SQL strings; it does not execute them.
  */
@@ -71,7 +71,7 @@ function renumberPlaceholders(expression, startIndex) {
 }
 
 /**
- * Builds a SELECT, UPDATE, or DELETE query through a chainable API.
+ * Builds a SELECT, INSERT, UPDATE, or DELETE query through a chainable API.
  */
 class QueryObject {
   constructor(queryType = "SELECT") {
@@ -80,6 +80,9 @@ class QueryObject {
     this._expressions = [];
     this._from = null;
     this._joins = [];
+    this._insertColumnNames = [];
+    this._insertValues = [];
+    this._onConflict = null;
     this._setClauses = [];
     this._whereClauses = [];
     this._params = [];
@@ -89,7 +92,7 @@ class QueryObject {
   }
 
   /**
-   * @param {"SELECT"|"UPDATE"|"DELETE"|("SELECT"|"UPDATE"|"DELETE")[]} queryType
+   * @param {"SELECT"|"INSERT"|"UPDATE"|"DELETE"|("SELECT"|"INSERT"|"UPDATE"|"DELETE")[]} queryType
    * @param {string} methodName
    */
   _requireType(queryType, methodName) {
@@ -109,6 +112,18 @@ class QueryObject {
   from(schema, table, tableAlias) {
     this._from = { schema, table, tableAlias };
     return this;
+  }
+
+  /**
+   * Set the INSERT target table. Alias for {@link QueryObject#from} on INSERT queries.
+   *
+   * @param {string} schema
+   * @param {string} table
+   * @param {string|null} [tableAlias]
+   */
+  into(schema, table, tableAlias) {
+    this._requireType("INSERT", "into");
+    return this.from(schema, table, tableAlias);
   }
 
   /**
@@ -263,6 +278,56 @@ class QueryObject {
   }
 
   /**
+   * Add INSERT column names and bound values.
+   *
+   * `columns` and `values` may be strings or arrays (mapped in order; lengths must match).
+   * Each value becomes one `$n` param. May be called more than once to append columns.
+   *
+   * @param {string|string[]} columns
+   * @param {unknown|unknown[]} values
+   */
+  values(columns, columnValues) {
+    this._requireType("INSERT", "values");
+
+    const columnNames = normalizeToArray(columns);
+    const boundValues = normalizeToArray(columnValues);
+
+    if (columnNames.length !== boundValues.length) {
+      throw new Error("values() columns and values must be the same length");
+    }
+
+    this._insertColumnNames.push(...columnNames);
+    this._insertValues.push(...boundValues);
+    return this;
+  }
+
+  /**
+   * Add an ON CONFLICT clause (INSERT only).
+   *
+   * `targets` names the unique constraint column(s). Pass an empty array when PostgreSQL
+   * should infer the constraint from any unique violation. Supported actions:
+   * - `"DO NOTHING"`
+   * - `"DO UPDATE"` — sets each inserted column not in `targets` to `"column" = EXCLUDED."column"`
+   *
+   * @param {string|string[]} targets
+   * @param {string} action
+   */
+  onConflict(targets, action) {
+    this._requireType("INSERT", "onConflict");
+
+    const normalized = action.trim().toUpperCase().replace(/\s+/g, " ");
+    if (normalized !== "DO NOTHING" && normalized !== "DO UPDATE") {
+      throw new Error(`Unsupported onConflict action: ${action}`);
+    }
+
+    this._onConflict = {
+      targets: normalizeToArray(targets),
+      action: normalized,
+    };
+    return this;
+  }
+
+  /**
    * Add SET assignments for an UPDATE from column names and bound values.
    *
    * `columns` and `values` may be strings or arrays (mapped in order; lengths must match).
@@ -367,13 +432,13 @@ class QueryObject {
   }
 
   /**
-   * Add a RETURNING clause (UPDATE or DELETE).
+   * Add a RETURNING clause (INSERT, UPDATE, or DELETE).
    *
-   * @param {string} tableAlias
+   * @param {string|null} tableAlias pass `null` on INSERT for unqualified column names
    * @param {string|string[]} fields column names to return
    */
   returning(tableAlias, fields) {
-    this._requireType(["UPDATE", "DELETE"], "returning");
+    this._requireType(["INSERT", "UPDATE", "DELETE"], "returning");
 
     this._returning = {
       tableAlias,
@@ -457,6 +522,68 @@ class QueryObject {
     return parts;
   }
 
+  /** Render quoted INSERT column list (without parentheses), or null when empty. */
+  formatColumns() {
+    if (!this._insertColumnNames.length) {
+      return null;
+    }
+
+    return this._insertColumnNames.map(quoteColumn).join(", ");
+  }
+
+  /**
+   * Render INSERT VALUES placeholders and append bound values to {@link QueryObject#params}.
+   *
+   * @returns {string|null}
+   */
+  formatValues() {
+    if (!this._insertValues.length) {
+      return null;
+    }
+
+    const placeholders = [];
+
+    for (const value of this._insertValues) {
+      placeholders.push(`$${this._params.length + 1}`);
+      this._params.push(value);
+    }
+
+    return placeholders.join(", ");
+  }
+
+  /** Render ON CONFLICT clause (without trailing semicolon), or null when omitted. */
+  formatOnConflict() {
+    if (!this._onConflict) {
+      return null;
+    }
+
+    const { targets, action } = this._onConflict;
+    let parts = [];
+    parts.push("ON CONFLICT");
+
+    if (targets.length) {
+      parts.push(`(${targets.map(quoteColumn).join(", ")})`);
+    }
+    parts.push(action);
+
+    if (action === "DO UPDATE") {
+      const targetSet = new Set(targets);
+      const updateColumns = this._insertColumnNames.filter((column) => !targetSet.has(column));
+
+      if (!updateColumns.length) {
+        throw new Error("onConflict DO UPDATE requires at least one non-conflict insert column");
+      }
+
+      const setClause = updateColumns
+        .map((column) => `${quoteColumn(column)} = EXCLUDED.${quoteColumn(column)}`)
+        .join(", ");
+
+      parts.push(`SET ${setClause}`);
+    }
+
+    return parts.join(" ");
+  }
+
   /** Render SET assignments joined with commas (without the `SET` keyword), or null when empty. */
   formatSet() {
     if (!this._setClauses.length) {
@@ -506,17 +633,48 @@ class QueryObject {
     }
 
     const { tableAlias, fields } = this._returning;
-    return fields.map((field) => qualify(tableAlias, field)).join(", ");
+    return fields
+      .map((field) => (tableAlias ? qualify(tableAlias, field) : quoteColumn(field)))
+      .join(", ");
   }
 
-  /** Bound parameters accumulated by {@link QueryObject#formatSet} and {@link QueryObject#formatWhere}. */
+  /** Bound parameters accumulated while rendering INSERT, SET, or WHERE clauses. */
   get params() {
     this._resetParams();
-    if (this._queryType === "UPDATE") {
+    if (this._queryType === "INSERT") {
+      this.formatValues();
+    } else if (this._queryType === "UPDATE") {
       this.formatSet();
     }
     this.formatWhere();
     return this._params;
+  }
+
+  /** Assemble and return an INSERT statement. @returns {string} */
+  toStringInsert() {
+    const columns = this.formatColumns();
+    const placeholders = this.formatValues();
+    if (!columns || !placeholders) {
+      throw new Error("Query requires at least one values() assignment");
+    }
+
+    const parts = [
+      `INSERT INTO ${this.formatFrom()}`,
+      `(${columns})`,
+      `VALUES (${placeholders})`,
+    ];
+
+    const onConflict = this.formatOnConflict();
+    if (onConflict) {
+      parts.push(onConflict);
+    }
+
+    const returning = this.formatReturning();
+    if (returning) {
+      parts.push(`RETURNING ${returning}`);
+    }
+
+    return parts.join("\n");
   }
 
   /** Assemble and return an UPDATE statement. @returns {string} */
@@ -595,13 +753,15 @@ class QueryObject {
   /** Assemble and return the full query statement. @returns {string} */
   toString() {
     if (!this._from) {
-      throw new Error("Query requires from()");
+      throw new Error("Query requires from() or into()");
     }
 
     this._resetParams();
     switch (this._queryType) {
       case "SELECT":
         return this.toStringSelect();
+      case "INSERT":
+        return this.toStringInsert();
       case "UPDATE":
         return this.toStringUpdate();
       case "DELETE":
@@ -617,6 +777,11 @@ function selectQuery() {
   return new QueryObject("SELECT");
 }
 
+/** Create a new {@link QueryObject} for building an INSERT query. @returns {QueryObject} */
+function insertQuery() {
+  return new QueryObject("INSERT");
+}
+
 /** Create a new {@link QueryObject} for building an UPDATE query. @returns {QueryObject} */
 function updateQuery() {
   return new QueryObject("UPDATE");
@@ -629,6 +794,7 @@ function deleteQuery() {
 
 module.exports = {
   selectQuery,
+  insertQuery,
   updateQuery,
   deleteQuery,
   qualify,

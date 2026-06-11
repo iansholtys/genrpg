@@ -3,7 +3,7 @@ const path = require("node:path");
 
 const { loadPackages } = require("./packages");
 const { applySchemaVersions, applyPendingSchemaVersionsForPackage } = require("./db/versions");
-const { selectQuery } = require("./services/queryService");
+const { insertQuery, selectQuery } = require("./services/queryService");
 
 const REPO_ROOT = path.join(__dirname, "..");
 
@@ -99,15 +99,12 @@ async function getAppliedVersions(client) {
 }
 
 async function setAppliedVersion(client, machineName, version) {
-  await client.query(
-    `
-      INSERT INTO genrpg.packages (package, version)
-      VALUES ($1, $2)
-      ON CONFLICT (package)
-      DO UPDATE SET version = EXCLUDED.version
-    `,
-    [machineName, version],
-  );
+  const query = insertQuery()
+    .into("genrpg", "packages")
+    .values(["package", "version"], [machineName, version])
+    .onConflict(["package"], "DO UPDATE");
+
+  await client.query(query.toString(), query.params);
 }
 
 async function runVersionStep(client, updatesModule, version) {
