@@ -1,4 +1,4 @@
-const { mergeExtensionFieldSpecs } = require("./entityExtensionIndex");
+const { mergeExtensionFieldSpecs } = require("../packages");
 const { ValidationError } = require("../errors/ValidationError");
 const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");

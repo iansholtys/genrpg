@@ -4,6 +4,10 @@ const { selectQuery, insertQuery, deleteQuery, qualify } = require("./queryServi
 /** @type {Map<string, unknown>} */
 const memory = new Map();
 
+/** Keys that must never be read from or written to genrpg.cache. */
+/** @type {Set<string>} */
+const memoryOnlyKeys = new Set();
+
 const tableAlias = "c";
 
 function memoryKey(cacheKey, instanceGuid) {
@@ -14,38 +18,55 @@ function clearMemory() {
   memory.clear();
 }
 
+function entryMatchesEviction(key, { instanceGuid, keyPrefix } = {}) {
+  const separatorIndex = key.indexOf("\0");
+  const cacheKey = separatorIndex === -1 ? key : key.slice(0, separatorIndex);
+  const keyInstanceGuid = separatorIndex === -1 ? "" : key.slice(separatorIndex + 1);
+
+  if (instanceGuid !== undefined && keyInstanceGuid !== (instanceGuid ?? "")) {
+    return false;
+  }
+
+  if (keyPrefix !== undefined && !cacheKey.startsWith(keyPrefix)) {
+    return false;
+  }
+
+  return true;
+}
+
 function evictMemoryMatching({ instanceGuid, keyPrefix } = {}) {
   if (instanceGuid === undefined && keyPrefix === undefined) {
     memory.clear();
+    memoryOnlyKeys.clear();
     return;
   }
 
   for (const key of memory.keys()) {
-    const separatorIndex = key.indexOf("\0");
-    const cacheKey = separatorIndex === -1 ? key : key.slice(0, separatorIndex);
-    const keyInstanceGuid = separatorIndex === -1 ? "" : key.slice(separatorIndex + 1);
-
-    if (instanceGuid !== undefined && keyInstanceGuid !== (instanceGuid ?? "")) {
-      continue;
+    if (entryMatchesEviction(key, { instanceGuid, keyPrefix })) {
+      memory.delete(key);
     }
+  }
 
-    if (keyPrefix !== undefined && !cacheKey.startsWith(keyPrefix)) {
-      continue;
+  for (const key of memoryOnlyKeys) {
+    if (entryMatchesEviction(key, { instanceGuid, keyPrefix })) {
+      memoryOnlyKeys.delete(key);
     }
-
-    memory.delete(key);
   }
 }
 
 /**
  * @param {string} cacheKey
- * @param {{ instanceGuid?: string | null }} [options]
+ * @param {{ instanceGuid?: string | null, memoryOnly?: boolean }} [options]
  * @returns {Promise<unknown | undefined>}
  */
-async function get(cacheKey, { instanceGuid = null } = {}) {
+async function get(cacheKey, { instanceGuid = null, memoryOnly = false } = {}) {
   const key = memoryKey(cacheKey, instanceGuid);
   if (memory.has(key)) {
     return memory.get(key);
+  }
+
+  if (memoryOnly || memoryOnlyKeys.has(key)) {
+    return undefined;
   }
 
   const query = selectQuery()
@@ -71,17 +92,25 @@ async function get(cacheKey, { instanceGuid = null } = {}) {
 /**
  * @param {string} cacheKey
  * @param {unknown} value
- * @param {{ instanceGuid?: string | null }} [options]
+ * @param {{ instanceGuid?: string | null, memoryOnly?: boolean }} [options]
  */
-async function set(cacheKey, value, { instanceGuid = null } = {}) {
+async function set(cacheKey, value, { instanceGuid = null, memoryOnly = false } = {}) {
+  const key = memoryKey(cacheKey, instanceGuid);
+  memory.set(key, value);
+
+  if (memoryOnly) {
+    memoryOnlyKeys.add(key);
+    return;
+  }
+
+  memoryOnlyKeys.delete(key);
+
   const query = insertQuery()
     .into("genrpg", "cache")
     .values(["cache_key", "instance_guid", "value"], [cacheKey, instanceGuid, value])
     .onConflict(["cache_key", "instance_guid"], "DO UPDATE");
 
   await pool.query(query.toString(), query.params);
-
-  memory.set(memoryKey(cacheKey, instanceGuid), value);
 }
 
 /**
@@ -99,7 +128,9 @@ async function deleteKey(cacheKey, { instanceGuid = null } = {}) {
 
   await pool.query(query.toString(), query.params);
 
-  memory.delete(memoryKey(cacheKey, instanceGuid));
+  const key = memoryKey(cacheKey, instanceGuid);
+  memory.delete(key);
+  memoryOnlyKeys.delete(key);
 }
 
 /**
@@ -129,16 +160,16 @@ async function clear({ instanceGuid, keyPrefix } = {}) {
 /**
  * @param {string} cacheKey
  * @param {() => Promise<unknown>} computeFn
- * @param {{ instanceGuid?: string | null }} [options]
+ * @param {{ instanceGuid?: string | null, memoryOnly?: boolean }} [options]
  */
-async function getOrCompute(cacheKey, computeFn, { instanceGuid = null } = {}) {
-  const existing = await get(cacheKey, { instanceGuid });
+async function getOrCompute(cacheKey, computeFn, { instanceGuid = null, memoryOnly = false } = {}) {
+  const existing = await get(cacheKey, { instanceGuid, memoryOnly });
   if (existing !== undefined) {
     return existing;
   }
 
   const value = await computeFn();
-  await set(cacheKey, value, { instanceGuid });
+  await set(cacheKey, value, { instanceGuid, memoryOnly });
   return value;
 }
 

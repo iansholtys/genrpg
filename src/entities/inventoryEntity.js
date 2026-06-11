@@ -1,7 +1,6 @@
 const { BaseEntity } = require("./baseEntity");
 const { ItemCollectionEntity } = require("./itemCollectionEntity");
 const { CharacterEntity } = require("./characterEntity");
-const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
 const CharacterStorage = require("../storage/characterStorage");
 
 class InventoryEntity extends BaseEntity {
@@ -37,12 +36,7 @@ class InventoryEntity extends BaseEntity {
   static async getFormSchema(context) {
     const ItemCollectionStorage = require("../storage/itemCollectionStorage");
 
-    const packageNames = Object.keys(context.instance.packages);
-    const extensionFieldSpecs = mergeExtensionFieldSpecs(
-      InventoryEntity.key,
-      packageNames,
-      Object.keys(InventoryEntity.fields),
-    );
+    const extensionFieldSpecs = await this.getStorage().forInstance(context.instance).getExtensionFieldSpecs();
     const [collections, characters] = await Promise.all([
       ItemCollectionStorage.forInstance(context.instance).list(),
       CharacterStorage.forInstance(context.instance).list(),

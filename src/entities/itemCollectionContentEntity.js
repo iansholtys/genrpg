@@ -1,4 +1,3 @@
-const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
 const { BaseEntity } = require("./baseEntity");
 const { ItemEntity } = require("./itemEntity");
 const { ItemCollectionEntity } = require("./itemCollectionEntity");
@@ -35,12 +34,7 @@ class ItemCollectionContentEntity extends BaseEntity {
     const ItemStorage = require("../storage/itemStorage");
     const ItemCollectionStorage = require("../storage/itemCollectionStorage");
 
-    const packageNames = Object.keys(context.instance.packages);
-    const extensionFieldSpecs = mergeExtensionFieldSpecs(
-      ItemCollectionContentEntity.key,
-      packageNames,
-      Object.keys(ItemCollectionContentEntity.fields),
-    );
+    const extensionFieldSpecs = await this.getStorage().forInstance(context.instance).getExtensionFieldSpecs();
     const [items, collections] = await Promise.all([
       ItemStorage.forInstance(context.instance).list(),
       ItemCollectionStorage.forInstance(context.instance).list(),

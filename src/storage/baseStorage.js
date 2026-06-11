@@ -9,7 +9,7 @@ const {
   extensionRowAlias,
   loadExtensionSchemas,
 } = require("../lib/entityExtensions");
-const { propertyToColumnName } = require("../lib/entityExtensionIndex");
+const { propertyToColumnName } = require("../packages");
 
 /**
  * Base class for GenRPG storage modules.
@@ -131,7 +131,7 @@ class BaseStorage {
     return getOrCompute(
       `entity.field_extensions:${entityClass.key}`,
       () => buildExtensionFieldSpecs(constructor, packageNames, Object.keys(entityClass.fields)),
-      { instanceGuid },
+      { instanceGuid, memoryOnly: true },
     );
   }
 

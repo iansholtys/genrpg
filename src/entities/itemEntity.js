@@ -1,6 +1,5 @@
 const { BaseEntity } = require("./baseEntity");
 const { ItemTemplateEntity } = require("./itemTemplateEntity");
-const { mergeExtensionFieldSpecs } = require("../lib/entityExtensionIndex");
 
 class ItemEntity extends BaseEntity {
   static key = "item";
@@ -33,12 +32,7 @@ class ItemEntity extends BaseEntity {
   static async getFormSchema(context) {
     const ItemTemplateStorage = require("../storage/itemTemplateStorage");
 
-    const packageNames = Object.keys(context.instance.packages);
-    const extensionFieldSpecs = mergeExtensionFieldSpecs(
-      ItemEntity.key,
-      packageNames,
-      Object.keys(ItemEntity.fields),
-    );
+    const extensionFieldSpecs = await this.getStorage().forInstance(context.instance).getExtensionFieldSpecs();
     const templates = await ItemTemplateStorage.forInstance(context.instance).list();
 
     const coreFields = Object.entries(ItemEntity.fields)

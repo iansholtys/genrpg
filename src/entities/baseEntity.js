@@ -14,7 +14,7 @@ class BaseEntity {
    * `virtual`: not a persisted core-table column (excluded from SELECT); used for enrichment/aggregates.
    *
    * Package extension fields (when {@link BaseEntity.key} is set) are merged at runtime from
-   * package entities.yml modules via {@link BaseEntity#extensionFieldSpecs}.
+   * package entities.yml modules via bound storage {@link BaseStorage#getExtensionFieldSpecs}.
    */
   static fields = {};
 
