@@ -101,21 +101,6 @@ class ItemCollectionContentEntity extends BaseEntity {
 
     return errors;
   }
-
-  toJSON() {
-    return {
-      guid: this.guid,
-      instanceGuid: this.instanceGuid,
-      collectionGuid: this.collectionGuid,
-      itemGuid: this.itemGuid,
-      subcollectionGuid: this.subcollectionGuid,
-      quantity: this.quantity,
-      position: this.position,
-      createDatetime: this.createDatetime,
-      updateDatetime: this.updateDatetime,
-      ...super.toJSON(),
-    };
-  }
 }
 
 module.exports = { ItemCollectionContentEntity };

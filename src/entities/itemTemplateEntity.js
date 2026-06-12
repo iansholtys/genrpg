@@ -35,19 +35,6 @@ class ItemTemplateEntity extends BaseEntity {
 
     return { groups: groups.filter((group) => group.fields.length) };
   }
-
-  toJSON() {
-    return {
-      guid: this.guid,
-      instanceGuid: this.instanceGuid,
-      name: this.name,
-      description: this.description,
-      weight: this.weight,
-      createDatetime: this.createDatetime,
-      updateDatetime: this.updateDatetime,
-      ...super.toJSON(),
-    };
-  }
 }
 
 module.exports = { ItemTemplateEntity };

@@ -72,18 +72,6 @@ class InventoryEntity extends BaseEntity {
 
     return { groups: groups.filter((group) => group.fields.length) };
   }
-
-  toJSON() {
-    return {
-      guid: this.guid,
-      instanceGuid: this.instanceGuid,
-      collectionGuid: this.collectionGuid,
-      characterGuid: this.characterGuid,
-      createDatetime: this.createDatetime,
-      updateDatetime: this.updateDatetime,
-      ...super.toJSON(),
-    };
-  }
 }
 
 module.exports = { InventoryEntity };

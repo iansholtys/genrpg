@@ -72,23 +72,6 @@ class CharacterEntity extends BaseEntity {
 
     return { groups: groups.filter((group) => group.fields.length) };
   }
-
-  toJSON() {
-    return {
-      guid: this.guid,
-      instanceGuid: this.instanceGuid,
-      userGuid: this.userGuid,
-      displayName: this.displayName,
-      fullName: this.fullName,
-      appearance: this.appearance,
-      pronouns: this.pronouns,
-      createDatetime: this.createDatetime,
-      updateDatetime: this.updateDatetime,
-      ...super.toJSON(),
-    };
-  }
 }
 
-module.exports = {
-  CharacterEntity,
-};
+module.exports = { CharacterEntity };

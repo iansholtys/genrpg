@@ -20,7 +20,7 @@ class ItemEntity extends BaseEntity {
     weight: { label: "Weight", type: "number" },
     createDatetime: { readOnly: true },
     updateDatetime: { readOnly: true },
-    itemTemplate: { readOnly: true, virtual: true },
+    itemTemplate: { readOnly: true, virtual: true, nested: true },
     packageData: { readOnly: true, virtual: true, default: {} },
   };
 
@@ -56,21 +56,6 @@ class ItemEntity extends BaseEntity {
     ];
 
     return { groups: groups.filter((group) => group.fields.length) };
-  }
-
-  toJSON() {
-    return {
-      guid: this.guid,
-      instanceGuid: this.instanceGuid,
-      itemTemplateGuid: this.itemTemplateGuid,
-      name: this.name,
-      description: this.description,
-      weight: this.weight,
-      createDatetime: this.createDatetime,
-      updateDatetime: this.updateDatetime,
-      itemTemplate: this.itemTemplate ? this.itemTemplate.toJSON() : null,
-      ...super.toJSON(),
-    };
   }
 }
 

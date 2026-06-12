@@ -7,8 +7,8 @@ class UserEntity extends BaseEntity {
     email: { label: "Email", type: "text" },
     displayName: { label: "Display name", type: "text" },
     admin: { label: "Admin", type: "boolean" },
-    oidcIssuer: { readOnly: true },
-    oidcSubject: { readOnly: true },
+    oidcIssuer: { readOnly: true, excludeFromJson: true },
+    oidcSubject: { readOnly: true, excludeFromJson: true },
     createDatetime: { readOnly: true },
     updateDatetime: { readOnly: true },
   };
@@ -20,15 +20,6 @@ class UserEntity extends BaseEntity {
   constructor(options = {}) {
     super(options);
     this.initFields(options);
-  }
-
-  toJSON() {
-    return {
-      guid: this.guid,
-      email: this.email,
-      displayName: this.displayName,
-      admin: this.admin,
-    };
   }
 }
 

@@ -5,13 +5,15 @@ const { getEventDispatcher } = require("../events/packageEvents");
 class BaseEntity {
   /**
    * Field definitions keyed by property name.
-   * Each spec: `{ label?, type?, default?, required?, refs?, inputType?, readOnly?, virtual? }`
+   * Each spec: `{ label?, type?, default?, required?, refs?, inputType?, readOnly?, virtual?, nested?, excludeFromJson? }`
    *
    * Types (when `type` is set): `text`, `guid`, `number`, `integer`, `boolean`.
    * `refs`: required on editable `guid` fields — entity class with `static getStorage()` for existence checks.
    *
    * `readOnly`: loaded from storage but excluded from {@link BaseEntity#set} and form schemas.
    * `virtual`: not a persisted core-table column (excluded from SELECT); used for enrichment/aggregates.
+   * `nested`: on virtual fields — serialize loaded entity relations via `toJSON()`.
+   * `excludeFromJson`: omit from {@link BaseEntity#toJSON} output.
    *
    * Package extension fields (when {@link BaseEntity.key} is set) are merged at runtime from
    * package entities.yml modules via bound storage {@link BaseStorage#getExtensionFieldSpecs}.
@@ -302,17 +304,34 @@ class BaseEntity {
   }
 
   /**
-   * Extension field values and package metadata for API responses.
-   * Subclasses with {@link BaseEntity.key} should spread this at the end of `toJSON()`.
+   * API response shape: identity, core fields, nested virtual relations,
+   * package extension fields, and non-empty package metadata.
    */
   toJSON() {
-    const payload = {};
+    const payload = { guid: this.guid };
+
+    if (this.instanceGuid != null) {
+      payload.instanceGuid = this.instanceGuid;
+    }
+
+    for (const [key, spec] of Object.entries(this.constructor.fields)) {
+      if (spec.excludeFromJson) {
+        continue;
+      }
+      if (spec.virtual) {
+        if (spec.nested) {
+          payload[key] = this[key]?.toJSON?.() ?? null;
+        }
+        continue;
+      }
+      payload[key] = this[key];
+    }
 
     for (const key of Object.keys(this.extensionFieldSpecs)) {
       payload[key] = this[key];
     }
 
-    if (Object.keys(this.packageData).length) {
+    if (this.packageData && Object.keys(this.packageData).length) {
       payload.packageData = this.packageData;
     }
 

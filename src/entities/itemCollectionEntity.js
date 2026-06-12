@@ -52,21 +52,6 @@ class ItemCollectionEntity extends BaseEntity {
 
     return { groups: groups.filter((group) => group.fields.length) };
   }
-
-  toJSON() {
-    return {
-      guid: this.guid,
-      instanceGuid: this.instanceGuid,
-      type: this.type,
-      name: this.name,
-      itemGuid: this.itemGuid,
-      capacityUsed: this.capacityUsed,
-      capacityMax: this.capacityMax,
-      createDatetime: this.createDatetime,
-      updateDatetime: this.updateDatetime,
-      ...super.toJSON(),
-    };
-  }
 }
 
 module.exports = { ItemCollectionEntity };
