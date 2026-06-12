@@ -1,12 +1,10 @@
 const { BaseStorage } = require("./baseStorage");
+const { CharacterEntity } = require("../entities/characterEntity");
 
 class CharacterStorage extends BaseStorage {
   static schema = "genrpg";
   static table = "characters";
-
-  static get Entity() {
-    return require("../entities/characterEntity").CharacterEntity;
-  }
+  static Entity = CharacterEntity;
 
   async listEntities(options = {}) {
     return super.listEntities({

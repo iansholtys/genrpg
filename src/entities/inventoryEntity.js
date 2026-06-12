@@ -1,7 +1,6 @@
 const { BaseEntity } = require("./baseEntity");
 const { ItemCollectionEntity } = require("./itemCollectionEntity");
 const { CharacterEntity } = require("./characterEntity");
-const CharacterStorage = require("../storage/characterStorage");
 
 class InventoryEntity extends BaseEntity {
   static key = "inventory";
@@ -35,6 +34,7 @@ class InventoryEntity extends BaseEntity {
 
   static async getFormSchema(context) {
     const ItemCollectionStorage = require("../storage/itemCollectionStorage");
+    const CharacterStorage = require("../storage/characterStorage");
 
     const extensionFieldSpecs = await this.getStorage().forInstance(context.instance).getExtensionFieldSpecs();
     const [collections, characters] = await Promise.all([
