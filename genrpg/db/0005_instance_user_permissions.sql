@@ -1,5 +1,0 @@
--- Created: 2026-05-17
--- This file previously contained instance_user_permissions.
--- The table has been moved to 0010_instance_user_roles.sql
--- which runs after the roles table is created.
--- This file is intentionally empty for existing installs.
