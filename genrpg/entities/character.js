@@ -29,27 +29,14 @@ class CharacterEntity extends BaseEntity {
     return require("../storage/characterStorage");
   }
 
-  static async getFormSchema(context) {
-    const storage = this.getStorage().forInstance(context.instance);
-    const fieldSpecs = await storage.getFieldSpecs();
+  static async buildFormField(key, spec, context) {
+    if (key === "userGuid") {
+      const UserStorage = require("../../src/storage/userStorage");
+      const instanceUsers = await UserStorage.global().listForInstance(context.instance.guid);
+      return this.formSelectFromSpec(key, spec, instanceUsers);
+    }
 
-    const UserStorage = require("../../src/storage/userStorage");
-    const instanceUsers = await UserStorage.global().listForInstance(context.instance.guid);
-
-    const coreFields = await Promise.all(
-      Object.entries(fieldSpecs)
-        .filter(([, spec]) => !spec.readOnly && !spec.structured)
-        .map(([key, spec]) => {
-          if (key === "userGuid") {
-            return this.formSelectFromSpec(key, spec, instanceUsers);
-          }
-          return this.formFieldFromSpec(key, spec, { instance: context.instance });
-        }),
-    );
-
-    return {
-      groups: [{ id: "core", label: "Character", fields: coreFields }],
-    };
+    return super.buildFormField(key, spec, context);
   }
 }
 

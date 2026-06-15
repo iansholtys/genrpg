@@ -30,21 +30,6 @@ function assertModuleInsidePackage(packageDir, absolutePath, relativePath, label
   }
 }
 
-function normalizeExtensionEntry(entry, label) {
-  if (!entry || typeof entry !== "object") {
-    throw packageLoadError(label, "each extensions entry must be an object");
-  }
-
-  const entity = typeof entry.entity === "string" ? entry.entity.trim() : "";
-  const module = normalizeRelativeModulePath(entry.module, label, "extensions.module");
-
-  if (!entity) {
-    throw packageLoadError(label, "each extensions entry requires entity");
-  }
-
-  return { entity, module };
-}
-
 function normalizeEntityEntry(entry, label) {
   if (!entry || typeof entry !== "object") {
     throw packageLoadError(label, "each entities entry must be an object");
@@ -65,7 +50,6 @@ function normalizePackageEntitiesManifest(raw, label) {
     throw packageLoadError(label, "manifest must be a YAML object");
   }
 
-  const extensions = [];
   const fields = [];
   const fieldTypes = [];
   const entities = [];
@@ -105,15 +89,6 @@ function normalizePackageEntitiesManifest(raw, label) {
     }
   }
 
-  if (raw.extensions !== undefined) {
-    if (!Array.isArray(raw.extensions)) {
-      throw packageLoadError(label, "extensions must be an array");
-    }
-    for (const entry of raw.extensions) {
-      extensions.push(normalizeExtensionEntry(entry, label));
-    }
-  }
-
   if (raw.entities !== undefined) {
     if (!Array.isArray(raw.entities)) {
       throw packageLoadError(label, "entities must be an array");
@@ -123,7 +98,7 @@ function normalizePackageEntitiesManifest(raw, label) {
     }
   }
 
-  return { extensions, fields, fieldTypes, entities };
+  return { fields, fieldTypes, entities };
 }
 
 async function readPackageEntitiesManifest(packageDir, machineName) {

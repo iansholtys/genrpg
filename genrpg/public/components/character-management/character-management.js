@@ -49,6 +49,10 @@ class ManageCharacterModal extends Modal {
     return Boolean(this.characterGuid);
   }
 
+  formFields() {
+    return this.metadata?.fields || [];
+  }
+
   buildField(field) {
     const id = `character-field-${field.key}`;
     const common = {
@@ -110,21 +114,16 @@ class ManageCharacterModal extends Modal {
 
     this.elements.$form = $("<form>", { class: "character-form" });
 
-    for (const group of this.metadata?.groups || []) {
-      const $fields = $("<div>", { class: "character-form__fields" });
-      for (const field of group.fields || []) {
-        $fields.append(this.buildField(field));
-      }
-
-      this.elements.$form.append(
-        $("<fieldset>", { class: "character-form__fieldset" }).append(
-          $("<legend>", { text: group.label || group.id }),
-          $fields.children().length
-            ? $fields
-            : $("<p>", { class: "empty-state", text: "No editable fields." }),
-        ),
-      );
+    const $fields = $("<div>", { class: "character-form__fields" });
+    for (const field of this.formFields()) {
+      $fields.append(this.buildField(field));
     }
+
+    this.elements.$form.append(
+      $fields.children().length
+        ? $fields
+        : $("<p>", { class: "empty-state", text: "No editable fields." }),
+    );
 
     this.elements.$actions = $("<div>", { class: "character-form__actions" }).append(
       this.elements.$cancelButton,
@@ -172,54 +171,50 @@ class ManageCharacterModal extends Modal {
   }
 
   fillForm(character) {
-    for (const group of this.metadata?.groups || []) {
-      for (const field of group.fields || []) {
-        const $input = this.elements.$form.find(`[name="${field.key}"]`);
-        if (!$input.length) {
-          continue;
-        }
-
-        const value = character[field.key];
-        if (field.inputType === "checkbox") {
-          $input.prop("checked", Boolean(value));
-          continue;
-        }
-
-        if (value === null || value === undefined) {
-          $input.val("");
-          continue;
-        }
-
-        $input.val(String(value));
+    for (const field of this.formFields()) {
+      const $input = this.elements.$form.find(`[name="${field.key}"]`);
+      if (!$input.length) {
+        continue;
       }
+
+      const value = character[field.key];
+      if (field.inputType === "checkbox") {
+        $input.prop("checked", Boolean(value));
+        continue;
+      }
+
+      if (value === null || value === undefined) {
+        $input.val("");
+        continue;
+      }
+
+      $input.val(String(value));
     }
   }
 
   readFormPayload() {
     const payload = {};
 
-    for (const group of this.metadata?.groups || []) {
-      for (const field of group.fields || []) {
-        const $input = this.elements.$form.find(`[name="${field.key}"]`);
-        if (!$input.length) {
-          continue;
-        }
-
-        if (field.inputType === "checkbox") {
-          if ($input.prop("checked")) {
-            payload[field.key] = true;
-          }
-          continue;
-        }
-
-        const raw = $input.val();
-        if (raw === null || raw === undefined || raw === "") {
-          payload[field.key] = null;
-          continue;
-        }
-
-        payload[field.key] = raw;
+    for (const field of this.formFields()) {
+      const $input = this.elements.$form.find(`[name="${field.key}"]`);
+      if (!$input.length) {
+        continue;
       }
+
+      if (field.inputType === "checkbox") {
+        if ($input.prop("checked")) {
+          payload[field.key] = true;
+        }
+        continue;
+      }
+
+      const raw = $input.val();
+      if (raw === null || raw === undefined || raw === "") {
+        payload[field.key] = null;
+        continue;
+      }
+
+      payload[field.key] = raw;
     }
 
     return payload;

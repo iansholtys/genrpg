@@ -11,7 +11,7 @@ class BaseEntity {
   static fields = {};
 
   /**
-   * Entity identifier for package extensions and persistence.
+   * Entity identifier for manifest field lookup and persistence.
    * @type {string | null}
    */
   static key = null;
@@ -184,24 +184,42 @@ class BaseEntity {
   }
 
   /**
-   * Builds form schema groups for package extension fields on this entity.
+   * Whether a manifest field spec should appear in {@link BaseEntity.getFormSchema}.
+   * @param {string} _key
+   * @param {object} spec
    */
-  static async buildExtensionFormGroups(extensionFieldSpecs, context) {
-    const { packages } = context.instance;
-    const groups = new Map();
+  static includeFormField(_key, spec) {
+    return !spec.readOnly && !spec.structured;
+  }
 
-    for (const [key, spec] of Object.entries(extensionFieldSpecs)) {
-      if (!groups.has(spec.schema)) {
-        groups.set(spec.schema, {
-          id: spec.schema,
-          label: packages[spec.schema] || spec.schema,
-          fields: [],
-        });
-      }
-      groups.get(spec.schema).fields.push(await this.formFieldFromSpec(key, spec));
-    }
+  /**
+   * Build one form field descriptor. Override for entity-specific select options or overrides.
+   *
+   * @param {string} key
+   * @param {object} spec
+   * @param {{ instance: object }} context
+   */
+  static async buildFormField(key, spec, context) {
+    return this.formFieldFromSpec(key, spec, { instance: context.instance });
+  }
 
-    return [...groups.values()];
+  /**
+   * Form metadata for instance-scoped admin UI (`GET …/form`).
+   *
+   * @param {{ instance: object }} context
+   * @returns {Promise<{ fields: object[] }>}
+   */
+  static async getFormSchema(context) {
+    const storage = this.getStorage().forInstance(context.instance);
+    const fieldSpecs = await storage.getFieldSpecs();
+
+    const fields = await Promise.all(
+      Object.entries(fieldSpecs)
+        .filter(([key, spec]) => this.includeFormField(key, spec))
+        .map(([key, spec]) => this.buildFormField(key, spec, context)),
+    );
+
+    return { fields };
   }
 
   constructor({
@@ -210,9 +228,7 @@ class BaseEntity {
     isNew = false,
     storage = null,
     fieldSpecs = {},
-    extensionFieldSpecs = {},
     coreFieldSpecs = {},
-    packageData = {},
     createDatetime = null,
     updateDatetime = null,
     ...fieldValues
@@ -222,16 +238,10 @@ class BaseEntity {
     this.isNew = isNew;
     this.storage = storage;
     this.validated = false;
-    this.packageData = packageData;
     this.createDatetime = createDatetime;
     this.updateDatetime = updateDatetime;
     this._fieldSpecs = fieldSpecs;
-    this._extensionFieldSpecs = extensionFieldSpecs;
     this._coreFieldSpecs = coreFieldSpecs;
-    this._effectiveFields = {
-      ...fieldSpecs,
-      ...extensionFieldSpecs,
-    };
     this.initFields(fieldValues);
     this.initCoreFields(fieldValues);
   }
@@ -255,15 +265,6 @@ class BaseEntity {
     return this._fieldSpecs;
   }
 
-  /** Legacy package extension field specs, resolved by storage at hydration time. */
-  get extensionFieldSpecs() {
-    return this._extensionFieldSpecs;
-  }
-
-  get effectiveFields() {
-    return this._effectiveFields;
-  }
-
   /** Package machine names for this entity's instance, from bound storage. */
   get packageNames() {
     return this.storage?.packageNames ?? [];
@@ -271,7 +272,7 @@ class BaseEntity {
 
   /** @type {string[]} Keys applied by {@link BaseEntity#set}. */
   get inputFields() {
-    return Object.keys(this.effectiveFields).filter((key) => !this.effectiveFields[key].readOnly);
+    return Object.keys(this.fieldSpecs).filter((key) => !this.fieldSpecs[key].readOnly);
   }
 
   assertHasStorage() {
@@ -293,7 +294,7 @@ class BaseEntity {
   }
 
   initFields(options = {}) {
-    for (const [key, spec] of Object.entries(this.effectiveFields)) {
+    for (const [key, spec] of Object.entries(this.fieldSpecs)) {
       let raw;
       if (key in options) {
         raw = options[key];
@@ -323,7 +324,7 @@ class BaseEntity {
   }
 
   applyFieldValues(values) {
-    for (const [key, spec] of Object.entries(this.effectiveFields)) {
+    for (const [key, spec] of Object.entries(this.fieldSpecs)) {
       if (key in values) {
         if (spec.readOnly || !spec.type) {
           this[key] = values[key];
@@ -335,7 +336,7 @@ class BaseEntity {
   }
 
   coerceField(key, value, spec = null) {
-    const fieldSpec = spec || this.effectiveFields[key];
+    const fieldSpec = spec || this.fieldSpecs[key];
     return EntityFieldTypes.coerce(value, { ...fieldSpec, key });
   }
 
@@ -358,23 +359,9 @@ class BaseEntity {
     };
 
     const manifestSpecs = await this.storage.getFieldManifestSpecs();
-    const fieldKeys = new Set(Object.keys(this.fieldSpecs));
-
-    const extensionErrors = await Promise.all(
-      this.inputFields
-        .filter((key) => !fieldKeys.has(key))
-        .map(async (key) => {
-          const spec = this.effectiveFields[key];
-          if (spec.structured) {
-            return null;
-          }
-          return EntityFieldTypes.validate(this[key], { ...spec, key }, context);
-        }),
-    );
-
     const fieldErrors = await collectFieldValidationErrors(this, manifestSpecs, context);
 
-    return [...extensionErrors, ...fieldErrors].filter(Boolean);
+    return fieldErrors.filter(Boolean);
   }
 
   /**
@@ -434,8 +421,7 @@ class BaseEntity {
   }
 
   /**
-   * API response shape: identity, core fields, nested virtual relations,
-   * package extension fields, and non-empty package metadata.
+   * API response shape: identity, core fields, and manifest field values.
    */
   toJSON() {
     const payload = { guid: this.guid };
@@ -451,7 +437,7 @@ class BaseEntity {
       payload.updateDatetime = this.updateDatetime;
     }
 
-    for (const key of Object.keys(this.effectiveFields)) {
+    for (const key of Object.keys(this.fieldSpecs)) {
       payload[key] = this[key];
     }
 
@@ -459,10 +445,6 @@ class BaseEntity {
       if (spec.public) {
         payload[property] = this[property];
       }
-    }
-
-    if (this.packageData && Object.keys(this.packageData).length) {
-      payload.packageData = this.packageData;
     }
 
     return payload;

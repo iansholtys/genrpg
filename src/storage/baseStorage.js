@@ -3,13 +3,6 @@ const { pool } = require("../db/pool");
 const { getTransactionClient } = require("../db/transactionContext");
 const { getOrCompute } = require("../services/cacheService");
 const { selectQuery, deleteQuery, insertQuery, updateQuery, qualify } = require("../services/queryService");
-const {
-  buildExtensionFieldSpecs,
-  saveExtensionRows,
-  extensionRowAlias,
-  loadExtensionSchemas,
-} = require("../lib/entityExtensions");
-const { propertyToColumnName } = require("../packages");
 const { loadMergedFieldSpecs, loadMergedCoreFieldSpecs } = require("../fields/fieldManifest");
 const {
   buildEntityFieldSpecsFromManifest,
@@ -35,7 +28,7 @@ class BaseStorage {
   static table;
 
   /**
-   * Entity class this storage serves. Required for storages with package field extensions.
+   * Entity class this storage serves.
    * @type {typeof import("../entities/baseEntity").BaseEntity | undefined}
    */
   static Entity;
@@ -126,18 +119,6 @@ class BaseStorage {
         const merged = await loadMergedFieldSpecs();
         const manifest = merged[entityClass.key] || {};
         return buildEntityFieldSpecsFromManifest(manifest);
-      },
-      { instanceGuid, memoryOnly: true },
-    );
-  }
-
-  async getExtensionFieldSpecs() {
-    const { constructor, packageNames, instanceGuid, entityClass } = this;
-    return getOrCompute(
-      `entity.field_extensions:${entityClass.key}`,
-      async () => {
-        const coreFieldKeys = Object.keys(await this.getFieldManifestSpecs());
-        return buildExtensionFieldSpecs(constructor, packageNames, coreFieldKeys);
       },
       { instanceGuid, memoryOnly: true },
     );
@@ -251,7 +232,7 @@ class BaseStorage {
   }
 
   /**
-   * Persist extension rows, reload the entity, and copy core + extension values back.
+   * Persist field-table values, reload the entity, and copy hydrated values back.
    */
   async reloadEntityAfterSave(entity, { skipEvents = true } = {}) {
     const manifestSpecs = await this.getFieldManifestSpecs();
@@ -261,7 +242,6 @@ class BaseStorage {
       entity,
       manifestSpecs,
     );
-    await this.saveExtensionRowsForEntity(entity);
 
     const reloaded = await this.load(entity.guid, { skipEvents });
     if (!reloaded) {
@@ -271,10 +251,7 @@ class BaseStorage {
     for (const { property } of await this.getCoreFieldEntries()) {
       entity[property] = reloaded[property];
     }
-    if (reloaded.packageData !== undefined) {
-      entity.packageData = reloaded.packageData;
-    }
-    for (const key of Object.keys(reloaded.effectiveFields)) {
+    for (const key of Object.keys(reloaded.fieldSpecs)) {
       if (key in reloaded) {
         entity[key] = reloaded[key];
       }
@@ -298,81 +275,8 @@ class BaseStorage {
 
     // We only add single-value fields, multi-value fields are added later with follow-up queries
     addSingleValueFieldJoins(query, tableAlias, manifestSpecs);
-    await this.addExtensionFields(query, tableAlias);
 
     return query;
-  }
-
-  async addExtensionFields(query, coreTableAlias) {
-    // Get extension field specs from cache or compute them
-    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
-    if (!Object.keys(extensionFieldSpecs).length) {
-      return query;
-    }
-
-    // Group field specs by schema
-    const specsBySchema = new Map();
-    for (const spec of Object.values(extensionFieldSpecs)) {
-      const { schema } = spec;
-      if (!specsBySchema.has(schema)) {
-        specsBySchema.set(schema, []);
-      }
-      specsBySchema.get(schema).push(spec);
-    }
-
-    // Add a join and fields for each schema
-    const parentKeyColumn = `${this.entityClass.key}_guid`;
-    let joinIndex = 0;
-    for (const [schema, specs] of specsBySchema) {
-      joinIndex += 1;
-      const joinAlias = `ext${joinIndex}`;
-
-      query.addLeftJoin(
-        schema,
-        this.constructor.table,
-        joinAlias,
-        `${qualify(joinAlias, parentKeyColumn)} = ${qualify(coreTableAlias, "guid")}`,
-      );
-
-      query.addFields(
-        joinAlias,
-        specs.map((spec) => spec.column),
-        specs.map((spec) => extensionRowAlias(spec)),
-      );
-    }
-
-    return query;
-  }
-
-  async saveExtensionRowsForEntity(entity) {
-    await saveExtensionRows(
-      this.constructor,
-      this.packageNames,
-      entity.guid,
-      entity,
-      (text, params) => this.query(text, params),
-    );
-  }
-
-  async extensionContextFromRow(row) {
-    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
-    const packageData = {};
-    const extensionValues = {};
-
-    for (const [property, spec] of Object.entries(extensionFieldSpecs)) {
-      const raw = row[extensionRowAlias(spec)];
-      if (raw === undefined) {
-        continue;
-      }
-
-      extensionValues[property] = raw;
-      if (!packageData[spec.schema]) {
-        packageData[spec.schema] = {};
-      }
-      packageData[spec.schema][spec.column] = raw;
-    }
-
-    return { packageData, extensionValues };
   }
 
   async rowsToEntities(rows) {
@@ -475,7 +379,6 @@ class BaseStorage {
     } else {
       query.addFields(t, await this.getCoreEntityFields());
       addSingleValueFieldJoins(query, t, manifestSpecs);
-      await this.addExtensionFields(query, t);
     }
 
     if (this.instanceGuid) {
@@ -537,32 +440,20 @@ class BaseStorage {
     return this.rowsToEntities(result.rows);
   }
 
-  async getEntityFieldSpecs() {
-    const [fieldSpecs, extensionFieldSpecs] = await Promise.all([
-      this.getFieldSpecs(),
-      this.getExtensionFieldSpecs(),
-    ]);
-    return { fieldSpecs, extensionFieldSpecs };
-  }
-
   async toEntity(row, multiValueFields = {}) {
-    const [manifestSpecs, { fieldSpecs, extensionFieldSpecs }, coreFieldSpecs] = await Promise.all([
+    const [manifestSpecs, fieldSpecs, coreFieldSpecs] = await Promise.all([
       this.getFieldManifestSpecs(),
-      this.getEntityFieldSpecs(),
+      this.getFieldSpecs(),
       this.getCoreFieldSpecs(),
     ]);
-    const { packageData, extensionValues } = await this.extensionContextFromRow(row);
 
     return new this.entityClass({
       ...(await this.coreOptionsFromRow(row)),
       storage: this,
       fieldSpecs,
-      extensionFieldSpecs,
       coreFieldSpecs,
-      packageData,
       ...singleValueFieldsFromRow(row, manifestSpecs),
       ...multiValueFields,
-      ...extensionValues,
     });
   }
 
@@ -634,8 +525,10 @@ class BaseStorage {
       throw new Error(`create() not implemented for ${this.constructor.name}`);
     }
 
-    const { fieldSpecs, extensionFieldSpecs } = await this.getEntityFieldSpecs();
-    const coreFieldSpecs = await this.getCoreFieldSpecs();
+    const [fieldSpecs, coreFieldSpecs] = await Promise.all([
+      this.getFieldSpecs(),
+      this.getCoreFieldSpecs(),
+    ]);
 
     return new this.constructor.Entity({
       instanceGuid: this.instanceGuid,
@@ -643,13 +536,12 @@ class BaseStorage {
       isNew: true,
       storage: this,
       fieldSpecs,
-      extensionFieldSpecs,
       coreFieldSpecs,
     });
   }
 
   /**
-   * INSERT or UPDATE the core row, extension rows, then reload field values onto the entity.
+   * INSERT or UPDATE the core row, then reload field values onto the entity.
    * Override when persistence does not follow the standard core-table pattern (e.g. {@link UserStorage}).
    */
   async save(entity) {
@@ -660,27 +552,8 @@ class BaseStorage {
     return this.reloadEntityAfterSave(entity);
   }
 
-  /**
-   * Delete by guid + instance_guid. Removes package extension rows when {@link BaseStorage.Entity} is set.
-   */
+  /** Delete by guid (+ instance_guid when instance-scoped). */
   async delete(entityGuid) {
-    const { constructor, packageNames, tableAlias } = this;
-    if (constructor.Entity) {
-      const { schema: coreSchema, table } = constructor;
-      const parentKeyColumn = `${constructor.Entity.key}_guid`;
-      const schemaRows = await loadExtensionSchemas(coreSchema, table, parentKeyColumn, packageNames);
-      const schemas = schemaRows
-        .map((row) => row.schema)
-        .filter((schema) => schema !== coreSchema);
-
-      for (const schema of schemas) {
-        const query = deleteQuery()
-          .from(schema, table, tableAlias)
-          .whereColumn(tableAlias, parentKeyColumn, entityGuid);
-
-        await this.query(query.toString(), query.params);
-      }
-    }
     return this.deleteRow(entityGuid);
   }
 

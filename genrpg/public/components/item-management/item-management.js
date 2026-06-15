@@ -49,14 +49,12 @@ class ManageItemModal extends Modal {
     return Boolean(this.itemGuid);
   }
 
+  formFields() {
+    return this.metadata?.fields || [];
+  }
+
   findField(key) {
-    for (const group of this.metadata?.groups || []) {
-      const field = (group.fields || []).find((entry) => entry.key === key);
-      if (field) {
-        return field;
-      }
-    }
-    return null;
+    return this.formFields().find((entry) => entry.key === key) ?? null;
   }
 
   buildField(field) {
@@ -111,29 +109,24 @@ class ManageItemModal extends Modal {
   getContent() {
     this.elements.$form = $("<form>", { class: "item-modal__form" });
 
-    for (const group of this.metadata?.groups || []) {
-      const $fields = $("<div>", { class: "item-modal__fields" });
-      for (const field of group.fields || []) {
-        $fields.append(this.buildField(field));
-        if (group.id === "core" && field.key === "itemTemplateGuid") {
-          $fields.append(
-            $("<p>", {
-              class: "item-modal__hint",
-              text: "Optional overrides — leave blank to use the template value.",
-            }),
-          );
-        }
+    const $fields = $("<div>", { class: "item-modal__fields" });
+    for (const field of this.formFields()) {
+      $fields.append(this.buildField(field));
+      if (field.key === "itemTemplateGuid") {
+        $fields.append(
+          $("<p>", {
+            class: "item-modal__hint",
+            text: "Optional overrides — leave blank to use the template value.",
+          }),
+        );
       }
-
-      this.elements.$form.append(
-        $("<fieldset>", { class: "item-modal__fieldset" }).append(
-          $("<legend>", { text: group.label || group.id }),
-          $fields.children().length
-            ? $fields
-            : $("<p>", { class: "empty-state", text: "No editable fields." }),
-        ),
-      );
     }
+
+    this.elements.$form.append(
+      $fields.children().length
+        ? $fields
+        : $("<p>", { class: "empty-state", text: "No editable fields." }),
+    );
 
     this.elements.$cancelButton = $("<button>", {
       type: "button",
@@ -215,54 +208,50 @@ class ManageItemModal extends Modal {
   }
 
   fillForm(item) {
-    for (const group of this.metadata?.groups || []) {
-      for (const field of group.fields || []) {
-        const $input = this.elements.$form.find(`[name="${field.key}"]`);
-        if (!$input.length) {
-          continue;
-        }
-
-        const value = item[field.key];
-        if (field.inputType === "checkbox") {
-          $input.prop("checked", Boolean(value));
-          continue;
-        }
-
-        if (value === null || value === undefined) {
-          $input.val("");
-          continue;
-        }
-
-        $input.val(String(value));
+    for (const field of this.formFields()) {
+      const $input = this.elements.$form.find(`[name="${field.key}"]`);
+      if (!$input.length) {
+        continue;
       }
+
+      const value = item[field.key];
+      if (field.inputType === "checkbox") {
+        $input.prop("checked", Boolean(value));
+        continue;
+      }
+
+      if (value === null || value === undefined) {
+        $input.val("");
+        continue;
+      }
+
+      $input.val(String(value));
     }
   }
 
   readFormPayload() {
     const payload = {};
 
-    for (const group of this.metadata?.groups || []) {
-      for (const field of group.fields || []) {
-        const $input = this.elements.$form.find(`[name="${field.key}"]`);
-        if (!$input.length) {
-          continue;
-        }
-
-        if (field.inputType === "checkbox") {
-          if ($input.prop("checked")) {
-            payload[field.key] = true;
-          }
-          continue;
-        }
-
-        const raw = $input.val();
-        if (raw === null || raw === undefined || raw === "") {
-          payload[field.key] = field.key === "itemTemplateGuid" ? "" : null;
-          continue;
-        }
-
-        payload[field.key] = raw;
+    for (const field of this.formFields()) {
+      const $input = this.elements.$form.find(`[name="${field.key}"]`);
+      if (!$input.length) {
+        continue;
       }
+
+      if (field.inputType === "checkbox") {
+        if ($input.prop("checked")) {
+          payload[field.key] = true;
+        }
+        continue;
+      }
+
+      const raw = $input.val();
+      if (raw === null || raw === undefined || raw === "") {
+        payload[field.key] = field.key === "itemTemplateGuid" ? "" : null;
+        continue;
+      }
+
+      payload[field.key] = raw;
     }
 
     if (payload.itemTemplateGuid !== undefined) {
@@ -392,6 +381,7 @@ class ManageItemModal extends Modal {
 
 class ItemManagement {
   static defaultId = "genrpg-item-management";
+  static tableFieldKeys = new Set(["itemTemplateGuid", "name", "description", "weight"]);
 
   /**
    * @param {Object} options
@@ -481,19 +471,17 @@ class ItemManagement {
   getExtensionColumns() {
     const columns = [];
 
-    for (const group of this.formMetadata?.groups || []) {
-      if (group.id === "core") {
+    for (const field of this.formMetadata?.fields || []) {
+      if (ItemManagement.tableFieldKeys.has(field.key)) {
         continue;
       }
 
-      for (const field of group.fields || []) {
-        columns.push({
-          title: field.label || field.key,
-          field: field.key,
-          searchable: field.type === "text",
-          valueFunction: (_row, value) => ItemManagement.formatFieldValue(value),
-        });
-      }
+      columns.push({
+        title: field.label || field.key,
+        field: field.key,
+        searchable: field.type === "text",
+        valueFunction: (_row, value) => ItemManagement.formatFieldValue(value),
+      });
     }
 
     return columns;

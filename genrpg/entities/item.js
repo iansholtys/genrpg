@@ -8,21 +8,6 @@ class ItemEntity extends BaseEntity {
     return require("../storage/itemStorage");
   }
 
-  static async getFormSchema(context) {
-    const storage = this.getStorage().forInstance(context.instance);
-    const fieldSpecs = await storage.getFieldSpecs();
-
-    const coreFields = await Promise.all(
-      Object.entries(fieldSpecs)
-        .filter(([, spec]) => !spec.readOnly && !spec.structured)
-        .map(([key, spec]) => this.formFieldFromSpec(key, spec, { instance: context.instance })),
-    );
-
-    return {
-      groups: [{ id: "core", label: "Item", fields: coreFields }],
-    };
-  }
-
   toJSON() {
     const payload = super.toJSON();
     if (this.itemTemplate != null) {
