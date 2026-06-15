@@ -1,0 +1,24 @@
+entities:
+  - key: character
+    module: entities/character.js
+  - key: item
+    module: entities/item.js
+  - key: item_template
+    module: entities/itemTemplate.js
+  - key: item_collection
+    module: entities/itemCollection.js
+
+fieldTypes:
+  - module: entities/fieldTypes.js
+
+fields:
+  - entity: user
+    module: entities/fields/user.js
+  - entity: character
+    module: entities/fields/character.js
+  - entity: item_template
+    module: entities/fields/itemTemplate.js
+  - entity: item
+    module: entities/fields/item.js
+  - entity: item_collection
+    module: entities/fields/itemCollection.js

@@ -8,20 +8,18 @@ const {
   readPackageEntitiesManifest,
   resolvePackageModule,
 } = require("./lib/packageEntitiesManifest");
+const { HttpError } = require("./errors/HttpError");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const STATIC_PKG_PREFIX = "/static/pkg";
 const CORE_PACKAGE_MACHINE_NAME = "genrpg";
 
 let packageCache = null;
-let packagesWithAssetsCache = null;
 
-class PackageLoadError extends Error {
+class PackageLoadError extends HttpError {
   constructor(message, details = []) {
-    super(message);
+    super(500, message, details.length ? details : null);
     this.name = "PackageLoadError";
-    this.details = details;
-    this.status = 500;
   }
 }
 
@@ -462,7 +460,7 @@ function resolveInstanceAssets(selectedMachineNames, packages) {
 
 async function resolveInstanceAssetsForRequest(selectedMachineNames, packages) {
   const expandedSelection = expandPackageSelectionForAssets(selectedMachineNames, packages);
-  const selectedPackages = packages.filter((pkg) => expandedSelection.includes(pkg.machineName));
+  const selectedPackages = selectPackagesByName(packages, expandedSelection);
   const packagesWithAssets = await enrichAllPackagesWithAssets(selectedPackages);
   return resolveInstanceAssets(selectedMachineNames, packagesWithAssets);
 }
@@ -632,11 +630,19 @@ async function refreshPackageCache() {
     ...discovered,
     extensionFields: await buildExtensionFields(discovered.packages),
   };
-  packagesWithAssetsCache = null;
   return packageCache;
 }
 
-async function loadPackages({ strict = false } = {}) {
+function selectPackagesByName(packages, packageNames) {
+  if (packageNames == null) {
+    return packages;
+  }
+
+  const packageNameSet = new Set(packageNames);
+  return packages.filter((pkg) => packageNameSet.has(pkg.machineName));
+}
+
+async function loadPackages({ strict = false, packageNames = null } = {}) {
   if (!packageCache) {
     await refreshPackageCache();
   }
@@ -645,24 +651,15 @@ async function loadPackages({ strict = false } = {}) {
     assertValidPackageConfiguration(packageCache.configurationIssues);
   }
 
-  return packageCache;
+  return selectPackagesByName(packageCache.packages, packageNames);
 }
 
-// Loads optional *.assets.yml manifests; used for Enter Instance, not routine package listing.
-async function loadPackagesWithAssets() {
-  if (!packagesWithAssetsCache) {
-    const { packages } = await loadPackages({ strict: true });
-    packagesWithAssetsCache = {
-      packages: await enrichAllPackagesWithAssets(packages),
-    };
-  }
-
-  return packagesWithAssetsCache;
+function getPackageConfigurationIssues() {
+  return packageCache?.configurationIssues ?? [];
 }
 
 function invalidatePackageCache() {
   packageCache = null;
-  packagesWithAssetsCache = null;
   try {
     const { invalidatePackageSubscribers } = require("./events/packageEvents");
     invalidatePackageSubscribers();
@@ -687,11 +684,8 @@ function parsePackageCsv(value) {
  */
 function resolveInstancePackages(packageCsv, packages) {
   const expanded = expandPackageSelectionForAssets(parsePackageCsv(packageCsv), packages);
-  const expandedSet = new Set(expanded);
   return Object.fromEntries(
-    packages
-      .filter((pkg) => expandedSet.has(pkg.machineName))
-      .map((pkg) => [pkg.machineName, pkg.name]),
+    selectPackagesByName(packages, expanded).map((pkg) => [pkg.machineName, pkg.name]),
   );
 }
 
@@ -738,6 +732,7 @@ module.exports = {
   getExtensionFields,
   mergeExtensionFieldSpecs,
   loadPackages,
+  getPackageConfigurationIssues,
   refreshPackageCache,
   invalidatePackageCache,
   parsePackageCsv,

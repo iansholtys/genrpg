@@ -91,7 +91,7 @@ async function refreshPackageSubscribers({ force = false } = {}) {
 
   subscriberRegistry.clear();
   packageEventRegistry.clear();
-  const { packages } = await loadPackages({ strict: false });
+  const packages = await loadPackages({ strict: false });
 
   for (const pkg of packages) {
     const packageDir = packageRootDir(pkg.path);

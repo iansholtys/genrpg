@@ -1,7 +1,7 @@
 const { Issuer } = require("openid-client");
-const { pool } = require("./db/pool");
 const UserStorage = require("./storage/userStorage");
-const { insertQuery, updateQuery } = require("./services/queryService");
+const { withTransaction } = require("./db/transactionContext");
+const { ValidationError } = require("./errors/ValidationError");
 const OIDC_CONFIGURATION_URL = process.env.OIDC_CONFIGURATION_URL;
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID;
 const OIDC_CLIENT_SECRET = process.env.OIDC_CLIENT_SECRET;
@@ -82,40 +82,37 @@ function ensureAuthenticated(req, res, next) {
 async function upsertUser({ issuer, subject, email, displayName }) {
   const normalizedEmail = email ? email.toLowerCase() : null;
   const configuredAdmin = normalizedEmail ? ADMIN_EMAILS.has(normalizedEmail) : false;
-  const query = insertQuery()
-    .into("genrpg", "users")
-    .values(
-      ["oidc_issuer", "oidc_subject", "email", "display_name"],
-      [issuer, subject, normalizedEmail, displayName],
-    )
-    .onConflict(["oidc_issuer", "oidc_subject"], "DO UPDATE")
-    .returning(null, ["guid", "email", "display_name", "admin"]);
 
-  const result = await pool.query(query.toString(), query.params);
-  let user = result.rows[0];
+  return withTransaction(async () => {
+    const storage = UserStorage.global();
+    const existing = await storage.list({
+      oidcIssuer: issuer,
+      oidcSubject: subject,
+    });
+    let entity = existing[0] ?? null;
 
-  if (configuredAdmin && !user.admin) {
-    const userAlias = "u";
-    const promoteQuery = updateQuery()
-      .from("genrpg", "users", userAlias)
-      .set("admin", true)
-      .whereColumn(userAlias, "guid", user.guid)
-      .returning(userAlias, ["guid", "email", "display_name", "admin"]);
+    if (!entity) {
+      entity = await storage.create();
+      entity.oidcIssuer = issuer;
+      entity.oidcSubject = subject;
+    }
 
-    const promoted = await pool.query(promoteQuery.toString(), promoteQuery.params);
-    user = promoted.rows[0];
-  }
+    entity.set({ email: normalizedEmail, displayName });
+    if (configuredAdmin) {
+      entity.set({ admin: true });
+    }
 
-  return user;
+    const validationErrors = await entity.validate();
+    if (validationErrors.length) {
+      throw new ValidationError(validationErrors);
+    }
+
+    return entity.save();
+  });
 }
 
-function userSummary(row) {
-  return {
-    guid: row.guid,
-    email: row.email,
-    displayName: row.display_name,
-    admin: row.admin,
-  };
+function userSummary(entity) {
+  return entity.toJSON();
 }
 
 module.exports = {

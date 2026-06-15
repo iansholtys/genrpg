@@ -25,12 +25,12 @@ function quoteColumn(identifier) {
 }
 
 /**
- * Fluent builder for PostgreSQL SELECT, INSERT, UPDATE, and DELETE queries.
+ * Fluent builder for PostgreSQL SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, and ALTER TABLE queries.
  *
- * Call {@link selectQuery}, {@link insertQuery}, {@link updateQuery}, or {@link deleteQuery}
- * to obtain a {@link QueryObject}, chain configuration methods, then pass
- * {@link QueryObject#toString toString()} and {@link QueryObject#params params} to pg.
- * This module only builds SQL strings; it does not execute them.
+ * Call {@link selectQuery}, {@link insertQuery}, {@link updateQuery}, {@link deleteQuery},
+ * {@link createTableQuery}, or {@link alterTableQuery} to obtain a {@link QueryObject}, chain
+ * configuration methods, then pass {@link QueryObject#toString toString()} and
+ * {@link QueryObject#params params} to pg. This module only builds SQL strings; it does not execute them.
  */
 
 /** Wrap a single value in a one-element array for field/alias handling. */
@@ -54,6 +54,16 @@ function qualify(tableAlias, column) {
   return `${quoteIdentifier(tableAlias)}.${quoteColumn(column)}`;
 }
 
+/**
+ * Returns `"schema"."table"` with identifiers quoted for safe SQL interpolation.
+ *
+ * @param {string} schema
+ * @param {string} table
+ */
+function qualifyTable(schema, table) {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
+}
+
 /** Format one SELECT list entry as `"alias"."field"` or `"alias"."field" AS "name"`. */
 function formatField(tableAlias, field, alias) {
   const part = qualify(tableAlias, field);
@@ -71,7 +81,7 @@ function renumberPlaceholders(expression, startIndex) {
 }
 
 /**
- * Builds a SELECT, INSERT, UPDATE, or DELETE query through a chainable API.
+ * Builds a SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, or ALTER TABLE query through a chainable API.
  */
 class QueryObject {
   constructor(queryType = "SELECT") {
@@ -89,6 +99,10 @@ class QueryObject {
     this._orderByClauses = [];
     this._limit = null;
     this._returning = null;
+    this._ifNotExists = false;
+    this._alterIfNotExists = false;
+    this._columns = [];
+    this._tableConstraints = [];
   }
 
   /**
@@ -124,6 +138,90 @@ class QueryObject {
   into(schema, table, tableAlias) {
     this._requireType("INSERT", "into");
     return this.from(schema, table, tableAlias);
+  }
+
+  /**
+   * Set the CREATE TABLE or ALTER TABLE target. Alias for {@link QueryObject#from}.
+   *
+   * @param {string} schema
+   * @param {string} table
+   */
+  table(schema, table) {
+    this._requireType(["CREATE TABLE", "ALTER TABLE"], "table");
+    return this.from(schema, table, null);
+  }
+
+  /**
+   * Add IF NOT EXISTS to CREATE TABLE.
+   */
+  ifNotExists() {
+    this._requireType("CREATE TABLE", "ifNotExists");
+    this._ifNotExists = true;
+    return this;
+  }
+
+  /**
+   * Use ADD COLUMN IF NOT EXISTS when rendering an ALTER TABLE query.
+   */
+  addColumnIfNotExists() {
+    this._requireType("ALTER TABLE", "addColumnIfNotExists");
+    this._alterIfNotExists = true;
+    return this;
+  }
+
+  /**
+   * Record a column for CREATE TABLE or ALTER TABLE ADD COLUMN.
+   *
+   * @param {string} name
+   * @param {{ type: string, nullable?: boolean, default?: string }} spec
+   */
+  addColumn(name, spec) {
+    this._requireType(["CREATE TABLE", "ALTER TABLE"], "addColumn");
+    this._columns.push({
+      name,
+      type: spec.type,
+      nullable: spec.nullable !== false,
+      default: spec.default,
+    });
+    return this;
+  }
+
+  /**
+   * Record a PRIMARY KEY constraint for CREATE TABLE.
+   *
+   * @param {string|string[]} columns
+   */
+  primaryKey(columns) {
+    this._requireType("CREATE TABLE", "primaryKey");
+    this._tableConstraints.push({
+      type: "primaryKey",
+      columns: normalizeToArray(columns),
+    });
+    return this;
+  }
+
+  /**
+   * Record a FOREIGN KEY constraint for CREATE TABLE.
+   *
+   * @param {string} constraintName
+   * @param {string} column local column name
+   * @param {string} refSchema referenced table schema
+   * @param {string} refTable referenced table name
+   * @param {string} [refColumn] referenced column name (defaults to guid)
+   * @param {{ onDelete?: string }} [options]
+   */
+  foreignKey(constraintName, column, refSchema, refTable, refColumn = "guid", options = {}) {
+    this._requireType("CREATE TABLE", "foreignKey");
+    this._tableConstraints.push({
+      type: "foreignKey",
+      constraintName,
+      column,
+      refSchema,
+      refTable,
+      refColumn,
+      onDelete: options.onDelete,
+    });
+    return this;
   }
 
   /**
@@ -676,6 +774,53 @@ class QueryObject {
       .join(", ");
   }
 
+  /** Render all recorded CREATE TABLE column definitions. */
+  formatCreateTableColumns() {
+    return this._columns.map((column) => {
+      const { name, type, nullable = true, default: defaultValue } = column;
+      const parts = [quoteColumn(name), type];
+
+      if (!nullable) {
+        parts.push("NOT NULL");
+      }
+      if (defaultValue !== undefined) {
+        parts.push(`DEFAULT ${defaultValue}`);
+      }
+
+      return parts.join(" ");
+    });
+  }
+
+  /** Render all recorded CREATE TABLE constraints. */
+  formatTableConstraints() {
+    return this._tableConstraints.map((constraint) => {
+      switch (constraint.type) {
+        case "primaryKey": {
+          const columnNames = normalizeToArray(constraint.columns).map(quoteColumn).join(", ");
+          return `PRIMARY KEY (${columnNames})`;
+        }
+        case "foreignKey": {
+          const refTable = qualifyTable(constraint.refSchema, constraint.refTable);
+          const refColumnName = quoteColumn(constraint.refColumn ?? "guid");
+
+          const parts = [
+            `CONSTRAINT ${quoteIdentifier(constraint.constraintName)}`,
+            `FOREIGN KEY (${quoteColumn(constraint.column)})`,
+            `REFERENCES ${refTable} (${refColumnName})`,
+          ];
+
+          if (constraint.onDelete) {
+            parts.push(`ON DELETE ${constraint.onDelete}`);
+          }
+
+          return parts.join(" ");
+        }
+        default:
+          throw new Error(`Unknown table constraint type: ${constraint.type}`);
+      }
+    });
+  }
+
   /** Bound parameters accumulated while rendering INSERT, SET, or WHERE clauses. */
   get params() {
     this._resetParams();
@@ -757,6 +902,41 @@ class QueryObject {
     return parts.join("\n");
   }
 
+  /** Assemble and return a CREATE TABLE statement. @returns {string} */
+  toStringCreateTable() {
+    const definitionParts = [
+      ...this.formatCreateTableColumns(),
+      ...this.formatTableConstraints(),
+    ];
+    if (!definitionParts.length) {
+      throw new Error("CREATE TABLE requires at least one addColumn(), primaryKey(), or foreignKey()");
+    }
+
+    const parts = ["CREATE TABLE"];
+    if (this._ifNotExists) {
+      parts.push("IF NOT EXISTS");
+    }
+    parts.push(this.formatFrom());
+    parts.push("(" + definitionParts.join(", ") + ")");
+    return parts.join(" ");
+  }
+
+  /** Assemble and return one or more ALTER TABLE statements. @returns {string} */
+  toStringAlterTable() {
+    const columns = this.formatCreateTableColumns();
+    if (!columns.length) {
+      throw new Error("ALTER TABLE requires addColumn() and addColumnIfNotExists()");
+    }
+
+    const target = this.formatFrom();
+    const ifNotExists = this._alterIfNotExists ? " IF NOT EXISTS" : "";
+    const parts = columns.map(
+      (column) => `ALTER TABLE ${target} ADD COLUMN${ifNotExists} ${column};`,
+    );
+
+    return parts.join("\n");
+  }
+
   /** Assemble and return a SELECT statement. @returns {string} */
   toStringSelect() {
     const select = this.formatSelect();
@@ -804,6 +984,10 @@ class QueryObject {
         return this.toStringUpdate();
       case "DELETE":
         return this.toStringDelete();
+      case "CREATE TABLE":
+        return this.toStringCreateTable();
+      case "ALTER TABLE":
+        return this.toStringAlterTable();
       default:
         throw new Error(`Unknown query type: ${this._queryType}`);
     }
@@ -830,12 +1014,23 @@ function deleteQuery() {
   return new QueryObject("DELETE");
 }
 
+/** Create a new {@link QueryObject} for building a CREATE TABLE query. @returns {QueryObject} */
+function createTableQuery() {
+  return new QueryObject("CREATE TABLE");
+}
+
+/** Create a new {@link QueryObject} for building an ALTER TABLE query. @returns {QueryObject} */
+function alterTableQuery() {
+  return new QueryObject("ALTER TABLE");
+}
+
 module.exports = {
   selectQuery,
   insertQuery,
   updateQuery,
   deleteQuery,
+  createTableQuery,
+  alterTableQuery,
   qualify,
-  quoteIdentifier,
   quoteColumn,
 };

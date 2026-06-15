@@ -10,16 +10,17 @@ const express = require("express");
 
 const { pool } = require("../db/pool");
 const { applySchemaVersions, reapplyPackageSchemaVersions } = require("../db/versions");
+const { applyFieldTables } = require("../fields/applyFieldTables");
 const { requireAdmin } = require("../auth");
 const { insertQuery, selectQuery } = require("../services/queryService");
+const { asyncRoute } = require("../lib/httpResponse");
 const {
-  PackageLoadError,
   loadPackages,
+  getPackageConfigurationIssues,
   invalidatePackageCache,
 } = require("../packages");
 const { clear: clearCache } = require("../services/cacheService");
 const {
-  PackageUpdateError,
   applyPackageUpdates,
   applyPackageUpdatesForMachine,
   checkPackageUpdates,
@@ -30,6 +31,14 @@ const {
 const execAsync = promisify(exec);
 
 const packagesRouter = express.Router();
+
+async function loadInstalledPackageNames() {
+  const query = selectQuery()
+    .from("genrpg", "packages", "p")
+    .addFields("p", "package");
+  const result = await pool.query(query.toString(), query.params);
+  return new Set(result.rows.map((row) => row.package));
+}
 
 async function registerPackageVersion(machineName) {
   const registerClient = await pool.connect();
@@ -61,6 +70,10 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
       await applySchemaVersions({ pool });
     }
     await applyPackageUpdatesForMachine(pool, machineName);
+    const fieldTables = await applyFieldTables({ pool, packageNames: [machineName] });
+    if (fieldTables.applied.length) {
+      console.log(`Synced field tables for ${machineName}: ${fieldTables.applied.join(", ")}`);
+    }
   } catch (error) {
     console.error(`Failed to apply database for ${machineName}:`, error);
     updateWarning = error.message || "Failed to apply package database updates";
@@ -95,35 +108,20 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
   return { updateWarning };
 }
 
-packagesRouter.get("/packages", async (req, res, next) => {
-  try {
-    const data = await loadPackages({ strict: false });
-    const client = await pool.connect();
-    try {
-      const tableAlias = "p";
-      const query = selectQuery()
-        .from("genrpg", "packages", tableAlias)
-        .addFields(tableAlias, "package");
+packagesRouter.get("/packages", asyncRoute(async (req, res) => {
+  const [packages, installedNames] = await Promise.all([
+    loadPackages({ strict: false }),
+    loadInstalledPackageNames(),
+  ]);
 
-      const result = await client.query(query.toString(), query.params);
-      const installedSet = new Set(result.rows.map((r) => r.package));
-      data.packages = data.packages.map((pkg) => ({
-        ...pkg,
-        installed: installedSet.has(pkg.machineName),
-      }));
-    } finally {
-      client.release();
-    }
-    res.json(data);
-  } catch (error) {
-    if (error instanceof PackageLoadError) {
-      res.status(error.status).json({ error: error.message, details: error.details });
-      return;
-    }
-
-    next(error);
-  }
-});
+  res.json({
+    packages: packages.map((pkg) => ({
+      ...pkg,
+      installed: installedNames.has(pkg.machineName),
+    })),
+    configurationIssues: getPackageConfigurationIssues(),
+  });
+}));
 
 async function previewGitPackage(url) {
   const tmpDir = path.join(os.tmpdir(), "genrpg-pkg-" + crypto.randomUUID());
@@ -160,113 +158,94 @@ async function previewGitPackage(url) {
   }
 }
 
-packagesRouter.get("/packages/git/status", requireAdmin, async (req, res, next) => {
-  try {
-    const { packages, configurationIssues } = await loadPackages({ strict: false });
+packagesRouter.get("/packages/git/status", requireAdmin, asyncRoute(async (req, res) => {
+  const [packages, installedNames] = await Promise.all([
+    loadPackages({ strict: false }),
+    loadInstalledPackageNames(),
+  ]);
+  const configurationIssues = getPackageConfigurationIssues();
 
-    const client = await pool.connect();
-    let installedSet;
+  const statuses = [];
+
+  for (const pkg of packages) {
+    if (pkg.machineName === "genrpg") continue;
+
+    const pkgPath = path.join(__dirname, "..", "..", pkg.path);
+    const installed = installedNames.has(pkg.machineName);
+
+    // Check if it's a git repository
+    let isGitRepo = false;
     try {
-      const tableAlias = "p";
-      const query = selectQuery()
-        .from("genrpg", "packages", tableAlias)
-        .addFields(tableAlias, "package");
-
-      const result = await client.query(query.toString(), query.params);
-      installedSet = new Set(result.rows.map((r) => r.package));
-    } finally {
-      client.release();
+      await fs.access(path.join(pkgPath, ".git"));
+      isGitRepo = true;
+    } catch {
+      // Not a git repository
     }
 
-    const statuses = [];
+    if (!isGitRepo) {
+      // Still include non-git packages so they can be installed
+      statuses.push({
+        name: pkg.name,
+        machineName: pkg.machineName,
+        localVersion: pkg.version,
+        remoteVersion: pkg.version,
+        url: "",
+        canUpdate: false,
+        installed,
+      });
+      continue;
+    }
 
-    for (const pkg of packages) {
-      if (pkg.machineName === "genrpg") continue;
+    try {
+      const { stdout: urlStdout } = await execAsync(`git remote get-url origin`, { cwd: pkgPath });
+      const url = urlStdout.trim();
 
-      const pkgPath = path.join(__dirname, "..", "..", pkg.path);
-      const installed = installedSet.has(pkg.machineName);
+      await execAsync(`git fetch origin`, { cwd: pkgPath });
 
-      // Check if it's a git repository
-      let isGitRepo = false;
+      let branchRef = "origin/main";
       try {
-        await fs.access(path.join(pkgPath, ".git"));
-        isGitRepo = true;
-      } catch {
-        // Not a git repository
-      }
-
-      if (!isGitRepo) {
-        // Still include non-git packages so they can be installed
-        statuses.push({
-          name: pkg.name,
-          machineName: pkg.machineName,
-          localVersion: pkg.version,
-          remoteVersion: pkg.version,
-          url: "",
-          canUpdate: false,
-          installed,
-        });
-        continue;
-      }
-
-      try {
-        const { stdout: urlStdout } = await execAsync(`git remote get-url origin`, { cwd: pkgPath });
-        const url = urlStdout.trim();
-
-        await execAsync(`git fetch origin`, { cwd: pkgPath });
-        
-        let branchRef = "origin/main";
-        try {
-          const { stdout: refStdout } = await execAsync(`git rev-parse --abbrev-ref origin/HEAD`, { cwd: pkgPath });
-          if (refStdout.trim()) {
-            branchRef = refStdout.trim();
-          }
-        } catch {
-          // fallback to origin/main
+        const { stdout: refStdout } = await execAsync(`git rev-parse --abbrev-ref origin/HEAD`, { cwd: pkgPath });
+        if (refStdout.trim()) {
+          branchRef = refStdout.trim();
         }
-
-        const { stdout: manifestContent } = await execAsync(`git show ${branchRef}:${pkg.machineName}.package.yml`, { cwd: pkgPath });
-        const raw = yaml.parse(manifestContent);
-        const remoteVersion = raw.version || "0.0.0";
-
-        const canUpdate = semver.valid(remoteVersion) && semver.valid(pkg.version) 
-                          ? semver.gt(remoteVersion, pkg.version) 
-                          : false;
-
-        statuses.push({
-          name: pkg.name,
-          machineName: pkg.machineName,
-          localVersion: pkg.version,
-          remoteVersion,
-          url,
-          canUpdate,
-          installed,
-        });
-      } catch (err) {
-        console.error(`Failed to get git status for ${pkg.machineName}:`, err);
-        // Still include the package so it can be installed even if git status fails
-        statuses.push({
-          name: pkg.name,
-          machineName: pkg.machineName,
-          localVersion: pkg.version,
-          remoteVersion: pkg.version,
-          url: "",
-          canUpdate: false,
-          installed,
-        });
+      } catch {
+        // fallback to origin/main
       }
-    }
 
-    res.json({ statuses, configurationIssues });
-  } catch (error) {
-    if (error instanceof PackageLoadError) {
-      res.status(error.status).json({ error: error.message, details: error.details });
-      return;
-    }
+      const { stdout: manifestContent } = await execAsync(`git show ${branchRef}:${pkg.machineName}.package.yml`, { cwd: pkgPath });
+      const raw = yaml.parse(manifestContent);
+      const remoteVersion = raw.version || "0.0.0";
 
-    next(error);
+      const canUpdate = semver.valid(remoteVersion) && semver.valid(pkg.version)
+                        ? semver.gt(remoteVersion, pkg.version)
+                        : false;
+
+      statuses.push({
+        name: pkg.name,
+        machineName: pkg.machineName,
+        localVersion: pkg.version,
+        remoteVersion,
+        url,
+        canUpdate,
+        installed,
+      });
+    } catch (err) {
+      console.error(`Failed to get git status for ${pkg.machineName}:`, err);
+      // Still include the package so it can be installed even if git status fails
+      statuses.push({
+        name: pkg.name,
+        machineName: pkg.machineName,
+        localVersion: pkg.version,
+        remoteVersion: pkg.version,
+        url: "",
+        canUpdate: false,
+        installed,
+      });
+    }
   }
-});
+
+  res.json({ statuses, configurationIssues });
+}));
 
 packagesRouter.post("/packages/git/preview", requireAdmin, async (req, res, next) => {
   try {
@@ -277,7 +256,7 @@ packagesRouter.post("/packages/git/preview", requireAdmin, async (req, res, next
     
     const preview = await previewGitPackage(url);
 
-    const { packages } = await loadPackages({ strict: false });
+    const packages = await loadPackages({ strict: false });
     const localPkg = packages.find(p => p.machineName === preview.machineName);
     
     const localVersion = localPkg ? localPkg.version : null;
@@ -331,11 +310,11 @@ packagesRouter.post("/packages/git/pull", requireAdmin, async (req, res, next) =
     await clearCache();
     invalidatePackageCache();
 
-    const { configurationIssues } = await loadPackages({ strict: false });
+    await loadPackages({ strict: false });
 
     res.json({
       success: true,
-      configurationIssues,
+      configurationIssues: getPackageConfigurationIssues(),
       updateWarning,
     });
   } catch (error) {
@@ -343,102 +322,73 @@ packagesRouter.post("/packages/git/pull", requireAdmin, async (req, res, next) =
   }
 });
 
-packagesRouter.post("/packages/install", requireAdmin, async (req, res, next) => {
-  try {
-    const { machineName } = req.body;
-    if (!machineName || typeof machineName !== "string") {
-      return res.status(400).json({ error: "machineName is required" });
-    }
+packagesRouter.post("/packages/install", requireAdmin, asyncRoute(async (req, res) => {
+  const { machineName } = req.body;
+  if (!machineName || typeof machineName !== "string") {
+    res.status(400).json({ error: "machineName is required" });
+    return;
+  }
 
-    const { packages } = await loadPackages({ strict: false });
-    const pkg = packages.find((p) => p.machineName === machineName);
-    if (!pkg) {
-      return res.status(404).json({ error: `Package "${machineName}" not found on disk` });
-    }
+  const packages = await loadPackages({ strict: false });
+  const pkg = packages.find((p) => p.machineName === machineName);
+  if (!pkg) {
+    res.status(404).json({ error: `Package "${machineName}" not found on disk` });
+    return;
+  }
 
-    // Check if already installed
-    const checkClient = await pool.connect();
-    try {
-      const tableAlias = "p";
-      const query = selectQuery()
-        .from("genrpg", "packages", tableAlias)
-        .addFields(tableAlias, "package")
-        .whereColumn(tableAlias, "package", machineName);
+  const installedQuery = selectQuery()
+    .from("genrpg", "packages", "p")
+    .addFields("p", "package")
+    .whereColumn("p", "package", machineName);
+  const installedResult = await pool.query(installedQuery.toString(), installedQuery.params);
+  if (installedResult.rows.length > 0) {
+    res.status(400).json({ error: `Package "${machineName}" is already installed` });
+    return;
+  }
 
-      const result = await checkClient.query(query.toString(), query.params);
-      if (result.rows.length > 0) {
-        return res.status(400).json({ error: `Package "${machineName}" is already installed` });
-      }
-    } finally {
-      checkClient.release();
-    }
+  const { updateWarning } = await applyPackageDatabase(machineName, pkg.path);
+  await clearCache();
+  invalidatePackageCache();
 
-    const { updateWarning } = await applyPackageDatabase(machineName, pkg.path);
+  res.json({ success: true, updateWarning });
+}));
+
+packagesRouter.post("/packages/reinstall", requireAdmin, asyncRoute(async (req, res) => {
+  const { machineName } = req.body;
+  if (!machineName || typeof machineName !== "string") {
+    res.status(400).json({ error: "machineName is required" });
+    return;
+  }
+
+  if (machineName === "genrpg") {
+    res.status(400).json({ error: "The genrpg package cannot be reinstalled from this action" });
+    return;
+  }
+
+  const packages = await loadPackages({ strict: false });
+  const pkg = packages.find((p) => p.machineName === machineName);
+  if (!pkg) {
+    res.status(404).json({ error: `Package "${machineName}" not found on disk` });
+    return;
+  }
+
+  const { updateWarning } = await applyPackageDatabase(machineName, pkg.path, { reinstall: true });
+  await clearCache();
+  invalidatePackageCache();
+
+  res.json({ success: true, updateWarning });
+}));
+
+packagesRouter.post("/update", requireAdmin, asyncRoute(async (req, res) => {
+  if (req.body?.update === true) {
+    const result = await applyPackageUpdates(pool);
     await clearCache();
     invalidatePackageCache();
-
-    res.json({ success: true, updateWarning });
-  } catch (error) {
-    if (error instanceof PackageLoadError) {
-      res.status(error.status).json({ error: error.message, details: error.details });
-      return;
-    }
-
-    next(error);
+    res.json(result);
+    return;
   }
-});
 
-packagesRouter.post("/packages/reinstall", requireAdmin, async (req, res, next) => {
-  try {
-    const { machineName } = req.body;
-    if (!machineName || typeof machineName !== "string") {
-      return res.status(400).json({ error: "machineName is required" });
-    }
-
-    if (machineName === "genrpg") {
-      return res.status(400).json({ error: "The genrpg package cannot be reinstalled from this action" });
-    }
-
-    const { packages } = await loadPackages({ strict: false });
-    const pkg = packages.find((p) => p.machineName === machineName);
-    if (!pkg) {
-      return res.status(404).json({ error: `Package "${machineName}" not found on disk` });
-    }
-
-    const { updateWarning } = await applyPackageDatabase(machineName, pkg.path, { reinstall: true });
-    await clearCache();
-    invalidatePackageCache();
-
-    res.json({ success: true, updateWarning });
-  } catch (error) {
-    if (error instanceof PackageLoadError) {
-      res.status(error.status).json({ error: error.message, details: error.details });
-      return;
-    }
-
-    next(error);
-  }
-});
-
-packagesRouter.post("/update", requireAdmin, async (req, res, next) => {
-  try {
-    if (req.body?.update === true) {
-      const result = await applyPackageUpdates(pool);
-      await clearCache();
-      invalidatePackageCache();
-      res.json(result);
-      return;
-    }
-
-    res.json(await checkPackageUpdates(pool));
-  } catch (error) {
-    if (error instanceof PackageUpdateError) {
-      res.status(error.status).json({ error: error.message, details: error.details });
-      return;
-    }
-
-    next(error);
-  }
-});
+  res.json(await checkPackageUpdates(pool));
+}));
 
 module.exports = packagesRouter;

@@ -1,6 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
-const { UserEntity } = require("../entities/userEntity");
-const { qualify } = require("../services/queryService");
+const UserEntity = require("../entities/userEntity");
+const { qualify, selectQuery } = require("../services/queryService");
 
 class UserStorage extends BaseStorage {
   static schema = "genrpg";
@@ -11,37 +11,59 @@ class UserStorage extends BaseStorage {
     return false;
   }
 
-  async listEntities(options = {}) {
-    return super.listEntities({
-      ...options,
-      orderBy: [{ field: "display_name", nulls: "LAST" }, { field: "email" }],
-    });
-  }
-
-  async listForInstance(instanceGuid) {
-    const query = await this.buildSelect();
-    const t = this.tableAlias;
-
-    query
-      .addJoin(
-        "genrpg",
-        "instance_user_roles",
-        "iur",
-        `${qualify("iur", "user_guid")} = ${qualify(t, "guid")}`,
-      )
-      .whereColumn("iur", "instance_guid", instanceGuid)
-      .orderBy(t, "display_name", "ASC", "NULLS LAST")
-      .orderBy(t, "email");
-
-    const result = await this.query(query.toString(), query.params);
-    return Promise.all(result.rows.map((row) => this.toEntity(row)));
-  }
-
-  async save(entity) {
-    if (entity.isNew) {
-      throw new Error("Users are created via OIDC login, not entity.save()");
+  async listEntities({ orderBy = [], ...filters } = {}) {
+    const args = { ...filters };
+    if (orderBy.length) {
+      args.orderBy = orderBy;
+    } else {
+      args.orderBy = [
+        { property: "displayName", nulls: "LAST" },
+        { property: "email" },
+      ];
     }
-    return super.save(entity);
+    return super.listEntities(args);
+  }
+
+  async listForInstance(instanceGuid, options = {}) {
+    const tableAlias = "iur";
+    const roleTableAlias = "r";
+    const schema = "genrpg";
+    const rolesQuery = selectQuery()
+      .from(schema, "instance_user_roles", tableAlias)
+      .addJoin(schema, "roles", roleTableAlias,
+        `${qualify(roleTableAlias, "id")} = ${qualify(tableAlias, "role_id")}`,
+      )
+      .addFields(tableAlias, ["user_guid", "role_id"])
+      .addFields(roleTableAlias, ["name"], ["role_name"])
+      .whereColumn(tableAlias, "instance_guid", instanceGuid);
+
+    const rolesResult = await this.query(rolesQuery.toString(), rolesQuery.params);
+    const assignments = rolesResult.rows.map((row) => ({
+      userGuid: row.user_guid,
+      roleId: row.role_id,
+      roleName: row.role_name,
+    }));
+
+    if (!assignments.length) {
+      return [];
+    }
+
+    const userGuids = [...new Set(assignments.map((entry) => entry.userGuid))];
+    const users = await this.load(userGuids, options);
+    const userByGuid = new Map(users.map((user) => [user.guid, user]));
+
+    for (const user of userByGuid.values()) {
+      user.instanceRoles = [];
+    }
+
+    for (const assignment of assignments) {
+      userByGuid.get(assignment.userGuid)?.instanceRoles.push({
+        roleId: assignment.roleId,
+        roleName: assignment.roleName,
+      });
+    }
+
+    return users;
   }
 }
 

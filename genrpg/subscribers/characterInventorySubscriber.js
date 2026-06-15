@@ -1,35 +1,17 @@
-const InventoryStorage = require("../../src/storage/inventoryStorage");
-const ItemCollectionStorage = require("../../src/storage/itemCollectionStorage");
-const { selectQuery, qualify } = require("../../src/services/queryService");
+const { ValidationError } = require("../../src/errors/ValidationError");
+const ItemCollectionStorage = require("../storage/itemCollectionStorage");
 
 const INVENTORY_COLLECTION_TYPE = "inventory";
 
 class CharacterInventorySubscriber {
   async onCharacterPostCreate(event) {
     const { instance, entity } = event;
-    const characterGuid = entity.guid;
-    if (!instance?.guid || !characterGuid) {
+    if (!instance?.guid || !entity?.guid) {
       throw new Error("Character inventory subscriber: missing instance or character guid");
     }
 
-    const inventoryStorage = InventoryStorage.forInstance(instance);
-
-    const existingQuery = selectQuery()
-      .from("genrpg", "inventories", "i")
-      .addFields("i", ["guid"])
-      .addJoin(
-        "genrpg",
-        "item_collections",
-        "c",
-        `${qualify("c", "guid")} = ${qualify("i", "collection_guid")}`,
-      )
-      .whereColumn("i", "character_guid", characterGuid)
-      .whereColumn("i", "instance_guid", instance.guid)
-      .whereColumn("c", "type", INVENTORY_COLLECTION_TYPE)
-      .limit(1);
-
-    const existing = await inventoryStorage.query(existingQuery.toString(), existingQuery.params);
-    if (existing.rows.length) {
+    const inventories = Array.isArray(entity.inventories) ? entity.inventories : [];
+    if (inventories.some((entry) => entry?.type === INVENTORY_COLLECTION_TYPE)) {
       return;
     }
 
@@ -39,10 +21,23 @@ class CharacterInventorySubscriber {
     await collection.validate();
     await collection.save();
 
-    const inventory = await inventoryStorage.create();
-    inventory.set({ collectionGuid: collection.guid, characterGuid });
-    await inventory.validate();
-    await inventory.save();
+    entity.set({
+      inventories: [
+        ...inventories,
+        {
+          collectionGuid: collection.guid,
+          name: null,
+          type: INVENTORY_COLLECTION_TYPE,
+        },
+      ],
+    });
+
+    const validationErrors = await entity.validate();
+    if (validationErrors.length) {
+      throw new ValidationError(validationErrors);
+    }
+
+    await entity.save({ skipEvents: true });
   }
 }
 

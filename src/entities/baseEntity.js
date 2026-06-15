@@ -1,22 +1,12 @@
 const { getTransactionClient } = require("../db/transactionContext");
 const { ValidationError } = require("../errors/ValidationError");
 const { getEventDispatcher } = require("../events/packageEvents");
+const { collectFieldValidationErrors } = require("../fields/fieldStorage");
 
 class BaseEntity {
   /**
-   * Field definitions keyed by property name.
-   * Each spec: `{ label?, type?, default?, required?, refs?, inputType?, readOnly?, virtual?, nested?, excludeFromJson? }`
-   *
-   * Types (when `type` is set): `text`, `guid`, `number`, `integer`, `boolean`.
-   * `refs`: required on editable `guid` fields — entity class with `static getStorage()` for existence checks.
-   *
-   * `readOnly`: loaded from storage but excluded from {@link BaseEntity#set} and form schemas.
-   * `virtual`: not a persisted core-table column (excluded from SELECT); used for enrichment/aggregates.
-   * `nested`: on virtual fields — serialize loaded entity relations via `toJSON()`.
-   * `excludeFromJson`: omit from {@link BaseEntity#toJSON} output.
-   *
-   * Package extension fields (when {@link BaseEntity.key} is set) are merged at runtime from
-   * package entities.yml modules via bound storage {@link BaseStorage#getExtensionFieldSpecs}.
+   * @deprecated Unported entities still declare {@link BaseEntity.fields}; ported entities
+   * use manifest field specs via {@link BaseStorage#getFieldSpecs} only.
    */
   static fields = {};
 
@@ -25,6 +15,12 @@ class BaseEntity {
    * @type {string | null}
    */
   static key = null;
+
+  /**
+   * Manifest field properties tried in order when labeling this entity in selects.
+   * Falls back to `entity.guid` when no property is set.
+   */
+  static labelProperties = [];
 
   /**
    * Maps lifecycle phases to package event classes, e.g. `{ preCreate, postCreate, … }`.
@@ -66,6 +62,20 @@ class BaseEntity {
   }
 
   /**
+   * Display label for this entity in selects and similar UI.
+   * @param {{ guid: string, [key: string]: unknown }} entity
+   */
+  static entityLabel(entity) {
+    for (const property of this.labelProperties) {
+      const value = entity[property];
+      if (value !== null && value !== undefined && value !== "") {
+        return String(value);
+      }
+    }
+    return entity.guid;
+  }
+
+  /**
    * Default HTML input type for a field spec. Explicit `spec.inputType` wins.
    */
   static defaultInputType(spec) {
@@ -89,8 +99,67 @@ class BaseEntity {
 
   /**
    * Builds a form field descriptor from a field spec for {@link BaseEntity.getFormSchema} metadata.
+   *
+   * @param {string} key
+   * @param {object} spec
+   * @param {{ instance?: object, overrides?: object }} [options]
+   * @param {object} [options.instance] when set, loads select options for instance-scoped entityRef fields
+   * @param {object} [options.overrides] form field overrides (inputType, options, …)
    */
-  static formFieldFromSpec(key, spec, overrides = {}) {
+  static async formFieldFromSpec(key, spec, options = {}) {
+    const { instance, overrides = {} } = options;
+
+    if (spec.readOnly) {
+      throw new Error(`Cannot build form field for read-only property: ${key}`);
+    }
+
+    if (spec.refs && !overrides.options) {
+      const RefEntity = spec.refs;
+      const StorageClass = RefEntity.getStorage();
+      if (StorageClass.instanceScoped) {
+        if (!instance) {
+          throw new Error(`formFieldFromSpec("${key}"): instance is required for instance-scoped entityRef`);
+        }
+        const entities = await StorageClass.forInstance(instance).list();
+        return this.formSelectFromSpec(key, spec, entities, overrides);
+      }
+
+      const entities = await StorageClass.global().list();
+      return this.formSelectFromSpec(key, spec, entities, overrides);
+    }
+
+    if (spec.inputType === "textarea") {
+      return this.buildFormFieldFromSpec(key, spec, { inputType: "textarea", ...overrides });
+    }
+
+    return this.buildFormFieldFromSpec(key, spec, overrides);
+  }
+
+  /**
+   * Builds a select form field from a pre-loaded list of referenced entities.
+   *
+   * @param {string} key
+   * @param {object} spec field spec with {@link BaseEntity.formSelectFromSpec refs}
+   * @param {Array<{ guid: string }>} entities
+   * @param {object} [overrides]
+   */
+  static formSelectFromSpec(key, spec, entities, overrides = {}) {
+    const RefEntity = spec.refs;
+    if (!RefEntity) {
+      throw new Error(`formSelectFromSpec requires spec.refs on field "${key}"`);
+    }
+
+    return this.buildFormFieldFromSpec(key, spec, {
+      inputType: "select",
+      options: entities.map((entity) => ({
+        value: entity.guid,
+        label: RefEntity.entityLabel(entity),
+      })),
+      ...overrides,
+    });
+  }
+
+  static buildFormFieldFromSpec(key, spec, overrides = {}) {
     if (spec.readOnly) {
       throw new Error(`Cannot build form field for read-only property: ${key}`);
     }
@@ -117,7 +186,7 @@ class BaseEntity {
   /**
    * Builds form schema groups for package extension fields on this entity.
    */
-  static buildExtensionFormGroups(extensionFieldSpecs, context) {
+  static async buildExtensionFormGroups(extensionFieldSpecs, context) {
     const { packages } = context.instance;
     const groups = new Map();
 
@@ -129,7 +198,7 @@ class BaseEntity {
           fields: [],
         });
       }
-      groups.get(spec.schema).fields.push(this.formFieldFromSpec(key, spec));
+      groups.get(spec.schema).fields.push(await this.formFieldFromSpec(key, spec));
     }
 
     return [...groups.values()];
@@ -140,18 +209,59 @@ class BaseEntity {
     guid,
     isNew = false,
     storage = null,
-    extensionFieldSpecs = null,
+    fieldSpecs = {},
+    extensionFieldSpecs = {},
+    coreFieldSpecs = {},
+    packageData = {},
+    createDatetime = null,
+    updateDatetime = null,
+    ...fieldValues
   } = {}) {
     this.instanceGuid = instanceGuid;
     this.guid = guid;
     this.isNew = isNew;
     this.storage = storage;
     this.validated = false;
-    this.extensionFieldSpecs = extensionFieldSpecs || {};
-    this.effectiveFields = {
-      ...this.constructor.fields,
-      ...this.extensionFieldSpecs,
+    this.packageData = packageData;
+    this.createDatetime = createDatetime;
+    this.updateDatetime = updateDatetime;
+    this._fieldSpecs = fieldSpecs;
+    this._extensionFieldSpecs = extensionFieldSpecs;
+    this._coreFieldSpecs = coreFieldSpecs;
+    this._effectiveFields = {
+      ...fieldSpecs,
+      ...extensionFieldSpecs,
     };
+    this.initFields(fieldValues);
+    this.initCoreFields(fieldValues);
+  }
+
+  /** Base-table field specs from the entity manifest (not field-table data). */
+  get coreFieldSpecs() {
+    return this._coreFieldSpecs;
+  }
+
+  /** Assign manifest core fields from constructor options. */
+  initCoreFields(options = {}) {
+    for (const property of Object.keys(this._coreFieldSpecs)) {
+      if (property in options) {
+        this[property] = options[property];
+      }
+    }
+  }
+
+  /** Manifest-driven field specs, resolved by storage at hydration time. */
+  get fieldSpecs() {
+    return this._fieldSpecs;
+  }
+
+  /** Legacy package extension field specs, resolved by storage at hydration time. */
+  get extensionFieldSpecs() {
+    return this._extensionFieldSpecs;
+  }
+
+  get effectiveFields() {
+    return this._effectiveFields;
   }
 
   /** Package machine names for this entity's instance, from bound storage. */
@@ -189,7 +299,11 @@ class BaseEntity {
         raw = options[key];
       } else if (spec.default !== undefined) {
         raw = spec.default;
+      } else if (spec.cardinality !== 1) {
+        raw = [];
       } else if (spec.readOnly) {
+        raw = null;
+      } else if (spec.structured) {
         raw = null;
       } else {
         raw = EntityFieldTypes.defaultFor(spec);
@@ -211,7 +325,11 @@ class BaseEntity {
   applyFieldValues(values) {
     for (const [key, spec] of Object.entries(this.effectiveFields)) {
       if (key in values) {
-        this[key] = this.coerceField(key, values[key], spec);
+        if (spec.readOnly || !spec.type) {
+          this[key] = values[key];
+        } else {
+          this[key] = this.coerceField(key, values[key], spec);
+        }
       }
     }
   }
@@ -238,13 +356,25 @@ class BaseEntity {
         packages: Object.fromEntries(this.packageNames.map((name) => [name, name])),
       },
     };
-    const messages = await Promise.all(
-      this.inputFields.map(async (key) => {
-        const spec = this.effectiveFields[key];
-        return EntityFieldTypes.validate(this[key], { ...spec, key }, context);
-      }),
+
+    const manifestSpecs = await this.storage.getFieldManifestSpecs();
+    const fieldKeys = new Set(Object.keys(this.fieldSpecs));
+
+    const extensionErrors = await Promise.all(
+      this.inputFields
+        .filter((key) => !fieldKeys.has(key))
+        .map(async (key) => {
+          const spec = this.effectiveFields[key];
+          if (spec.structured) {
+            return null;
+          }
+          return EntityFieldTypes.validate(this[key], { ...spec, key }, context);
+        }),
     );
-    return messages.filter(Boolean);
+
+    const fieldErrors = await collectFieldValidationErrors(this, manifestSpecs, context);
+
+    return [...extensionErrors, ...fieldErrors].filter(Boolean);
   }
 
   /**
@@ -314,21 +444,21 @@ class BaseEntity {
       payload.instanceGuid = this.instanceGuid;
     }
 
-    for (const [key, spec] of Object.entries(this.constructor.fields)) {
-      if (spec.excludeFromJson) {
-        continue;
-      }
-      if (spec.virtual) {
-        if (spec.nested) {
-          payload[key] = this[key]?.toJSON?.() ?? null;
-        }
-        continue;
-      }
+    if (this.createDatetime != null) {
+      payload.createDatetime = this.createDatetime;
+    }
+    if (this.updateDatetime != null) {
+      payload.updateDatetime = this.updateDatetime;
+    }
+
+    for (const key of Object.keys(this.effectiveFields)) {
       payload[key] = this[key];
     }
 
-    for (const key of Object.keys(this.extensionFieldSpecs)) {
-      payload[key] = this[key];
+    for (const [property, spec] of Object.entries(this.coreFieldSpecs)) {
+      if (spec.public) {
+        payload[property] = this[property];
+      }
     }
 
     if (this.packageData && Object.keys(this.packageData).length) {
@@ -486,10 +616,12 @@ class EntityFieldTypes {
       return `${this.fieldLabel(spec)} must be a string`;
     }
     if (!spec.refs) {
-      return `${this.fieldLabel(spec)} must declare refs`;
+      return null;
     }
     const storageClass = spec.refs.getStorage();
-    const storage = storageClass.forInstance(context.instance);
+    const storage = storageClass.instanceScoped === false
+      ? storageClass.global()
+      : storageClass.forInstance(context.instance);
     const exists = await storage.exists(value);
     if (!exists) {
       const scope = storageClass.instanceScoped === false ? "" : " for this instance";
@@ -566,7 +698,44 @@ class EntityFieldTypes {
     return this.getHandler(spec.type).default;
   }
 
+  static coerceStructuredEntry(entry, spec) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return entry;
+    }
+
+    const coerced = {};
+    for (const columnSpec of spec.columns) {
+      const raw = Object.hasOwn(entry, columnSpec.key)
+        ? entry[columnSpec.key]
+        : (columnSpec.default !== undefined ? columnSpec.default : null);
+      coerced[columnSpec.key] = this.coerce(raw, columnSpec);
+    }
+    return coerced;
+  }
+
+  static coerceStructured(value, spec) {
+    if (value == null) {
+      return spec.cardinality !== 1 ? [] : null;
+    }
+
+    if (spec.cardinality !== 1) {
+      if (!Array.isArray(value)) {
+        return value;
+      }
+      return value.map((entry) => this.coerceStructuredEntry(entry, spec));
+    }
+
+    if (typeof value !== "object" || Array.isArray(value)) {
+      return value;
+    }
+
+    return this.coerceStructuredEntry(value, spec);
+  }
+
   static coerce(value, spec) {
+    if (spec.structured) {
+      return this.coerceStructured(value, spec);
+    }
     return this.getHandler(spec.type).coerce(value, spec);
   }
 
@@ -575,4 +744,4 @@ class EntityFieldTypes {
   }
 }
 
-module.exports = { BaseEntity };
+module.exports = { BaseEntity, EntityFieldTypes };

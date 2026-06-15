@@ -240,7 +240,7 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
     await ensureSchemaVersionTable(client);
 
     const { loadPackages } = require("../packages");
-    const { packages } = await loadPackages({ strict: false });
+    const packages = await loadPackages({ strict: false });
     for (const pkg of packages) {
       if (pkg.machineName) {
         await client.query(`CREATE SCHEMA IF NOT EXISTS "${pkg.machineName}"`);
@@ -293,7 +293,13 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
       }
     }
 
-    return { applied: appliedNow };
+    const { applyFieldTables } = require("../fields/applyFieldTables");
+    const fieldTables = await applyFieldTables({ pool });
+    if (fieldTables.applied.length) {
+      console.log(`Synced field tables: ${fieldTables.applied.join(", ")}`);
+    }
+
+    return { applied: appliedNow, fieldTables: fieldTables.applied };
   } finally {
     client.release();
   }

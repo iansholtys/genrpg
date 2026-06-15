@@ -1,20 +1,23 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
-const { PackageLoadError } = require("../packages");
+function packageLoadError(label, message) {
+  const { PackageLoadError } = require("../packages");
+  const detail = label ? `${label}: ${message}` : message;
+  return new PackageLoadError("Invalid package configuration", [detail]);
+}
 
 function normalizeRelativeModulePath(entry, label, field) {
+  if (entry === undefined || entry === null) {
+    throw packageLoadError(label, `${field} is required`);
+  }
   if (typeof entry !== "string" || !entry.trim()) {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: ${field} must be a non-empty string`,
-    ]);
+    throw packageLoadError(label, `${field} must be a non-empty string`);
   }
 
   const normalized = entry.trim().replace(/\\/g, "/");
   if (path.posix.isAbsolute(normalized) || normalized.startsWith("../") || normalized.includes("/../")) {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: ${field} path "${entry}" must be relative to the package root`,
-    ]);
+    throw packageLoadError(label, `${field} path "${entry}" must be relative to the package root`);
   }
 
   return normalized;
@@ -23,79 +26,88 @@ function normalizeRelativeModulePath(entry, label, field) {
 function assertModuleInsidePackage(packageDir, absolutePath, relativePath, label, field) {
   const relative = path.relative(packageDir, absolutePath);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: ${field} path "${relativePath}" escapes the package directory`,
-    ]);
+    throw packageLoadError(label, `${field} path "${relativePath}" escapes the package directory`);
   }
 }
 
 function normalizeExtensionEntry(entry, label) {
   if (!entry || typeof entry !== "object") {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: each extensions entry must be an object`,
-    ]);
+    throw packageLoadError(label, "each extensions entry must be an object");
   }
 
   const entity = typeof entry.entity === "string" ? entry.entity.trim() : "";
-  const modulePath = entry.module
-    ? normalizeRelativeModulePath(entry.module, label, "extensions.module")
-    : "";
+  const module = normalizeRelativeModulePath(entry.module, label, "extensions.module");
 
   if (!entity) {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: each extensions entry requires entity`,
-    ]);
-  }
-  if (!modulePath) {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: each extensions entry requires module`,
-    ]);
+    throw packageLoadError(label, "each extensions entry requires entity");
   }
 
-  return { entity, module: modulePath };
+  return { entity, module };
 }
 
 function normalizeEntityEntry(entry, label) {
   if (!entry || typeof entry !== "object") {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: each entities entry must be an object`,
-    ]);
+    throw packageLoadError(label, "each entities entry must be an object");
   }
 
   const key = typeof entry.key === "string" ? entry.key.trim() : "";
-  const modulePath = entry.module
-    ? normalizeRelativeModulePath(entry.module, label, "entities.module")
-    : "";
+  const module = normalizeRelativeModulePath(entry.module, label, "entities.module");
 
   if (!key) {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: each entities entry requires key`,
-    ]);
-  }
-  if (!modulePath) {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: each entities entry requires module`,
-    ]);
+    throw packageLoadError(label, "each entities entry requires key");
   }
 
-  return { key, module: modulePath };
+  return { key, module };
 }
 
 function normalizePackageEntitiesManifest(raw, label) {
   if (!raw || typeof raw !== "object") {
-    throw new PackageLoadError("Invalid package configuration", [
-      `${label}: manifest must be a YAML object`,
-    ]);
+    throw packageLoadError(label, "manifest must be a YAML object");
   }
 
   const extensions = [];
+  const fields = [];
+  const fieldTypes = [];
   const entities = [];
+
+  if (raw.fieldTypes !== undefined) {
+    if (!Array.isArray(raw.fieldTypes)) {
+      throw packageLoadError(label, "fieldTypes must be an array");
+    }
+    for (const entry of raw.fieldTypes) {
+      if (!entry || typeof entry !== "object") {
+        throw packageLoadError(label, "each fieldTypes entry must be an object");
+      }
+
+      fieldTypes.push({
+        module: normalizeRelativeModulePath(entry.module, label, "fieldTypes.module"),
+      });
+    }
+  }
+
+  if (raw.fields !== undefined) {
+    if (!Array.isArray(raw.fields)) {
+      throw packageLoadError(label, "fields must be an array");
+    }
+    for (const entry of raw.fields) {
+      if (!entry || typeof entry !== "object") {
+        throw packageLoadError(label, "each fields entry must be an object");
+      }
+
+      const entity = typeof entry.entity === "string" ? entry.entity.trim() : "";
+      const module = normalizeRelativeModulePath(entry.module, label, "fields.module");
+
+      if (!entity) {
+        throw packageLoadError(label, "each fields entry requires entity");
+      }
+
+      fields.push({ entity, module });
+    }
+  }
 
   if (raw.extensions !== undefined) {
     if (!Array.isArray(raw.extensions)) {
-      throw new PackageLoadError("Invalid package configuration", [
-        `${label}: extensions must be an array`,
-      ]);
+      throw packageLoadError(label, "extensions must be an array");
     }
     for (const entry of raw.extensions) {
       extensions.push(normalizeExtensionEntry(entry, label));
@@ -104,16 +116,14 @@ function normalizePackageEntitiesManifest(raw, label) {
 
   if (raw.entities !== undefined) {
     if (!Array.isArray(raw.entities)) {
-      throw new PackageLoadError("Invalid package configuration", [
-        `${label}: entities must be an array`,
-      ]);
+      throw packageLoadError(label, "entities must be an array");
     }
     for (const entry of raw.entities) {
       entities.push(normalizeEntityEntry(entry, label));
     }
   }
 
-  return { extensions, entities };
+  return { extensions, fields, fieldTypes, entities };
 }
 
 async function readPackageEntitiesManifest(packageDir, machineName) {
@@ -139,6 +149,8 @@ function resolvePackageModule(packageDir, relativePath, label, field) {
 }
 
 module.exports = {
+  packageLoadError,
+  normalizeRelativeModulePath,
   readPackageEntitiesManifest,
   resolvePackageModule,
 };

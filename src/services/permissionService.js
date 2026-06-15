@@ -80,7 +80,7 @@ async function buildContext(user, instanceGuid, { fields } = {}) {
   }
 
   if (typeof instance.packages === "string") {
-    const { packages } = await loadPackages({ strict: true });
+    const packages = await loadPackages({ strict: true });
     instance.packages = resolveInstancePackages(instance.packages, packages);
   } else if (!instance.packages || typeof instance.packages !== "object" || Array.isArray(instance.packages)) {
     instance.packages = {};

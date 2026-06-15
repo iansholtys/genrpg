@@ -3,11 +3,6 @@
 CREATE TABLE IF NOT EXISTS genrpg.characters (
   guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   instance_guid uuid NOT NULL REFERENCES genrpg.instances(guid) ON DELETE CASCADE,
-  user_guid uuid REFERENCES genrpg.users(guid) ON DELETE SET NULL,
-  display_name text,
-  full_name text,
-  appearance text,
-  pronouns text,
   create_datetime timestamptz NOT NULL DEFAULT now(),
   update_datetime timestamptz NOT NULL DEFAULT now()
 );

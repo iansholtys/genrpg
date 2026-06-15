@@ -10,50 +10,22 @@ const {
   loadExtensionSchemas,
 } = require("../lib/entityExtensions");
 const { propertyToColumnName } = require("../packages");
+const { loadMergedFieldSpecs, loadMergedCoreFieldSpecs } = require("../fields/fieldManifest");
+const {
+  buildEntityFieldSpecsFromManifest,
+  addSingleValueFieldJoins,
+  singleValueFieldsFromRow,
+  loadMultiValueFields,
+  saveFieldValuesForEntity,
+  resolvePropertyPath,
+} = require("../fields/fieldStorage");
 
 /**
  * Base class for GenRPG storage modules.
  *
- * Storage sits below entity handlers and owns SQL plus row mapping. Obtain an
- * instance-scoped storage object via `StorageClass.forInstance(source)`, where
- * `instance` is a binding object `{ guid, packages? }` from request context, where
- * `packages` is always `{ [machineName]: humanLabel }` (empty when not loaded from the DB).
- *
- * Queries use the active transaction client from AsyncLocalStorage when inside
- * `withTransaction()`; otherwise they use the connection pool.
- *
- * ## Instance-scoped entity convention
- *
- * For a single table keyed by `(guid, instance_guid)`, define `static schema` and
- * `static table`. Implement:
- *
- * | Method | Purpose |
- * |--------|---------|
- * | `listEntities(…)` | Query and map rows to entities; override to set `orderBy` / filters |
- * | `loadEntity(entityGuids, …)` | Load entities for the given guids (always an array) |
- * | `list(…)` | Calls `listEntities()`, then preGet/postGet when configured |
- * | `load(entityGuid \| entityGuids, …)` | Calls `loadEntity()`, then preGet/postGet when configured |
- * | `create(…)` | New in-memory entity with a GUID (not written until `save`) |
- * | `save(entity)` | INSERT or UPDATE (called from `entity.save()`) |
- * | `delete(entityGuid, …)` | Delete; `true` if a row was removed |
- *
- * Default `listEntities(…)` applies instance filtering, optional column filters, and
- * `orderBy`. Subclasses override to pass defaults or add validation; override fully for
- * non-standard list queries. Default `loadEntity()` uses `buildSelect()` + guid filter.
- * Override `loadEntity()` only for non-standard load queries.
- * Callers use `list()` / `load()` — the base class runs get lifecycle events there.
- * Pass `{ skipEvents: true }` only when hydration must bypass package get handlers
- * (rare; most reloads after save should use plain `load()` so postGet enrichment runs).
- *
- * Filter args (e.g. `{ characterGuid }`) are forwarded from `list()` to `listEntities()`.
- * Storages without filters implement `listEntities()` with no parameters.
- *
- * Writes must run inside `withTransaction()` from `src/db/transactionContext.js`.
- *
- * ## Row hydration
- *
- * Map SQL rows to entity instances via `toEntity(row)`. Row mapping lives on
- * storage alongside `create()`.
+ * Entity base tables hold only fundamentals: guid, instance_guid (when scoped),
+ * create_datetime, update_datetime. All other data lives in manifest field tables
+ * ({@link BaseStorage#getFieldManifestSpecs}) joined at load time.
  */
 class BaseStorage {
   /** @type {string | undefined} */
@@ -126,70 +98,103 @@ class BaseStorage {
     return Entity;
   }
 
-  async getExtensionFieldSpecs() {
-    const { constructor, packageNames, instanceGuid, entityClass } = this;
+  async getFieldManifestSpecs() {
+    const { entityClass, instanceGuid } = this;
+    if (!entityClass.key) {
+      return {};
+    }
+
     return getOrCompute(
-      `entity.field_extensions:${entityClass.key}`,
-      () => buildExtensionFieldSpecs(constructor, packageNames, Object.keys(entityClass.fields)),
+      `entity.field_manifest:${entityClass.key}`,
+      async () => {
+        const merged = await loadMergedFieldSpecs();
+        return merged[entityClass.key] || {};
+      },
       { instanceGuid, memoryOnly: true },
     );
   }
 
-  /**
-   * Column names for the core entity table: guid, non-virtual entity fields,
-   * and instance_guid when instance-scoped.
-   */
-  getCoreEntityFields() {
-    const columns = [
-      "guid",
-      ...Object.entries(this.entityClass.fields)
-        .filter(([, spec]) => !spec.virtual)
-        .map(([key]) => propertyToColumnName(key)),
-    ];
+  async getFieldSpecs() {
+    const { entityClass, instanceGuid } = this;
+    if (!entityClass.key) {
+      return {};
+    }
+
+    return getOrCompute(
+      `entity.fields:${entityClass.key}`,
+      async () => {
+        const merged = await loadMergedFieldSpecs();
+        const manifest = merged[entityClass.key] || {};
+        return buildEntityFieldSpecsFromManifest(manifest);
+      },
+      { instanceGuid, memoryOnly: true },
+    );
+  }
+
+  async getExtensionFieldSpecs() {
+    const { constructor, packageNames, instanceGuid, entityClass } = this;
+    return getOrCompute(
+      `entity.field_extensions:${entityClass.key}`,
+      async () => {
+        const coreFieldKeys = Object.keys(await this.getFieldManifestSpecs());
+        return buildExtensionFieldSpecs(constructor, packageNames, coreFieldKeys);
+      },
+      { instanceGuid, memoryOnly: true },
+    );
+  }
+
+  async getCoreFieldSpecs() {
+    const { entityClass, instanceGuid } = this;
+    if (!entityClass.key) {
+      return {};
+    }
+
+    return getOrCompute(
+      `entity.core_fields:${entityClass.key}`,
+      async () => {
+        const merged = await loadMergedCoreFieldSpecs();
+        return merged[entityClass.key] || {};
+      },
+      { instanceGuid, memoryOnly: true },
+    );
+  }
+
+  /** Column names selected from the entity base table. */
+  async getCoreEntityFields() {
+    const columns = ["guid", "create_datetime", "update_datetime"];
 
     if (this.constructor.instanceScoped) {
       columns.push("instance_guid");
     }
 
-    return [...new Set(columns)];
+    for (const spec of Object.values(await this.getCoreFieldSpecs())) {
+      columns.push(spec.column);
+    }
+
+    return columns;
   }
 
-  /**
-   * Persisted core-table fields from {@link BaseStorage#entityClass} (excludes virtual).
-   * @returns {{ property: string, column: string }[]}
-   */
-  getCoreFieldEntries() {
-    return Object.entries(this.entityClass.fields)
-      .filter(([, spec]) => !spec.virtual)
-      .map(([property]) => ({
-        property,
-        column: propertyToColumnName(property),
-      }));
+  /** Base-table properties mapped when hydrating from a SQL row. */
+  async getCoreFieldEntries() {
+    const entries = [
+      { property: "createDatetime", column: "create_datetime" },
+      { property: "updateDatetime", column: "update_datetime" },
+    ];
+
+    for (const [property, spec] of Object.entries(await this.getCoreFieldSpecs())) {
+      entries.push({ property, column: spec.column });
+    }
+
+    return entries;
   }
 
-  /**
-   * Core fields written on INSERT/UPDATE (excludes virtual and read-only).
-   * @returns {{ property: string, column: string }[]}
-   */
-  getWritableCoreFieldEntries() {
-    return Object.entries(this.entityClass.fields)
-      .filter(([, spec]) => !spec.virtual && !spec.readOnly)
-      .map(([property]) => ({
-        property,
-        column: propertyToColumnName(property),
-      }));
-  }
-
-  /**
-   * Map a core-table SQL row to entity constructor options (guid, instanceGuid, field values).
-   */
-  coreOptionsFromRow(row) {
+  async coreOptionsFromRow(row) {
     const options = { guid: row.guid };
     if (this.constructor.instanceScoped) {
       options.instanceGuid = row.instance_guid;
     }
 
-    for (const { property, column } of this.getCoreFieldEntries()) {
+    for (const { property, column } of await this.getCoreFieldEntries()) {
       if (column in row) {
         options[property] = row[column];
       }
@@ -199,21 +204,25 @@ class BaseStorage {
   }
 
   /**
-   * INSERT or UPDATE the core entity row from {@link BaseStorage#getWritableCoreFieldEntries}.
-   * @returns {Promise<object | null>} entity on success, or null when UPDATE matched no row
+   * INSERT or UPDATE the entity base row (fundamentals only).
+   * @returns {Promise<object | null>}
    */
   async saveCoreRow(entity) {
     const { schema, table } = this.constructor;
-    const writable = this.getWritableCoreFieldEntries();
-    const columns = writable.map((entry) => entry.column);
-    const values = writable.map((entry) => entity[entry.property]);
 
     if (entity.isNew) {
-      const insertColumns = ["guid", ...columns];
-      const insertValues = [entity.guid, ...values];
+      const insertColumns = ["guid"];
+      const insertValues = [entity.guid];
       if (this.constructor.instanceScoped) {
         insertColumns.push("instance_guid");
         insertValues.push(entity.instanceGuid);
+      }
+
+      for (const [property, spec] of Object.entries(await this.getCoreFieldSpecs())) {
+        if (spec.createOnly) {
+          insertColumns.push(spec.column);
+          insertValues.push(entity[property]);
+        }
       }
 
       const insert = insertQuery()
@@ -228,7 +237,7 @@ class BaseStorage {
     const t = this.tableAlias;
     const query = updateQuery()
       .from(schema, table, t)
-      .set(columns, values)
+      .set(["guid"], [entity.guid])
       .whereColumn(t, "guid", entity.guid);
 
     if (this.instanceGuid) {
@@ -241,19 +250,17 @@ class BaseStorage {
     return result.rows.length ? entity : null;
   }
 
-  assignCoreFieldsFromReload(entity, reloaded) {
-    for (const { property } of this.getCoreFieldEntries()) {
-      entity[property] = reloaded[property];
-    }
-    if (reloaded.packageData !== undefined) {
-      entity.packageData = reloaded.packageData;
-    }
-  }
-
   /**
    * Persist extension rows, reload the entity, and copy core + extension values back.
    */
   async reloadEntityAfterSave(entity, { skipEvents = true } = {}) {
+    const manifestSpecs = await this.getFieldManifestSpecs();
+    await saveFieldValuesForEntity(
+      (text, params) => this.query(text, params),
+      entity.guid,
+      entity,
+      manifestSpecs,
+    );
     await this.saveExtensionRowsForEntity(entity);
 
     const reloaded = await this.load(entity.guid, { skipEvents });
@@ -261,8 +268,17 @@ class BaseStorage {
       return entity;
     }
 
-    this.assignCoreFieldsFromReload(entity, reloaded);
-    this.assignExtensionFieldsFromReload(entity, reloaded);
+    for (const { property } of await this.getCoreFieldEntries()) {
+      entity[property] = reloaded[property];
+    }
+    if (reloaded.packageData !== undefined) {
+      entity.packageData = reloaded.packageData;
+    }
+    for (const key of Object.keys(reloaded.effectiveFields)) {
+      if (key in reloaded) {
+        entity[key] = reloaded[key];
+      }
+    }
     return entity;
   }
 
@@ -274,10 +290,14 @@ class BaseStorage {
   async buildSelect() {
     const { schema, table } = this.constructor;
     const { tableAlias } = this;
+    const manifestSpecs = await this.getFieldManifestSpecs();
 
     const query = selectQuery()
       .from(schema, table, tableAlias)
-      .addFields(tableAlias, this.getCoreEntityFields());
+      .addFields(tableAlias, await this.getCoreEntityFields());
+
+    // We only add single-value fields, multi-value fields are added later with follow-up queries
+    addSingleValueFieldJoins(query, tableAlias, manifestSpecs);
     await this.addExtensionFields(query, tableAlias);
 
     return query;
@@ -352,15 +372,25 @@ class BaseStorage {
       packageData[spec.schema][spec.column] = raw;
     }
 
-    return { extensionFieldSpecs, packageData, extensionValues };
+    return { packageData, extensionValues };
   }
 
-  assignExtensionFieldsFromReload(entity, reloaded) {
-    for (const key of Object.keys(entity.extensionFieldSpecs)) {
-      if (key in reloaded) {
-        entity[key] = reloaded[key];
-      }
+  async rowsToEntities(rows) {
+    if (!rows.length) {
+      return [];
     }
+
+    const manifestSpecs = await this.getFieldManifestSpecs();
+    const entityGuids = rows.map((row) => row.guid);
+    const multiValueByEntity = await loadMultiValueFields(
+      (text, params) => this.query(text, params),
+      entityGuids,
+      manifestSpecs,
+    );
+
+    return Promise.all(
+      rows.map((row) => this.toEntity(row, multiValueByEntity[row.guid] || {})),
+    );
   }
 
   static newGuid() {
@@ -380,7 +410,7 @@ class BaseStorage {
   }
 
   /**
-   * List entities using {@link BaseStorage.buildSelect}, optional instance and column
+   * List entities using {@link BaseStorage#buildListQuery}, optional instance and property
    * filters, and ordering. Override in subclasses for non-standard queries or to
    * supply default `orderBy` / filter validation.
    *
@@ -388,37 +418,100 @@ class BaseStorage {
    * preGet/postGet for callers.
    *
    * @param {object} [options]
-   * @param {{ field?: string, order?: "ASC"|"DESC", nulls?: "FIRST"|"LAST", expression?: string }[]} [options.orderBy]
-   * @param {Record<string, unknown>} [options] additional keys are column filters (camelCase);
+   * @param {{ property?: string, field?: string, order?: "ASC"|"DESC", nulls?: "FIRST"|"LAST", expression?: string }[]} [options.orderBy]
+   * @param {Record<string, unknown>} [options] additional keys are property filters (camelCase);
    *   skipped when `undefined`, `null`, or `""`
    */
-  async listEntities({ orderBy = [], ...filters } = {}) {
-    const query = await this.buildSelect();
+  async listEntities(options = {}) {
+    const query = await this.buildListQuery(options);
+    const result = await this.query(query.toString(), query.params);
+    return this.rowsToEntities(result.rows);
+  }
+
+  /**
+   * Count entities matching {@link BaseStorage#buildListQuery} filters without hydrating rows.
+   *
+   * @param {object} [options] same filter keys as {@link BaseStorage#listEntities}; `orderBy` is ignored
+   * @returns {Promise<number>}
+   */
+  async countEntities(options = {}) {
+    const query = await this.buildListQuery({ ...options, countOnly: true });
+    const result = await this.query(query.toString(), query.params);
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
+  /**
+   * Build a SELECT for {@link BaseStorage#listEntities} / {@link BaseStorage#countEntities}.
+   *
+   * @param {object} [options]
+   * @param {boolean} [options.countOnly] when true, SELECT COUNT(DISTINCT guid) only
+   * @param {{ property?: string, field?: string, order?: "ASC"|"DESC", nulls?: "FIRST"|"LAST", expression?: string }[]} [options.orderBy]
+   * @param {Record<string, unknown>} [options] additional keys are property filters (camelCase);
+   *   skipped when `undefined`, `null`, or `""`
+   */
+  async buildListQuery({ orderBy = [], countOnly = false, ...filters } = {}) {
+    const { schema, table } = this.constructor;
     const t = this.tableAlias;
+    const manifestSpecs = await this.getFieldManifestSpecs();
+    const coreFieldsByProperty = Object.fromEntries(
+      (await this.getCoreFieldEntries()).map(({ property, column }) => [property, { column }]),
+    );
+
+    const activeFilters = Object.entries(filters).filter(
+      ([, value]) => value !== undefined && value !== null && value !== "",
+    );
+    const filterProperties = new Set(
+      activeFilters.map(([key]) => key.split(".")[0]),
+    );
+
+    const query = selectQuery().from(schema, table, t);
+
+    if (countOnly) {
+      query.addExpression(`COUNT(DISTINCT ${qualify(t, "guid")})`, "count");
+      addSingleValueFieldJoins(query, t, manifestSpecs, {
+        onlyProperties: filterProperties,
+        selectFields: false,
+      });
+    } else {
+      query.addFields(t, await this.getCoreEntityFields());
+      addSingleValueFieldJoins(query, t, manifestSpecs);
+      await this.addExtensionFields(query, t);
+    }
 
     if (this.instanceGuid) {
       query.whereColumn(t, "instance_guid", this.instanceGuid);
     }
 
-    for (const [key, value] of Object.entries(filters)) {
-      if (value !== undefined && value !== null && value !== "") {
-        query.whereColumn(t, propertyToColumnName(key), value);
+    for (const [key, value] of activeFilters) {
+      const target = resolvePropertyPath(key, manifestSpecs, coreFieldsByProperty);
+      if (target.coreColumn) {
+        query.whereColumn(t, target.coreColumn, value);
+      } else {
+        query.whereColumn(target.tableAlias, target.column, value);
       }
     }
 
-    for (const entry of orderBy) {
-      const direction = entry.order ?? "ASC";
-      const nullsOrdering = entry.nulls ? `NULLS ${entry.nulls.toUpperCase()}` : null;
+    if (!countOnly && orderBy.length) {
+      for (const entry of orderBy) {
+        const direction = entry.order ?? "ASC";
+        const nullsOrdering = entry.nulls ? `NULLS ${entry.nulls.toUpperCase()}` : null;
 
-      if (entry.expression) {
-        query.orderBy(null, entry.expression, direction, nullsOrdering);
-      } else if (entry.field) {
-        query.orderBy(t, entry.field, direction, nullsOrdering);
+        if (entry.property) {
+          const target = resolvePropertyPath(entry.property, manifestSpecs, coreFieldsByProperty);
+          if (target.coreColumn) {
+            query.orderBy(t, target.coreColumn, direction, nullsOrdering);
+          } else {
+            query.orderBy(target.tableAlias, target.column, direction, nullsOrdering);
+          }
+        } else if (entry.expression) {
+          query.orderBy(null, entry.expression, direction, nullsOrdering);
+        } else if (entry.field) {
+          query.orderBy(t, entry.field, direction, nullsOrdering);
+        }
       }
     }
 
-    const result = await this.query(query.toString(), query.params);
-    return Promise.all(result.rows.map((row) => this.toEntity(row)));
+    return query;
   }
 
   /**
@@ -441,21 +534,34 @@ class BaseStorage {
     }
 
     const result = await this.query(query.toString(), query.params);
-    return Promise.all(result.rows.map((row) => this.toEntity(row)));
+    return this.rowsToEntities(result.rows);
   }
 
-  /**
-   * Map a SQL row to an entity instance. Uses {@link BaseStorage#coreOptionsFromRow} and extension fields.
-   * Override when row mapping does not follow the standard core-table pattern (e.g. {@link UserStorage}).
-   */
-  async toEntity(row) {
-    const { extensionFieldSpecs, packageData, extensionValues } = await this.extensionContextFromRow(row);
+  async getEntityFieldSpecs() {
+    const [fieldSpecs, extensionFieldSpecs] = await Promise.all([
+      this.getFieldSpecs(),
+      this.getExtensionFieldSpecs(),
+    ]);
+    return { fieldSpecs, extensionFieldSpecs };
+  }
+
+  async toEntity(row, multiValueFields = {}) {
+    const [manifestSpecs, { fieldSpecs, extensionFieldSpecs }, coreFieldSpecs] = await Promise.all([
+      this.getFieldManifestSpecs(),
+      this.getEntityFieldSpecs(),
+      this.getCoreFieldSpecs(),
+    ]);
+    const { packageData, extensionValues } = await this.extensionContextFromRow(row);
 
     return new this.entityClass({
-      ...this.coreOptionsFromRow(row),
+      ...(await this.coreOptionsFromRow(row)),
       storage: this,
+      fieldSpecs,
       extensionFieldSpecs,
+      coreFieldSpecs,
       packageData,
+      ...singleValueFieldsFromRow(row, manifestSpecs),
+      ...multiValueFields,
       ...extensionValues,
     });
   }
@@ -528,13 +634,17 @@ class BaseStorage {
       throw new Error(`create() not implemented for ${this.constructor.name}`);
     }
 
-    const extensionFieldSpecs = await this.getExtensionFieldSpecs();
+    const { fieldSpecs, extensionFieldSpecs } = await this.getEntityFieldSpecs();
+    const coreFieldSpecs = await this.getCoreFieldSpecs();
+
     return new this.constructor.Entity({
       instanceGuid: this.instanceGuid,
       guid: this.newGuid(),
       isNew: true,
       storage: this,
+      fieldSpecs,
       extensionFieldSpecs,
+      coreFieldSpecs,
     });
   }
 

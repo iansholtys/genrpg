@@ -16,6 +16,7 @@ function memoryKey(cacheKey, instanceGuid) {
 
 function clearMemory() {
   memory.clear();
+  memoryOnlyKeys.clear();
 }
 
 function entryMatchesEviction(key, { instanceGuid, keyPrefix } = {}) {

@@ -482,48 +482,34 @@ class ManageInventoryModal extends Modal {
     return this.inventoryTable;
   }
 
+  async loadCharacter() {
+    const data = await this.requestJson(`${this.apiBase()}/characters/${this.characterGuid}`);
+    return data?.character ?? null;
+  }
+
+  primaryCollectionFromCharacter(character) {
+    const inventories = character?.inventories || [];
+    const primary = inventories.find((entry) => entry.type === "inventory") || inventories[0];
+    return primary?.collectionGuid ?? null;
+  }
+
   async loadContainedItemGuids() {
     const collectionsData = await this.requestJson(`${this.apiBase()}/item-collections`);
     if (!collectionsData) {
       return new Set();
     }
 
-    const collections = collectionsData.itemCollections || [];
     const contained = new Set();
 
-    await Promise.all(
-      collections.map(async (collection) => {
-        const contentsData = await this.requestJson(
-          `${this.apiBase()}/item-collections/${collection.guid}/contents`,
-        );
-        if (!contentsData) {
-          return;
+    for (const collection of collectionsData.itemCollections || []) {
+      for (const content of collection.contents || []) {
+        if (content.itemGuid) {
+          contained.add(content.itemGuid);
         }
-        for (const content of contentsData.contents || []) {
-          if (content.itemGuid) {
-            contained.add(content.itemGuid);
-          }
-        }
-      }),
-    );
+      }
+    }
 
     return contained;
-  }
-
-  async resolvePrimaryCollectionGuid() {
-    const data = await this.requestJson(
-      `${this.apiBase()}/inventories?characterGuid=${encodeURIComponent(this.characterGuid)}`,
-    );
-    if (!data) {
-      return null;
-    }
-
-    const inventories = data.inventories || [];
-    if (!inventories.length) {
-      return null;
-    }
-
-    return inventories[0].collectionGuid;
   }
 
   async loadAvailableItems() {
@@ -551,37 +537,35 @@ class ManageInventoryModal extends Modal {
     }
   }
 
-  async loadInventoryRows() {
-    const [inventoriesData, itemsData] = await Promise.all([
-      this.requestJson(
-        `${this.apiBase()}/inventories?characterGuid=${encodeURIComponent(this.characterGuid)}`,
-      ),
+  async loadInventoryRows(character) {
+    const [itemsData, collectionsData] = await Promise.all([
       this.requestJson(`${this.apiBase()}/items`),
+      this.requestJson(`${this.apiBase()}/item-collections`),
     ]);
-    if (!inventoriesData || !itemsData) {
+    if (!character || !itemsData || !collectionsData) {
       return [];
     }
 
     const itemsByGuid = new Map((itemsData.items || []).map((item) => [item.guid, item]));
-    const inventories = inventoriesData.inventories || [];
+    const collectionsByGuid = new Map(
+      (collectionsData.itemCollections || []).map((collection) => [collection.guid, collection]),
+    );
     const rows = [];
 
-    for (const inventory of inventories) {
-      const contentsData = await this.requestJson(
-        `${this.apiBase()}/item-collections/${inventory.collectionGuid}/contents`,
-      );
-      if (!contentsData) {
+    for (const inventory of character.inventories || []) {
+      const collection = collectionsByGuid.get(inventory.collectionGuid);
+      if (!collection) {
         continue;
       }
 
-      for (const content of contentsData.contents || []) {
+      for (const [contentIndex, content] of (collection.contents || []).entries()) {
         if (!content.itemGuid) {
           continue;
         }
 
         const item = itemsByGuid.get(content.itemGuid);
         rows.push({
-          contentGuid: content.guid,
+          contentIndex,
           collectionGuid: inventory.collectionGuid,
           itemGuid: content.itemGuid,
           name: item?.name ?? item?.itemTemplate?.name ?? content.itemGuid,
@@ -601,10 +585,11 @@ class ManageInventoryModal extends Modal {
     this.setBusy(true);
 
     try {
-      this.primaryCollectionGuid = await this.resolvePrimaryCollectionGuid();
+      const character = await this.loadCharacter();
+      this.primaryCollectionGuid = this.primaryCollectionFromCharacter(character);
       const [availableItems, inventoryRows] = await Promise.all([
         this.loadAvailableItems(),
-        this.loadInventoryRows(),
+        this.loadInventoryRows(character),
       ]);
 
       this.populateItemSelect(availableItems);
@@ -614,23 +599,6 @@ class ManageInventoryModal extends Modal {
     } finally {
       this.setBusy(false);
     }
-  }
-
-  async nextContentPosition(collectionGuid) {
-    const contentsData = await this.requestJson(
-      `${this.apiBase()}/item-collections/${collectionGuid}/contents`,
-    );
-    if (!contentsData) {
-      return 0;
-    }
-
-    let maxPosition = -1;
-    for (const content of contentsData.contents || []) {
-      if (typeof content.position === "number" && content.position > maxPosition) {
-        maxPosition = content.position;
-      }
-    }
-    return maxPosition + 1;
   }
 
   async handlePickUp() {
@@ -648,12 +616,21 @@ class ManageInventoryModal extends Modal {
     this.setBusy(true);
 
     try {
-      const position = await this.nextContentPosition(this.primaryCollectionGuid);
+      const collectionData = await this.requestJson(
+        `${this.apiBase()}/item-collections/${this.primaryCollectionGuid}`,
+      );
+      if (!collectionData?.itemCollection) {
+        throw new Error("Inventory collection not found.");
+      }
+
+      const contents = [...(collectionData.itemCollection.contents || [])];
+      contents.push({ itemGuid, quantity: 1 });
+
       await this.requestJson(
-        `${this.apiBase()}/item-collections/${this.primaryCollectionGuid}/contents`,
+        `${this.apiBase()}/item-collections/${this.primaryCollectionGuid}`,
         {
-          method: "POST",
-          body: JSON.stringify({ itemGuid, position }),
+          method: "PUT",
+          body: JSON.stringify({ contents }),
         },
       );
       await this.refresh();
@@ -672,9 +649,22 @@ class ManageInventoryModal extends Modal {
     this.setBusy(true);
 
     try {
+      const collectionData = await this.requestJson(
+        `${this.apiBase()}/item-collections/${row.collectionGuid}`,
+      );
+      if (!collectionData?.itemCollection) {
+        throw new Error("Inventory collection not found.");
+      }
+
+      const contents = [...(collectionData.itemCollection.contents || [])];
+      contents.splice(row.contentIndex, 1);
+
       await this.requestJson(
-        `${this.apiBase()}/item-collections/${row.collectionGuid}/contents/${row.contentGuid}`,
-        { method: "DELETE" },
+        `${this.apiBase()}/item-collections/${row.collectionGuid}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ contents }),
+        },
       );
       await this.refresh();
       window.services?.notifications?.success("Item dropped.");

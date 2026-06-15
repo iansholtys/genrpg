@@ -23,10 +23,10 @@ function sendHttpError(res, error) {
   }
   if (error instanceof HttpError) {
     const body = { error: error.message };
-    if (error.details) {
+    if (error.details?.length) {
       body.details = error.details;
     }
-    if (error.errors) {
+    if (error.errors?.length) {
       body.errors = error.errors;
     }
     res.status(error.status).json(body);
@@ -35,11 +35,17 @@ function sendHttpError(res, error) {
   return false;
 }
 
-function handleRouteError(res, error, next) {
-  if (sendHttpError(res, error)) {
-    return;
-  }
-  next(error);
+function asyncRoute(handler) {
+  return async (req, res, next) => {
+    try {
+      await handler(req, res, next);
+    } catch (error) {
+      if (sendHttpError(res, error)) {
+        return;
+      }
+      next(error);
+    }
+  };
 }
 
-module.exports = { handleRouteError };
+module.exports = { asyncRoute };

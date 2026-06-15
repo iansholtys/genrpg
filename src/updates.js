@@ -4,15 +4,14 @@ const path = require("node:path");
 const { loadPackages } = require("./packages");
 const { applySchemaVersions, applyPendingSchemaVersionsForPackage } = require("./db/versions");
 const { insertQuery, selectQuery } = require("./services/queryService");
+const { HttpError } = require("./errors/HttpError");
 
 const REPO_ROOT = path.join(__dirname, "..");
 
-class PackageUpdateError extends Error {
+class PackageUpdateError extends HttpError {
   constructor(message, details = []) {
-    super(message);
+    super(500, message, details.length ? details : null);
     this.name = "PackageUpdateError";
-    this.details = details;
-    this.status = 500;
   }
 }
 
@@ -119,7 +118,7 @@ async function runVersionStep(client, updatesModule, version) {
 }
 
 async function applyPackageUpdatesForMachine(pool, machineName) {
-  const { packages } = await loadPackages({ strict: false });
+  const packages = await loadPackages({ strict: false });
   const pkg = packages.find((entry) => entry.machineName === machineName);
   if (!pkg) {
     return { applied: [] };
@@ -186,7 +185,7 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
 }
 
 async function buildUpdateStatus(client) {
-  const { packages } = await loadPackages({ strict: false });
+  const packages = await loadPackages({ strict: false });
   const appliedVersions = await getAppliedVersions(client);
   const statuses = [];
 
@@ -220,7 +219,7 @@ async function checkPackageUpdates(pool) {
 async function applyPackageUpdates(pool) {
   await applySchemaVersions({ pool });
 
-  const { packages } = await loadPackages({ strict: false });
+  const packages = await loadPackages({ strict: false });
   const orderedPackages = sortPackagesByDependencies(packages);
   const applied = [];
 
