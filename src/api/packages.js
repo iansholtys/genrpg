@@ -27,6 +27,7 @@ const {
   loadUpdatesModule,
   getLatestVersion,
 } = require("../updates");
+const { applyGlobalInstallForMachine } = require("../install");
 
 const execAsync = promisify(exec);
 
@@ -69,17 +70,22 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
     } else {
       await applySchemaVersions({ pool });
     }
-    await applyPackageUpdatesForMachine(pool, machineName);
     const fieldTables = await applyFieldTables({ pool, packageNames: [machineName] });
     if (fieldTables.applied.length) {
       console.log(`Synced field tables for ${machineName}: ${fieldTables.applied.join(", ")}`);
+    }
+    await applyPackageUpdatesForMachine(pool, machineName);
+    await registerPackageVersion(machineName);
+    const installApplied = await applyGlobalInstallForMachine(pool, machineName);
+    if (installApplied) {
+      console.log(
+        `Applied global install for ${machineName}: v${installApplied.fromVersion} → v${installApplied.toVersion}`,
+      );
     }
   } catch (error) {
     console.error(`Failed to apply database for ${machineName}:`, error);
     updateWarning = error.message || "Failed to apply package database updates";
   }
-
-  await registerPackageVersion(machineName);
 
   if (!updateWarning) {
     const updatesModule = await loadUpdatesModule(machineName, packagePath);

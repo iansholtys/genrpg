@@ -1,7 +1,9 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const { pool } = require("../db/pool");
+const { withTransaction, getTransactionClient } = require("../db/transactionContext");
 const { deleteQuery, insertQuery, updateQuery, selectQuery, qualify } = require("../services/queryService");
+const { applyInstallForInstance } = require("../install");
 const { isGlobalAdmin } = require("../auth");
 const {
   loadAccessibleInstance,
@@ -164,10 +166,9 @@ instancesRouter.post("/instances", asyncRoute(async (req, res) => {
   }
 
   const instanceGuid = crypto.randomUUID();
-  const client = await pool.connect();
 
-  try {
-    await client.query("BEGIN");
+  const instanceRow = await withTransaction(async () => {
+    const client = getTransactionClient();
     const instanceInsert = insertQuery()
       .into("genrpg", "instances")
       .values(
@@ -209,22 +210,20 @@ instancesRouter.post("/instances", asyncRoute(async (req, res) => {
       await createCustomInstanceAlias(client, instanceGuid, urlSegment);
     }
 
-    await client.query("COMMIT");
-    res.status(201).json({
-      instance: {
-        ...instance.rows[0],
-        packageNames: parsePackageCsv(instance.rows[0].packages),
-        role: await isGlobalAdmin(req.session.user.guid) ? "Admin" : "Instance_Owner",
-        can_manage_users: true,
-        can_delete: true,
-      },
-    });
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+    await applyInstallForInstance(instanceGuid, packageSelection.packageCsv);
+
+    return instance.rows[0];
+  });
+
+  res.status(201).json({
+    instance: {
+      ...instanceRow,
+      packageNames: parsePackageCsv(instanceRow.packages),
+      role: await isGlobalAdmin(req.session.user.guid) ? "Admin" : "Instance_Owner",
+      can_manage_users: true,
+      can_delete: true,
+    },
+  });
 }));
 
 instancesRouter.put("/instances/:guid", async (req, res, next) => {

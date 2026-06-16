@@ -1,8 +1,9 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
-const { loadPackages } = require("./packages");
+const { loadPackages, sortPackagesByDependencies } = require("./packages");
 const { applySchemaVersions, applyPendingSchemaVersionsForPackage } = require("./db/versions");
+const { applyGlobalPackageInstalls } = require("./install");
 const { insertQuery, selectQuery } = require("./services/queryService");
 const { HttpError } = require("./errors/HttpError");
 
@@ -51,40 +52,6 @@ function getLatestVersion(updatesModule) {
 
   if (!versions.length) return 0;
   return Math.max(...versions);
-}
-
-function sortPackagesByDependencies(packages) {
-  const byMachineName = new Map(packages.map((pkg) => [pkg.machineName, pkg]));
-  const sorted = [];
-  const visiting = new Set();
-  const visited = new Set();
-
-  function visit(machineName) {
-    if (visited.has(machineName)) return;
-    if (visiting.has(machineName)) {
-      throw new PackageUpdateError("Invalid package configuration", [
-        `Circular package requirement involving "${machineName}"`,
-      ]);
-    }
-
-    visiting.add(machineName);
-    const pkg = byMachineName.get(machineName);
-    if (pkg) {
-      for (const requirement of pkg.requirements) {
-        visit(requirement.machineName);
-      }
-    }
-    visiting.delete(machineName);
-    visited.add(machineName);
-
-    if (pkg) sorted.push(pkg);
-  }
-
-  for (const pkg of packages) {
-    visit(pkg.machineName);
-  }
-
-  return sorted;
 }
 
 async function getAppliedVersions(client) {
@@ -272,7 +239,9 @@ async function applyPackageUpdates(pool) {
     });
   }
 
-  return { updatesNeeded: false, applied };
+  const installApplied = await applyGlobalPackageInstalls(pool, orderedPackages);
+
+  return { updatesNeeded: false, applied, installApplied };
 }
 
 module.exports = {

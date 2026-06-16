@@ -349,6 +349,46 @@ async function enrichAllPackagesWithAssets(packages) {
   return enriched;
 }
 
+/**
+ * Topological sort of all given packages by requirement edges (dependencies first).
+ *
+ * @param {object[]} packages
+ * @returns {object[]}
+ */
+function sortPackagesByDependencies(packages) {
+  const byMachineName = new Map(packages.map((pkg) => [pkg.machineName, pkg]));
+  const sorted = [];
+  const visiting = new Set();
+  const visited = new Set();
+
+  function visit(machineName) {
+    if (visited.has(machineName)) return;
+    if (visiting.has(machineName)) {
+      throw new PackageLoadError("Invalid package configuration", [
+        `Circular package requirement involving "${machineName}"`,
+      ]);
+    }
+
+    visiting.add(machineName);
+    const pkg = byMachineName.get(machineName);
+    if (pkg) {
+      for (const requirement of pkg.requirements) {
+        visit(requirement.machineName);
+      }
+    }
+    visiting.delete(machineName);
+    visited.add(machineName);
+
+    if (pkg) sorted.push(pkg);
+  }
+
+  for (const pkg of packages) {
+    visit(pkg.machineName);
+  }
+
+  return sorted;
+}
+
 function sortPackagesTopologically(selectedMachineNames, packages) {
   const byMachineName = new Map(packages.map((pkg) => [pkg.machineName, pkg]));
   const selected = new Set(selectedMachineNames);
@@ -399,8 +439,18 @@ function sortPackagesTopologically(selectedMachineNames, packages) {
   return ordered;
 }
 
-/** Instance asset loads always include core GenRPG plus declared package requirements. */
-function expandPackageSelectionForAssets(selectedMachineNames, packages) {
+/**
+ * Expand an instance's selected packages to the full effective set: always includes
+ * core (genrpg), plus every transitive package requirement declared in manifests.
+ *
+ * Used when resolving which packages participate in an instance (install steps,
+ * instance context labels, frontend asset URLs, etc.).
+ *
+ * @param {string[]} selectedMachineNames packages explicitly chosen for the instance
+ * @param {object[]} packages full package catalog (needed to walk requirement edges)
+ * @returns {string[]} expanded machine names (unordered)
+ */
+function expandInstancePackageSelection(selectedMachineNames, packages) {
   const byMachineName = new Map(packages.map((pkg) => [pkg.machineName, pkg]));
   const expanded = new Set(selectedMachineNames);
 
@@ -428,7 +478,7 @@ function expandPackageSelectionForAssets(selectedMachineNames, packages) {
 }
 
 function resolveInstanceAssets(selectedMachineNames, packages) {
-  const expandedSelection = expandPackageSelectionForAssets(selectedMachineNames, packages);
+  const expandedSelection = expandInstancePackageSelection(selectedMachineNames, packages);
   const ordered = sortPackagesTopologically(expandedSelection, packages).filter(Boolean);
   const css = [];
   const js = [];
@@ -455,7 +505,7 @@ function resolveInstanceAssets(selectedMachineNames, packages) {
 }
 
 async function resolveInstanceAssetsForRequest(selectedMachineNames, packages) {
-  const expandedSelection = expandPackageSelectionForAssets(selectedMachineNames, packages);
+  const expandedSelection = expandInstancePackageSelection(selectedMachineNames, packages);
   const selectedPackages = selectPackagesByName(packages, expandedSelection);
   const packagesWithAssets = await enrichAllPackagesWithAssets(selectedPackages);
   return resolveInstanceAssets(selectedMachineNames, packagesWithAssets);
@@ -523,7 +573,7 @@ function parsePackageCsv(value) {
  * Expanded instance packages as { [machineName]: humanLabel } for request context.
  */
 function resolveInstancePackages(packageCsv, packages) {
-  const expanded = expandPackageSelectionForAssets(parsePackageCsv(packageCsv), packages);
+  const expanded = expandInstancePackageSelection(parsePackageCsv(packageCsv), packages);
   return Object.fromEntries(
     selectPackagesByName(packages, expanded).map((pkg) => [pkg.machineName, pkg.name]),
   );
@@ -577,5 +627,6 @@ module.exports = {
   resolveInstancePackages,
   validatePackageSelection,
   resolveInstanceAssetsForRequest,
-  expandPackageSelectionForAssets,
+  expandInstancePackageSelection,
+  sortPackagesByDependencies,
 };

@@ -138,10 +138,15 @@ async function main() {
     console.log(`Applied database schema versions: ${applied.join(", ")}`);
   }
 
-  const { applied: updatesApplied } = await applyPackageUpdates(pool);
+  const { applied: updatesApplied, installApplied } = await applyPackageUpdates(pool);
   if (updatesApplied.length) {
     console.log(
       `Applied package database updates: ${updatesApplied.map((entry) => entry.machineName).join(", ")}`,
+    );
+  }
+  if (installApplied?.length) {
+    console.log(
+      `Applied package install steps: ${installApplied.map((entry) => `${entry.machineName} (global v${entry.toVersion})`).join(", ")}`,
     );
   }
 
