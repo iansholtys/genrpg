@@ -278,7 +278,7 @@ class ManageRolesModal extends Modal {
 
 let manageRolesModal = null;
 
-export function getManageRolesModal() {
+function getManageRolesModal() {
   if (!manageRolesModal) {
     manageRolesModal = new ManageRolesModal();
     manageRolesModal.init();

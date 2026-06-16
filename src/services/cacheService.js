@@ -175,9 +175,6 @@ async function getOrCompute(cacheKey, computeFn, { instanceGuid = null, memoryOn
 }
 
 module.exports = {
-  get,
-  set,
-  deleteKey,
   clear,
   getOrCompute,
   clearMemory,

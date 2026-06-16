@@ -157,7 +157,7 @@ class ManageGlobalUsersModal extends Modal {
 
 let manageGlobalUsersModal = null;
 
-export function getManageGlobalUsersModal() {
+function getManageGlobalUsersModal() {
   if (!manageGlobalUsersModal) {
     manageGlobalUsersModal = new ManageGlobalUsersModal();
     manageGlobalUsersModal.init();

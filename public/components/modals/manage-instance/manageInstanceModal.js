@@ -739,7 +739,7 @@ class ManageInstanceModal extends Modal {
 
 let manageInstanceModal = null;
 
-export function getManageInstanceModal() {
+function getManageInstanceModal() {
   if (!manageInstanceModal) {
     manageInstanceModal = new ManageInstanceModal();
     manageInstanceModal.init();

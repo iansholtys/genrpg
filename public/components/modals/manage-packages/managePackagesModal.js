@@ -388,7 +388,7 @@ function showConfigurationIssues(issues, { tone = "error" } = {}) {
   );
 }
 
-export function getManagePackagesModal() {
+function getManagePackagesModal() {
   if (!managePackagesModal) {
     managePackagesModal = new ManagePackagesModal();
     managePackagesModal.init();

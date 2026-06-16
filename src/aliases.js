@@ -58,13 +58,6 @@ function slugifyInstanceUrlSegment(value) {
     .replace(/^-+|-+$/g, "");
 }
 
-function isProperlySlugified(value) {
-  if (value == null || typeof value !== "string") {
-    return true;
-  }
-  return value === slugifyInstanceUrlSegment(value);
-}
-
 function instanceAliasFromSegment(segment) {
   return `instance/${segment}`;
 }
@@ -324,8 +317,6 @@ async function sendAppHtml(res, boot) {
 module.exports = {
   normalizeAlias,
   slugifyInstanceUrlSegment,
-  isProperlySlugified,
-  instanceAliasFromSegment,
   lookupAlias,
   isAliasAvailable,
   lookupCanonicalAliasForPath,

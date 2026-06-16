@@ -17,13 +17,6 @@ export function escapeHtml(value) {
   });
 }
 
-export function formatDate(value) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
 export function setMessage($element, message, tone = "neutral") {
   $element.text(message).attr("data-tone", tone);
 }

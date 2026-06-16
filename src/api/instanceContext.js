@@ -20,6 +20,5 @@ async function assertInstancePermissions(req, permission, { fields = INSTANCE_FI
 module.exports = {
   PERMISSION_VIEW,
   PERMISSION_EDIT,
-  INSTANCE_FIELDS,
   assertInstancePermissions,
 };

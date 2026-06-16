@@ -79,7 +79,7 @@ function getLockedDependencies(selectedMachineNames) {
   return locked;
 }
 
-export function orderPackagesByDependency(installedPackages) {
+function orderPackagesByDependency(installedPackages) {
   const installedSet = new Set(installedPackages.map((pkg) => pkg.machineName));
   const byName = new Map(installedPackages.map((pkg) => [pkg.machineName, pkg]));
   const depthMemo = new Map();
@@ -262,7 +262,7 @@ export function renderInstancePackageSelection($container, { selectedPackages = 
   }
 }
 
-export function setPackages(packages) {
+function setPackages(packages) {
   state.packageByMachineName.clear();
 
   for (const pkg of packages) {
@@ -274,7 +274,7 @@ export function renderPackages(packages) {
   setPackages(packages);
 }
 
-export function formatConfigurationIssues(issues) {
+function formatConfigurationIssues(issues) {
   return (issues || []).join(" ");
 }
 
@@ -289,12 +289,12 @@ export function showConfigurationIssues(issues, { tone = "error" } = {}) {
   );
 }
 
-export function showUpdateBanner() {
+function showUpdateBanner() {
   const elements = getElements();
   elements.$updateBanner.prop("hidden", false);
 }
 
-export function hideUpdateBanner() {
+function hideUpdateBanner() {
   const elements = getElements();
   elements.$updateBanner.prop("hidden", true);
 }
@@ -314,7 +314,7 @@ export async function checkForUpdates() {
   }
 }
 
-export async function applyUpdates() {
+async function applyUpdates() {
   const elements = getElements();
   elements.$applyUpdatesButton.prop("disabled", true);
 

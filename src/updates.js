@@ -245,7 +245,6 @@ async function applyPackageUpdates(pool) {
 }
 
 module.exports = {
-  PackageUpdateError,
   checkPackageUpdates,
   applyPackageUpdates,
   applyPackageUpdatesForMachine,

@@ -543,9 +543,5 @@ module.exports = {
   loadMultiValueFields,
   saveFieldValuesForEntity,
   collectFieldValidationErrors,
-  validateFieldValue,
-  fieldJoinAlias,
-  fieldSelectAlias,
-  isMultiValue,
   resolvePropertyPath,
 };
