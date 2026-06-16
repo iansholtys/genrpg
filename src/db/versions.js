@@ -97,8 +97,9 @@ function assertNoDuplicateVersionFiles(schemaVersions) {
 }
 
 async function ensureSchemaVersionTable(client) {
+  await client.query("CREATE SCHEMA IF NOT EXISTS public");
   await client.query(`
-    CREATE TABLE IF NOT EXISTS schema_versions (
+    CREATE TABLE IF NOT EXISTS public.schema_versions (
       package_name text NOT NULL,
       file_name text NOT NULL,
       file_order text NOT NULL,

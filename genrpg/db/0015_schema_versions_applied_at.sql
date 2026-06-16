@@ -8,7 +8,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS schema_versions_applied_at ON schema_versions;
+DROP TRIGGER IF EXISTS schema_versions_applied_at ON public.schema_versions;
 CREATE TRIGGER schema_versions_applied_at
-  BEFORE UPDATE ON schema_versions
+  BEFORE UPDATE ON public.schema_versions
   FOR EACH ROW EXECUTE FUNCTION genrpg.set_applied_at();
