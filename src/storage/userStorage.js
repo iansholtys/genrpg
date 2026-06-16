@@ -13,14 +13,10 @@ class UserStorage extends BaseStorage {
 
   async listEntities({ orderBy = [], ...filters } = {}) {
     const args = { ...filters };
-    if (orderBy.length) {
-      args.orderBy = orderBy;
-    } else {
-      args.orderBy = [
-        { property: "displayName", nulls: "LAST" },
-        { property: "email" },
-      ];
-    }
+    args.orderBy = orderBy.length ? orderBy : [
+      { property: "displayName", nulls: "LAST" },
+      { property: "email" },
+    ];
     return super.listEntities(args);
   }
 

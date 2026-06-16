@@ -1,8 +1,10 @@
 -- Created: 2026-05-16
 
 CREATE TABLE IF NOT EXISTS genrpg.packages (
-  package text PRIMARY KEY,
+  guid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  package text NOT NULL UNIQUE,
   version integer NOT NULL DEFAULT 0,
+  install_version integer NOT NULL DEFAULT 0,
   create_datetime timestamptz NOT NULL DEFAULT now(),
   update_datetime timestamptz NOT NULL DEFAULT now()
 );

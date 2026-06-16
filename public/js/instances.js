@@ -9,7 +9,7 @@ import {
 import { InstanceLoadingModal } from "../components/modals/instance-loading/instanceLoadingModal.js";
 
 function canManageInstance(instance) {
-  return instance.can_edit || instance.can_manage_users || instance.can_delete;
+  return instance.canEdit || instance.canManageUsers || instance.canDelete;
 }
 
 function buildInstanceTile(instance) {

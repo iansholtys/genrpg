@@ -4,28 +4,35 @@
 const { pool } = require("../db/pool");
 const { isGlobalAdmin } = require("../auth");
 const { qualify, selectQuery } = require("./queryService");
-const {
-  loadPackages,
-  resolveInstancePackages,
-} = require("../packages");
+const InstanceStorage = require("../../genrpg/storage/instanceStorage");
 
-async function loadAccessibleInstance(instanceGuid, user, { fields } = {}) {
-  const isAdmin = await isGlobalAdmin(user.guid);
-  const instanceAlias = "i";
-  const query = selectQuery()
-    .from("genrpg", "instances", instanceAlias)
-    .addFields(instanceAlias, fields ?? ["guid"])
-    .whereColumn(instanceAlias, "guid", instanceGuid);
-
-  if (!isAdmin) {
-    const instanceUserRoleAlias = "iur";
-    query.addJoin("genrpg", "instance_user_roles", instanceUserRoleAlias,
-        `${qualify(instanceUserRoleAlias, "instance_guid")} = ${qualify(instanceAlias, "guid")}`,
-      ).whereColumn(instanceUserRoleAlias, "user_guid", user.guid);
+async function loadAccessibleInstance(instanceGuid, user, options = {}) {
+  if (!(await userCanAccessInstance(instanceGuid, user))) {
+    return null;
   }
 
+  const instance = await InstanceStorage.global().load(instanceGuid, options);
+  if (!instance) {
+    return null;
+  }
+
+  return instance.resolvePackageNames();
+}
+
+async function userCanAccessInstance(instanceGuid, user) {
+  if (await isGlobalAdmin(user.guid)) {
+    return true;
+  }
+
+  const instanceUserRoleAlias = "iur";
+  const query = selectQuery()
+    .from("genrpg", "instance_user_roles", instanceUserRoleAlias)
+    .addFields(instanceUserRoleAlias, "user_guid")
+    .whereColumn(instanceUserRoleAlias, "instance_guid", instanceGuid)
+    .whereColumn(instanceUserRoleAlias, "user_guid", user.guid);
+
   const result = await pool.query(query.toString(), query.params);
-  return result.rows[0] || null;
+  return result.rows.length > 0;
 }
 
 async function getInstancePermissions(instanceGuid, userGuid) {
@@ -72,18 +79,11 @@ async function userHasPermission(userGuid, instanceGuid, permissionName) {
   return permissions.has(permissionName);
 }
 
-async function buildContext(user, instanceGuid, { fields } = {}) {
+async function buildContext(user, instanceGuid) {
   const isGlobalAdminUser = await isGlobalAdmin(user.guid);
-  const instance = await loadAccessibleInstance(instanceGuid, user, { fields });
+  const instance = await loadAccessibleInstance(instanceGuid, user);
   if (!instance) {
     return null;
-  }
-
-  if (typeof instance.packages === "string") {
-    const packages = await loadPackages({ strict: true });
-    instance.packages = resolveInstancePackages(instance.packages, packages);
-  } else if (!instance.packages || typeof instance.packages !== "object" || Array.isArray(instance.packages)) {
-    instance.packages = {};
   }
 
   const permissions = isGlobalAdminUser

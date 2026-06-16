@@ -7,15 +7,13 @@ const { insertQuery, selectQuery } = require("./services/queryService");
 const {
   loadPackages,
   REPO_ROOT,
-  parsePackageCsv,
-  expandInstancePackageSelection,
-  resolveInstancePackages,
   sortPackagesByDependencies,
 } = require("./packages");
 const {
   createInstallRefRegistry,
   loadSeedJson,
 } = require("./lib/seedImport");
+const PackageStorage = require("./storage/packageStorage");
 
 class PackageInstallError extends Error {
   /**
@@ -125,42 +123,9 @@ async function setGlobalInstallVersion(client, machineName, installVersion) {
 }
 
 /**
- * @param {import("pg").PoolClient} client
- * @param {string} instanceGuid
- * @param {string} machineName
- * @returns {Promise<number>}
- */
-async function getInstanceInstallVersion(client, instanceGuid, machineName) {
-  const tableAlias = "ipi";
-  const query = selectQuery()
-    .from("genrpg", "instance_package_install", tableAlias)
-    .addFields(tableAlias, "install_version")
-    .whereColumn(tableAlias, "instance_guid", instanceGuid)
-    .whereColumn(tableAlias, "package", machineName);
-
-  const result = await client.query(query.toString(), query.params);
-  return result.rows[0]?.install_version ?? 0;
-}
-
-/**
- * @param {import("pg").PoolClient} client
- * @param {string} instanceGuid
- * @param {string} machineName
- * @param {number} installVersion
- */
-async function setInstanceInstallVersion(client, instanceGuid, machineName, installVersion) {
-  const query = insertQuery()
-    .into("genrpg", "instance_package_install")
-    .values(["instance_guid", "package", "install_version"], [instanceGuid, machineName, installVersion])
-    .onConflict(["instance_guid", "package"], "DO UPDATE");
-
-  await client.query(query.toString(), query.params);
-}
-
-/**
  * @param {object} pkg package manifest entry from loadPackages()
  * @param {{
- *   instance?: { guid: string, packages: Record<string, string> } | null,
+ *   instance?: import("../genrpg/entities/instance") | null,
  *   refs?: ReturnType<typeof createInstallRefRegistry>,
  * }} [options]
  */
@@ -203,11 +168,12 @@ async function runInstallStep(installModule, scope, version, ctx) {
  * @param {"global" | "instance"} scope
  * @param {{
  *   installVersions?: Map<string, number>,
- *   instance?: { guid: string, packages: Record<string, string> },
+ *   instance?: import("../genrpg/entities/instance"),
+ *   packageGuid?: string,
  * }} context
  * @returns {Promise<object | null>} install record when steps ran, otherwise null
  */
-async function applyInstallStepsForPackage(pkg, scope, { installVersions, instance } = {}) {
+async function applyInstallStepsForPackage(pkg, scope, { installVersions, instance, packageGuid } = {}) {
   const installModule = await loadInstallModule(pkg.machineName, pkg.path);
   const latestStepVersion = getLatestInstallVersion(installModule, scope);
   if (!latestStepVersion) {
@@ -215,18 +181,21 @@ async function applyInstallStepsForPackage(pkg, scope, { installVersions, instan
   }
 
   let installedVersion = 0;
+  let packageInstallEntry;
   if (scope === "global") {
     installedVersion = installVersions?.get(pkg.machineName) ?? 0;
   } else {
     if (!instance?.guid) {
       throw new Error("Instance install requires instance.guid");
     }
-    const readClient = await pool.connect();
-    try {
-      installedVersion = await getInstanceInstallVersion(readClient, instance.guid, pkg.machineName);
-    } finally {
-      readClient.release();
+    if (!packageGuid) {
+      throw new Error("Instance install requires packageGuid");
     }
+    packageInstallEntry = (instance.packages ?? []).find((entry) => entry.packageGuid === packageGuid);
+    if (!packageInstallEntry) {
+      throw new Error(`Instance ${instance.guid} has no install row for package ${packageGuid}`);
+    }
+    installedVersion = packageInstallEntry.installVersion ?? 0;
   }
 
   if (installedVersion >= latestStepVersion) {
@@ -239,14 +208,15 @@ async function applyInstallStepsForPackage(pkg, scope, { installVersions, instan
     await withTransaction(async () => {
       const ctx = createInstallContext(pkg, { instance, refs: refRegistry });
       await runInstallStep(installModule, scope, stepVersion, ctx);
-      const client = getTransactionClient();
-      if (!client) {
-        throw new Error("Package install step must run inside withTransaction()");
-      }
       if (scope === "global") {
+        const client = getTransactionClient();
+        if (!client) {
+          throw new Error("Package install step must run inside withTransaction()");
+        }
         await setGlobalInstallVersion(client, pkg.machineName, stepVersion);
       } else {
-        await setInstanceInstallVersion(client, instance.guid, pkg.machineName, stepVersion);
+        packageInstallEntry.installVersion = stepVersion;
+        await instance.save({ skipEvents: true });
       }
     });
   }
@@ -310,34 +280,38 @@ async function applyGlobalInstallForMachine(pool, machineName) {
 }
 
 /**
- * Run instance-scoped install steps for all packages on a newly created instance.
+ * Run pending instance-scoped install steps for packages selected on the instance.
  *
- * @param {string} instanceGuid
- * @param {string} packageCsv
- * @returns {Promise<object[]>}
+ * @param {import("../genrpg/entities/instance")} instance
+ * @param {object[]} catalog disk package catalog
  */
-async function applyInstallForInstance(instanceGuid, packageCsv) {
-  // Full catalog required so expandInstancePackageSelection can walk requirement edges.
-  const allPackages = await loadPackages({ strict: false });
-  const expandedNames = expandInstancePackageSelection(parsePackageCsv(packageCsv), allPackages);
-  const orderedPackages = sortPackagesByDependencies(
-    allPackages.filter((pkg) => expandedNames.includes(pkg.machineName)),
-  );
-  const instance = {
-    guid: instanceGuid,
-    packages: resolveInstancePackages(packageCsv, allPackages),
-  };
-
-  const installApplied = [];
-
-  for (const pkg of orderedPackages) {
-    const record = await applyInstallStepsForPackage(pkg, "instance", { instance });
-    if (record) {
-      installApplied.push(record);
-    }
+async function applyInstallForInstance(instance, catalog) {
+  const packageGuids = (instance.packages ?? []).map((entry) => entry.packageGuid).filter(Boolean);
+  if (!packageGuids.length) {
+    return;
   }
 
-  return installApplied;
+  const packages = await PackageStorage.global().load(packageGuids, { skipEvents: true });
+  const packagesByMachineName = new Map();
+  for (const pkg of packages) {
+    packagesByMachineName.set(pkg.machineName, pkg);
+  }
+
+  const orderedPackages = sortPackagesByDependencies(
+    catalog.filter(({ machineName }) => packagesByMachineName.has(machineName)),
+  );
+
+  for (const catalogPkg of orderedPackages) {
+    const pkg = packagesByMachineName.get(catalogPkg.machineName);
+    if (!pkg) {
+      continue;
+    }
+
+    await applyInstallStepsForPackage(catalogPkg, "instance", {
+      instance,
+      packageGuid: pkg.guid,
+    });
+  }
 }
 
 module.exports = {

@@ -37,5 +37,12 @@ module.exports = {
         { name: "type", type: "text" },
       ],
     },
+    packageInstall: {
+      defaultSortColumn: "packageGuid",
+      columns: [
+        { name: "package_guid", type: "uuid", nullable: false, refs: "package" },
+        { name: "install_version", type: "integer", nullable: false, default: "0" },
+      ],
+    },
   },
 };

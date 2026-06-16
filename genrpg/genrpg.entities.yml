@@ -1,4 +1,8 @@
 entities:
+  - key: package
+    module: entities/package.js
+  - key: instance
+    module: entities/instance.js
   - key: character
     module: entities/character.js
   - key: item
@@ -14,6 +18,10 @@ fieldTypes:
 fields:
   - entity: user
     module: entities/fields/user.js
+  - entity: package
+    module: entities/fields/package.js
+  - entity: instance
+    module: entities/fields/instance.js
   - entity: character
     module: entities/fields/character.js
   - entity: item_template

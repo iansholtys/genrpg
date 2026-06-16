@@ -55,7 +55,7 @@ class BaseStorage {
 
   /** @returns {string[]} Package machine names for this instance binding. */
   get packageNames() {
-    return Object.keys(this.instance?.packages ?? {});
+    return this.instance?.packageNames ?? [];
   }
 
   static forInstance(instance) {

@@ -156,9 +156,7 @@ async function lookupCanonicalAliasForPath(pathValue) {
 }
 
 async function resolveInstancePath(instanceGuid, user) {
-  const instance = await loadAccessibleInstance(instanceGuid, user, {
-    fields: ["guid", "name"],
-  });
+  const instance = await loadAccessibleInstance(instanceGuid, user);
   if (!instance) {
     return null;
   }

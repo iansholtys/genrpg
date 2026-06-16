@@ -4,10 +4,9 @@ const { PermissionError } = require("../errors/PermissionError");
 
 const PERMISSION_VIEW = "instance.run";
 const PERMISSION_EDIT = "instance.edit";
-const INSTANCE_FIELDS = ["guid", "packages"];
 
-async function assertInstancePermissions(req, permission, { fields = INSTANCE_FIELDS } = {}) {
-  const context = await buildContext(req.session.user, req.params.instanceGuid, { fields });
+async function assertInstancePermissions(req, permission) {
+  const context = await buildContext(req.session.user, req.params.instanceGuid);
   if (!context) {
     throw new NotFoundError("Instance not found");
   }

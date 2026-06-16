@@ -123,3 +123,7 @@ CREATE TRIGGER <table_name>_update_datetime
   FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();
 ```
 
+## Entity references
+
+We do not yet have a general solution for loading referenced entities on demand (for example, hydrating `entityRef` or structured field refs when an entity is loaded). Call sites that need related entities should load them explicitly with storage `load()` / `list()` as needed. A cleaner shared approach is still TBD.
+

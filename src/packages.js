@@ -8,8 +8,6 @@ const { HttpError } = require("./errors/HttpError");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const STATIC_PKG_PREFIX = "/static/pkg";
-const CORE_PACKAGE_MACHINE_NAME = "genrpg";
-
 let packageCache = null;
 
 class PackageLoadError extends HttpError {
@@ -440,46 +438,106 @@ function sortPackagesTopologically(selectedMachineNames, packages) {
 }
 
 /**
- * Expand an instance's selected packages to the full effective set: always includes
- * core (genrpg), plus every transitive package requirement declared in manifests.
+ * Resolve API machine names to stored package install rows.
+ * Unknown or uninstalled packages are rejected here; requirement closure is
+ * validated by {@link validatePackageInstallSelection} via entity validate().
  *
- * Used when resolving which packages participate in an instance (install steps,
- * instance context labels, frontend asset URLs, etc.).
- *
- * @param {string[]} selectedMachineNames packages explicitly chosen for the instance
- * @param {object[]} packages full package catalog (needed to walk requirement edges)
- * @returns {string[]} expanded machine names (unordered)
+ * @param {string[]} selectedMachineNames
+ * @returns {Promise<{ valid: boolean, errors: string[], packages: object[] }>}
  */
-function expandInstancePackageSelection(selectedMachineNames, packages) {
-  const byMachineName = new Map(packages.map((pkg) => [pkg.machineName, pkg]));
-  const expanded = new Set(selectedMachineNames);
+async function packagesFromMachineNames(selectedMachineNames) {
+  const catalog = await loadPackages({ strict: true });
+  const PackageStorage = require("./storage/packageStorage");
+  const installedPackages = await PackageStorage.global().list({ skipEvents: true });
+  const errors = [];
+  const byMachineName = new Map(catalog.map((pkg) => [pkg.machineName, pkg]));
+  const selected = new Set();
 
-  expanded.add(CORE_PACKAGE_MACHINE_NAME);
+  if (!Array.isArray(selectedMachineNames) || !selectedMachineNames.length) {
+    return { valid: false, errors: ["At least one package must be selected"], packages: [] };
+  }
 
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const machineName of expanded) {
-      const pkg = byMachineName.get(machineName);
-      if (!pkg) {
-        continue;
-      }
+  for (const machineName of selectedMachineNames) {
+    if (typeof machineName !== "string" || !byMachineName.has(machineName)) {
+      errors.push(`Unknown package "${machineName}"`);
+      continue;
+    }
+    if (!installedPackages.some((pkg) => pkg.machineName === machineName)) {
+      errors.push(`Package "${machineName}" is not installed`);
+      continue;
+    }
+    selected.add(machineName);
+  }
 
-      for (const requirement of pkg.requirements) {
-        if (!expanded.has(requirement.machineName)) {
-          expanded.add(requirement.machineName);
-          changed = true;
-        }
+  const packages = [...selected]
+    .sort()
+    .map((machineName) => ({
+      packageGuid: installedPackages.find((pkg) => pkg.machineName === machineName).guid,
+      installVersion: 0,
+    }));
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    packages,
+  };
+}
+
+/**
+ * Validate stored package install rows, including requirement closure.
+ *
+ * @param {object[]} packages
+ * @returns {Promise<string[]>}
+ */
+async function validatePackageInstallSelection(packages) {
+  const catalog = await loadPackages({ strict: true });
+  const PackageStorage = require("./storage/packageStorage");
+  const installedPackages = await PackageStorage.global().list({ skipEvents: true });
+  const errors = [];
+
+  if (!Array.isArray(packages) || !packages.length) {
+    return ["At least one package must be selected"];
+  }
+
+  const byMachineName = new Map(catalog.map((pkg) => [pkg.machineName, pkg]));
+  const selected = new Set();
+
+  for (const entry of packages) {
+    if (!entry?.packageGuid) {
+      errors.push("Each package entry requires a packageGuid");
+      continue;
+    }
+
+    const installedPackage = installedPackages.find((pkg) => pkg.guid === entry.packageGuid);
+    if (!installedPackage) {
+      errors.push("Unknown package selection");
+      continue;
+    }
+
+    if (!byMachineName.has(installedPackage.machineName)) {
+      errors.push(`Unknown package "${installedPackage.machineName}"`);
+      continue;
+    }
+
+    selected.add(installedPackage.machineName);
+  }
+
+  for (const machineName of selected) {
+    const pkg = byMachineName.get(machineName);
+    for (const requirement of pkg.requirements) {
+      if (!selected.has(requirement.machineName)) {
+        errors.push(
+          `${machineName} requires ${requirement.machineName} to be selected`,
+        );
       }
     }
   }
 
-  return [...expanded];
+  return errors;
 }
 
-function resolveInstanceAssets(selectedMachineNames, packages) {
-  const expandedSelection = expandInstancePackageSelection(selectedMachineNames, packages);
-  const ordered = sortPackagesTopologically(expandedSelection, packages).filter(Boolean);
+function resolveInstanceAssets(machineNames, packages) {
+  const ordered = sortPackagesTopologically(machineNames, packages).filter(Boolean);
   const css = [];
   const js = [];
   const packageAssets = [];
@@ -504,11 +562,10 @@ function resolveInstanceAssets(selectedMachineNames, packages) {
   };
 }
 
-async function resolveInstanceAssetsForRequest(selectedMachineNames, packages) {
-  const expandedSelection = expandInstancePackageSelection(selectedMachineNames, packages);
-  const selectedPackages = selectPackagesByName(packages, expandedSelection);
+async function resolveInstanceAssetsForRequest(machineNames, packages) {
+  const selectedPackages = selectPackagesByName(packages, machineNames);
   const packagesWithAssets = await enrichAllPackagesWithAssets(selectedPackages);
-  return resolveInstanceAssets(selectedMachineNames, packagesWithAssets);
+  return resolveInstanceAssets(machineNames, packagesWithAssets);
 }
 
 function propertyToColumnName(property) {
@@ -532,7 +589,21 @@ function selectPackagesByName(packages, packageNames) {
   return packages.filter((pkg) => packageNameSet.has(pkg.machineName));
 }
 
-async function loadPackages({ strict = false, packageNames = null } = {}) {
+/**
+ * Load package manifests discovered on disk (from {@link refreshPackageCache}).
+ *
+ * By default this is filesystem-only: name, machine name, semver, requirements,
+ * asset paths, etc. It does not know which packages are registered in the database.
+ *
+ * Pass `withRegistry: true` to merge in {@link PackageStorage} rows for every
+ * catalog entry: `guid` (null when not registered) and `installed` (true when a
+ * `genrpg.packages` row exists). Used for admin/API views that show install state
+ * alongside on-disk package metadata.
+ *
+ * @param {{ strict?: boolean, packageNames?: string[] | null, withRegistry?: boolean }} [options]
+ * @returns {Promise<object[]>}
+ */
+async function loadPackages({ strict = false, packageNames = null, withRegistry = false } = {}) {
   if (!packageCache) {
     await refreshPackageCache();
   }
@@ -541,7 +612,25 @@ async function loadPackages({ strict = false, packageNames = null } = {}) {
     assertValidPackageConfiguration(packageCache.configurationIssues);
   }
 
-  return selectPackagesByName(packageCache.packages, packageNames);
+  let packages = selectPackagesByName(packageCache.packages, packageNames);
+
+  if (withRegistry) {
+    const PackageStorage = require("./storage/packageStorage");
+    const registryByMachine = new Map(
+      (await PackageStorage.global().list({ skipEvents: true }))
+        .map((entry) => [entry.machineName, entry]),
+    );
+    packages = packages.map((pkg) => {
+      const registry = registryByMachine.get(pkg.machineName);
+      return {
+        ...pkg,
+        guid: registry?.guid ?? null,
+        installed: registry != null,
+      };
+    });
+  }
+
+  return packages;
 }
 
 function getPackageConfigurationIssues() {
@@ -564,56 +653,6 @@ function invalidatePackageCache() {
   }
 }
 
-function parsePackageCsv(value) {
-  if (!value) return [];
-  return [...new Set(String(value).split(",").map((entry) => entry.trim()).filter(Boolean))].sort();
-}
-
-/**
- * Expanded instance packages as { [machineName]: humanLabel } for request context.
- */
-function resolveInstancePackages(packageCsv, packages) {
-  const expanded = expandInstancePackageSelection(parsePackageCsv(packageCsv), packages);
-  return Object.fromEntries(
-    selectPackagesByName(packages, expanded).map((pkg) => [pkg.machineName, pkg.name]),
-  );
-}
-
-function validatePackageSelection(selectedMachineNames, packages) {
-  const details = [];
-  const byMachineName = new Map(packages.map((pkg) => [pkg.machineName, pkg]));
-  const selected = new Set();
-
-  if (!Array.isArray(selectedMachineNames) || !selectedMachineNames.length) {
-    return { valid: false, details: ["At least one package must be selected"], packageCsv: "" };
-  }
-
-  for (const machineName of selectedMachineNames) {
-    if (typeof machineName !== "string" || !byMachineName.has(machineName)) {
-      details.push(`Unknown package "${machineName}"`);
-      continue;
-    }
-    selected.add(machineName);
-  }
-
-  for (const machineName of selected) {
-    const pkg = byMachineName.get(machineName);
-    for (const requirement of pkg.requirements) {
-      if (!selected.has(requirement.machineName)) {
-        details.push(
-          `${machineName} requires ${requirement.machineName} to be selected`,
-        );
-      }
-    }
-  }
-
-  return {
-    valid: details.length === 0,
-    details,
-    packageCsv: [...selected].sort().join(","),
-  };
-}
-
 module.exports = {
   PackageLoadError,
   REPO_ROOT,
@@ -623,10 +662,8 @@ module.exports = {
   getPackageConfigurationIssues,
   refreshPackageCache,
   invalidatePackageCache,
-  parsePackageCsv,
-  resolveInstancePackages,
-  validatePackageSelection,
   resolveInstanceAssetsForRequest,
-  expandInstancePackageSelection,
+  packagesFromMachineNames,
+  validatePackageInstallSelection,
   sortPackagesByDependencies,
 };

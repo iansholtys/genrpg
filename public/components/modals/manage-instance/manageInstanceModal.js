@@ -58,13 +58,13 @@ class ManageInstanceModal extends Modal {
       onTabChange: ({ tab }) => void this.onTabChange(tab.id),
     });
 
-    if (instance.can_edit) {
+    if (instance.canEdit) {
       this.tabbedRegion.addTab("edit", "Edit", this.buildEditPanel());
     }
-    if (instance.can_manage_users) {
+    if (instance.canManageUsers) {
       this.tabbedRegion.addTab("users", "Users", this.buildUsersPanel());
     }
-    if (instance.can_delete) {
+    if (instance.canDelete) {
       this.tabbedRegion.addTab("delete", "Delete", this.buildDeletePanel());
     }
 
@@ -547,12 +547,12 @@ class ManageInstanceModal extends Modal {
     this.resetDeleteTab();
 
     if (isManage) {
-      if (instance.can_delete) {
+      if (instance.canDelete) {
         this.elements.$deleteInstanceName.text(instance.name);
       }
 
-      if (instance.can_edit) {
-        const urlSegment = instance.url_segment || "";
+      if (instance.canEdit) {
+        const urlSegment = instance.urlSegment || "";
         this.elements.$instanceNameInput.val(instance.name || "");
         this.elements.$instanceDescriptionInput.val(instance.description || "");
         this.elements.$instanceUrlInput.val(urlSegment);
@@ -592,7 +592,7 @@ class ManageInstanceModal extends Modal {
   async onSubmit(event) {
     event.preventDefault();
 
-    if (this.isManageMode() && !this.instance?.can_edit) {
+    if (this.isManageMode() && !this.instance?.canEdit) {
       return;
     }
 

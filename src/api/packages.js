@@ -33,14 +33,6 @@ const execAsync = promisify(exec);
 
 const packagesRouter = express.Router();
 
-async function loadInstalledPackageNames() {
-  const query = selectQuery()
-    .from("genrpg", "packages", "p")
-    .addFields("p", "package");
-  const result = await pool.query(query.toString(), query.params);
-  return new Set(result.rows.map((row) => row.package));
-}
-
 async function registerPackageVersion(machineName) {
   const registerClient = await pool.connect();
   try {
@@ -115,16 +107,8 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
 }
 
 packagesRouter.get("/packages", asyncRoute(async (req, res) => {
-  const [packages, installedNames] = await Promise.all([
-    loadPackages({ strict: false }),
-    loadInstalledPackageNames(),
-  ]);
-
   res.json({
-    packages: packages.map((pkg) => ({
-      ...pkg,
-      installed: installedNames.has(pkg.machineName),
-    })),
+    packages: await loadPackages({ strict: false, withRegistry: true }),
     configurationIssues: getPackageConfigurationIssues(),
   });
 }));
@@ -165,10 +149,7 @@ async function previewGitPackage(url) {
 }
 
 packagesRouter.get("/packages/git/status", requireAdmin, asyncRoute(async (req, res) => {
-  const [packages, installedNames] = await Promise.all([
-    loadPackages({ strict: false }),
-    loadInstalledPackageNames(),
-  ]);
+  const packages = await loadPackages({ strict: false, withRegistry: true });
   const configurationIssues = getPackageConfigurationIssues();
 
   const statuses = [];
@@ -176,8 +157,8 @@ packagesRouter.get("/packages/git/status", requireAdmin, asyncRoute(async (req, 
   for (const pkg of packages) {
     if (pkg.machineName === "genrpg") continue;
 
-    const pkgPath = path.join(__dirname, "..", "..", pkg.path);
-    const installed = installedNames.has(pkg.machineName);
+    const { name, installed, machineName, version, path } = pkg;
+    const pkgPath = path.join(__dirname, "..", "..", path);
 
     // Check if it's a git repository
     let isGitRepo = false;
@@ -191,10 +172,10 @@ packagesRouter.get("/packages/git/status", requireAdmin, asyncRoute(async (req, 
     if (!isGitRepo) {
       // Still include non-git packages so they can be installed
       statuses.push({
-        name: pkg.name,
-        machineName: pkg.machineName,
-        localVersion: pkg.version,
-        remoteVersion: pkg.version,
+        name,
+        machineName,
+        localVersion: version,
+        remoteVersion: version,
         url: "",
         canUpdate: false,
         installed,
@@ -218,31 +199,31 @@ packagesRouter.get("/packages/git/status", requireAdmin, asyncRoute(async (req, 
         // fallback to origin/main
       }
 
-      const { stdout: manifestContent } = await execAsync(`git show ${branchRef}:${pkg.machineName}.package.yml`, { cwd: pkgPath });
+      const { stdout: manifestContent } = await execAsync(`git show ${branchRef}:${machineName}.package.yml`, { cwd: pkgPath });
       const raw = yaml.parse(manifestContent);
       const remoteVersion = raw.version || "0.0.0";
 
-      const canUpdate = semver.valid(remoteVersion) && semver.valid(pkg.version)
-                        ? semver.gt(remoteVersion, pkg.version)
+      const canUpdate = semver.valid(remoteVersion) && semver.valid(version)
+                        ? semver.gt(remoteVersion, version)
                         : false;
 
       statuses.push({
-        name: pkg.name,
-        machineName: pkg.machineName,
-        localVersion: pkg.version,
+        name,
+        machineName,
+        localVersion: version,
         remoteVersion,
         url,
         canUpdate,
         installed,
       });
     } catch (err) {
-      console.error(`Failed to get git status for ${pkg.machineName}:`, err);
+      console.error(`Failed to get git status for ${machineName}:`, err);
       // Still include the package so it can be installed even if git status fails
       statuses.push({
-        name: pkg.name,
-        machineName: pkg.machineName,
-        localVersion: pkg.version,
-        remoteVersion: pkg.version,
+        name,
+        machineName,
+        localVersion: version,
+        remoteVersion: version,
         url: "",
         canUpdate: false,
         installed,
