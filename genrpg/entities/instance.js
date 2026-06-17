@@ -11,6 +11,19 @@ class InstanceEntity extends BaseEntity {
     return require("../storage/instanceStorage");
   }
 
+  /**
+   * Machine names for packages installed on this instance.
+   * Unlike other entities, this is owned by the instance (from its `packages` field),
+   * not delegated from {@link InstanceStorage}.
+   */
+  get packageNames() {
+    return this._packageNames ?? [];
+  }
+
+  set packageNames(value) {
+    this._packageNames = Array.isArray(value) ? value : [];
+  }
+
   async collectValidationErrors() {
     const errors = await super.collectValidationErrors();
     const installErrors = await validatePackageInstallSelection(this.packages ?? []);
