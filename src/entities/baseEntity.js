@@ -351,10 +351,11 @@ class BaseEntity {
   }
 
   async collectValidationErrors() {
+    const packageNames = this.packageNames ?? [];
     const context = {
       instance: this.storage?.instance ?? {
-        guid: this.instanceGuid,
-        packages: Object.fromEntries(this.packageNames.map((name) => [name, name])),
+        guid: this.instanceGuid ?? this.guid,
+        packages: Object.fromEntries(packageNames.map((name) => [name, name])),
       },
     };
 
