@@ -157,8 +157,8 @@ packagesRouter.get("/packages/git/status", requireAdmin, asyncRoute(async (req, 
   for (const pkg of packages) {
     if (pkg.machineName === "genrpg") continue;
 
-    const { name, installed, machineName, version, path } = pkg;
-    const pkgPath = path.join(__dirname, "..", "..", path);
+    const { name, installed, machineName, version, path: packagePath } = pkg;
+    const pkgPath = path.join(__dirname, "..", "..", packagePath);
 
     // Check if it's a git repository
     let isGitRepo = false;
