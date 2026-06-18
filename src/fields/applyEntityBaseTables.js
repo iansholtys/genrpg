@@ -78,10 +78,10 @@ function buildUpdateDatetimeTriggerSql(schema, table) {
   const qualified = qualifyTable(schema, table);
   const triggerName = `${table}_update_datetime`;
   return [
-    `DROP TRIGGER IF EXISTS ${quoteIdentifier(triggerName)} ON ${qualified}`,
+    `DROP TRIGGER IF EXISTS ${quoteIdentifier(triggerName)} ON ${qualified};`,
     `CREATE TRIGGER ${quoteIdentifier(triggerName)}`,
     `  BEFORE UPDATE ON ${qualified}`,
-    "  FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime()",
+    "  FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();",
   ].join("\n");
 }
 
