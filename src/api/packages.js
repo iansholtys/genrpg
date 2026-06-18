@@ -10,6 +10,7 @@ const express = require("express");
 
 const { pool } = require("../db/pool");
 const { applySchemaVersions, reapplyPackageSchemaVersions } = require("../db/versions");
+const { applyEntityBaseTables } = require("../fields/applyEntityBaseTables");
 const { applyFieldTables } = require("../fields/applyFieldTables");
 const { requireAdmin } = require("../auth");
 const { insertQuery, selectQuery } = require("../services/queryService");
@@ -38,8 +39,8 @@ async function registerPackageVersion(machineName) {
   try {
     const registerQuery = insertQuery()
       .into("genrpg", "packages")
-      .values(["package", "version"], [machineName, 0])
-      .onConflict(["package"], "DO NOTHING");
+      .values(["machine_name", "version"], [machineName, 0])
+      .onConflict(["machine_name"], "DO NOTHING");
 
     await registerClient.query(registerQuery.toString(), registerQuery.params);
   } finally {
@@ -61,6 +62,10 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
       await reapplyPackageSchemaVersions({ pool, packageName: machineName });
     } else {
       await applySchemaVersions({ pool });
+    }
+    const entityBaseTables = await applyEntityBaseTables({ pool, packageNames: [machineName] });
+    if (entityBaseTables.applied.length) {
+      console.log(`Synced entity base tables for ${machineName}: ${entityBaseTables.applied.join(", ")}`);
     }
     const fieldTables = await applyFieldTables({ pool, packageNames: [machineName] });
     if (fieldTables.applied.length) {
@@ -89,7 +94,7 @@ async function applyPackageDatabase(machineName, packagePath, { reinstall = fals
         const versionQuery = selectQuery()
           .from("genrpg", "packages", tableAlias)
           .addFields(tableAlias, "version")
-          .whereColumn(tableAlias, "package", machineName);
+          .whereColumn(tableAlias, "machine_name", machineName);
 
         const applied = await versionClient.query(versionQuery.toString(), versionQuery.params);
         const currentVersion = applied.rows[0]?.version ?? 0;
@@ -325,8 +330,8 @@ packagesRouter.post("/packages/install", requireAdmin, asyncRoute(async (req, re
 
   const installedQuery = selectQuery()
     .from("genrpg", "packages", "p")
-    .addFields("p", "package")
-    .whereColumn("p", "package", machineName);
+    .addFields("p", "machine_name")
+    .whereColumn("p", "machine_name", machineName);
   const installedResult = await pool.query(installedQuery.toString(), installedQuery.params);
   if (installedResult.rows.length > 0) {
     res.status(400).json({ error: `Package "${machineName}" is already installed` });

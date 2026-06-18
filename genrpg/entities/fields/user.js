@@ -6,14 +6,17 @@
 module.exports = {
   coreFields: {
     oidcIssuer: {
-      column: "oidc_issuer",
+      type: "text",
       createOnly: true,
     },
     oidcSubject: {
-      column: "oidc_subject",
+      type: "text",
       createOnly: true,
     },
   },
+  uniqueConstraints: [
+    ["oidcIssuer", "oidcSubject"],
+  ],
   fields: {
     email: {
       type: "text",
@@ -27,6 +30,11 @@ module.exports = {
       type: "boolean",
       label: "Admin",
       default: false,
+    },
+    instanceRoles: {
+      type: "instanceRole",
+      label: "Instance roles",
+      cardinality: 0,
     },
   },
 };

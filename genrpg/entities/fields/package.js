@@ -5,17 +5,20 @@
 module.exports = {
   coreFields: {
     machineName: {
-      column: "package",
+      type: "text",
+      unique: true,
       readOnly: true,
       public: true,
     },
     version: {
-      column: "version",
+      type: "integer",
+      default: 0,
       readOnly: true,
       public: true,
     },
     installVersion: {
-      column: "install_version",
+      type: "integer",
+      default: 0,
       readOnly: true,
       public: true,
     },

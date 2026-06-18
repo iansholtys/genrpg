@@ -24,6 +24,11 @@ function columnNameToProperty(columnName) {
   return columnName.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
 }
 
+/** Display label for a normalized field or core field spec. */
+function label(spec) {
+  return spec.label ?? spec.property;
+}
+
 /**
  * Resolve an entity property path (`displayName`, `contents.itemGuid`) to a SQL column
  * target on the core or field table. Used for list/count filters and ordering.
@@ -164,8 +169,9 @@ function columnManifestToEntitySpec(column, fieldLabel, entityClasses) {
  * @param {Record<string, typeof import("../entities/baseEntity").BaseEntity>} entityClasses
  */
 function manifestSpecToEntitySpec(spec, entityClasses) {
+  const fieldLabel = label(spec);
   const entitySpec = {
-    label: spec.label,
+    label: fieldLabel,
     required: spec.required,
     cardinality: spec.cardinality,
     ...(spec.default !== undefined ? { default: spec.default } : {}),
@@ -193,7 +199,7 @@ function manifestSpecToEntitySpec(spec, entityClasses) {
     type: spec.type,
     structured: true,
     columns: spec.fieldType.columns.map((column) =>
-      columnManifestToEntitySpec(column, spec.label, entityClasses),
+      columnManifestToEntitySpec(column, fieldLabel, entityClasses),
     ),
   };
 }
@@ -355,7 +361,7 @@ function validateValueCount(values, spec) {
   if (cardinality < 1 || values.length <= cardinality) {
     return null;
   }
-  return `${spec.label} allows at most ${cardinality} values`;
+  return `${label(spec)} allows at most ${cardinality} values`;
 }
 
 /**
@@ -407,7 +413,7 @@ async function validateStructuredValues(values, entitySpec, context) {
 async function validateFieldValue(rawValue, spec, context) {
   const values = normalizeValuesForSave(rawValue, spec);
   if (values === null) {
-    return [`${spec.label} has an invalid value`];
+    return [`${label(spec)} has an invalid value`];
   }
 
   const countError = validateValueCount(values, spec);
@@ -416,7 +422,7 @@ async function validateFieldValue(rawValue, spec, context) {
   }
 
   if (spec.required && !values.length) {
-    return [`${spec.label} is required`];
+    return [`${label(spec)} is required`];
   }
 
   const entityClasses = await loadEntityClassesByKey();
@@ -424,14 +430,14 @@ async function validateFieldValue(rawValue, spec, context) {
   if (spec.type === "entityRef") {
     const EntityClass = entityClasses[spec.refs];
     if (!EntityClass) {
-      return [`${spec.label} references unknown entity "${spec.refs}"`];
+      return [`${label(spec)} references unknown entity "${spec.refs}"`];
     }
 
     for (const entry of values) {
       const refValue = entry.value;
       if (refValue == null || refValue === "") {
         if (spec.required) {
-          return [`${spec.label} is required`];
+          return [`${label(spec)} is required`];
         }
         continue;
       }
@@ -439,7 +445,7 @@ async function validateFieldValue(rawValue, spec, context) {
       const exists = await entityExists(EntityClass, refValue, context);
       if (!exists) {
         const scope = EntityClass.getStorage().instanceScoped === false ? "" : " for this instance";
-        return [`${spec.label} not found${scope}`];
+        return [`${label(spec)} not found${scope}`];
       }
     }
 
@@ -493,7 +499,7 @@ async function saveFieldValuesForEntity(queryFn, entityGuid, entity, manifestSpe
   for (const [property, spec] of Object.entries(manifestSpecs)) {
     const values = normalizeValuesForSave(entity[property], spec);
     if (values === null) {
-      throw new Error(`${spec.label} has an invalid value`);
+      throw new Error(`${label(spec)} has an invalid value`);
     }
 
     const countError = validateValueCount(values, spec);

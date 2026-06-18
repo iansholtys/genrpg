@@ -58,17 +58,17 @@ async function getAppliedVersions(client) {
   const tableAlias = "p";
   const query = selectQuery()
     .from("genrpg", "packages", tableAlias)
-    .addFields(tableAlias, ["package", "version"]);
+    .addFields(tableAlias, ["machine_name", "version"]);
 
   const result = await client.query(query.toString(), query.params);
-  return new Map(result.rows.map((row) => [row.package, row.version]));
+  return new Map(result.rows.map((row) => [row.machine_name, row.version]));
 }
 
 async function setAppliedVersion(client, machineName, version) {
   const query = insertQuery()
     .into("genrpg", "packages")
-    .values(["package", "version"], [machineName, version])
-    .onConflict(["package"], "DO UPDATE");
+    .values(["machine_name", "version"], [machineName, version])
+    .onConflict(["machine_name"], "DO UPDATE");
 
   await client.query(query.toString(), query.params);
 }

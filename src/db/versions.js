@@ -155,6 +155,46 @@ async function applySchemaVersion(client, schemaVersion, sql, checksum, { onConf
   }
 }
 
+/**
+ * Apply genrpg 0000 (set_update_datetime) before entity base-table DDL when not yet recorded.
+ *
+ * @param {import("pg").PoolClient} client
+ * @param {Awaited<ReturnType<typeof discoverSchemaVersions>>} schemaVersions
+ * @param {Map<string, string>} applied
+ * @param {string[]} appliedNow
+ */
+async function applyGenrpgBootstrapIfNeeded(client, schemaVersions, applied, appliedNow) {
+  const bootstrap = schemaVersions.find(
+    (entry) => entry.packageName === "genrpg" && entry.fileName.startsWith("0000_"),
+  );
+  if (!bootstrap) {
+    return;
+  }
+
+  const key = `${bootstrap.packageName}:${bootstrap.fileName}`;
+  if (applied.has(key)) {
+    return;
+  }
+
+  const { sql, checksum } = await readSchemaVersion(bootstrap);
+  await applySchemaVersion(client, bootstrap, sql, checksum);
+  appliedNow.push(key);
+  applied.set(key, checksum);
+}
+
+/**
+ * @param {import("pg").Pool} pool
+ * @returns {Promise<{ applied: string[] }>}
+ */
+async function syncEntityBaseTables(pool) {
+  const { applyEntityBaseTables } = require("../fields/applyEntityBaseTables");
+  const entityBaseTables = await applyEntityBaseTables({ pool });
+  if (entityBaseTables.applied.length) {
+    console.log(`Synced entity base tables: ${entityBaseTables.applied.join(", ")}`);
+  }
+  return entityBaseTables;
+}
+
 async function reapplyPackageSchemaVersions({
   pool = defaultPool,
   packageName,
@@ -170,6 +210,8 @@ async function reapplyPackageSchemaVersions({
   try {
     await ensureSchemaVersionTable(client);
     await client.query(`CREATE SCHEMA IF NOT EXISTS "${packageName}"`);
+
+    await syncEntityBaseTables(pool);
 
     const packageDbDir = path.join(rootDir, "packages", packageName, "db");
     const filePaths = await listVersionFiles(packageDbDir);
@@ -204,6 +246,8 @@ async function applyPendingSchemaVersionsForPackage({
   try {
     await ensureSchemaVersionTable(client);
     await client.query(`CREATE SCHEMA IF NOT EXISTS "${packageName}"`);
+
+    await syncEntityBaseTables(pool);
 
     const applied = await getAppliedSchemaVersions(client);
     const schemaVersions = (await discoverSchemaVersions(rootDir)).filter(
@@ -254,6 +298,9 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
     const freshlyInstalledPackages = new Set();
     const previouslyAppliedPackages = new Set([...applied.keys()].map((k) => k.split(":")[0]));
 
+    await applyGenrpgBootstrapIfNeeded(client, schemaVersions, applied, appliedNow);
+    const entityBaseTables = await syncEntityBaseTables(pool);
+
     for (const schemaVersion of schemaVersions) {
       const key = `${schemaVersion.packageName}:${schemaVersion.fileName}`;
       const { sql, checksum } = await readSchemaVersion(schemaVersion);
@@ -281,8 +328,8 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
         try {
           const packageInsert = insertQuery()
             .into("genrpg", "packages")
-            .values(["package", "version"], [packageName, 0])
-            .onConflict(["package"], "DO NOTHING");
+            .values(["machine_name", "version"], [packageName, 0])
+            .onConflict(["machine_name"], "DO NOTHING");
 
           await client.query(packageInsert.toString(), packageInsert.params);
         } catch (error) {
@@ -300,7 +347,7 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
       console.log(`Synced field tables: ${fieldTables.applied.join(", ")}`);
     }
 
-    return { applied: appliedNow, fieldTables: fieldTables.applied };
+    return { applied: appliedNow, entityBaseTables: entityBaseTables.applied, fieldTables: fieldTables.applied };
   } finally {
     client.release();
   }

@@ -12,6 +12,35 @@ function packageRootDir(packagePath) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {string | null} trimmed string, or null when value is not a string or is empty after trim
+ */
+function trimmedString(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return value.trim() || null;
+}
+
+/**
+ * JS manifest value → SQL DEFAULT clause fragment.
+ * Field-type columns store defaults as strings at manifest load; core fields use JS literals in source modules.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function sqlDefaultLiteral(value) {
+  switch (typeof value) {
+    case "boolean":
+      return value ? "true" : "false";
+    case "string":
+      return `'${value.replace(/'/g, "''")}'`;
+    default:
+      return String(value);
+  }
+}
+
+/**
  * @param {unknown} moduleExports
  * @param {string} label
  * @returns {typeof import("../entities/baseEntity").BaseEntity}
@@ -41,7 +70,7 @@ function entityDefFromEntityClass(EntityClass, manifestKey, packageMachineName, 
   }
 
   const entityKey = EntityClass.key;
-  if (typeof entityKey !== "string" || !entityKey.trim()) {
+  if (!trimmedString(entityKey)) {
     throw new Error(`${label}: Entity class must define static key`);
   }
   if (entityKey !== manifestKey) {
@@ -61,7 +90,7 @@ function entityDefFromEntityClass(EntityClass, manifestKey, packageMachineName, 
     throw new Error(`${label}: Entity.getStorage() must return a Storage class`);
   }
 
-  const table = typeof StorageClass.table === "string" ? StorageClass.table.trim() : "";
+  const table = trimmedString(StorageClass.table);
   if (!table) {
     throw new Error(`${label}: Storage.table is required`);
   }
@@ -165,8 +194,8 @@ function normalizeFieldTypeDefinition(typeName, rawDef, label) {
       throw new Error(`${label}: fieldTypes.${typeName}.columns[${index}] must be an object`);
     }
 
-    const name = typeof column.name === "string" ? column.name.trim() : "";
-    const type = typeof column.type === "string" ? column.type.trim() : "";
+    const name = trimmedString(column.name);
+    const type = trimmedString(column.type);
     if (!name) {
       throw new Error(`${label}: fieldTypes.${typeName}.columns[${index}] requires name`);
     }
@@ -183,9 +212,7 @@ function normalizeFieldTypeDefinition(typeName, rawDef, label) {
     };
   });
 
-  const defaultSortColumn = typeof rawDef.defaultSortColumn === "string"
-    ? rawDef.defaultSortColumn.trim()
-    : "";
+  const defaultSortColumn = trimmedString(rawDef.defaultSortColumn);
 
   return {
     columns,
@@ -260,21 +287,86 @@ function normalizeCoreFieldSpec(property, rawSpec, context) {
     throw new Error(`${contextLabel}: coreFields.${property} must be an object`);
   }
 
-  const column = typeof rawSpec.column === "string" && rawSpec.column.trim()
-    ? rawSpec.column.trim()
-    : propertyToColumnName(property);
+  const type = trimmedString(rawSpec.type);
+  if (!type) {
+    throw new Error(`${contextLabel}: coreFields.${property}.type is required`);
+  }
 
-  return {
+  const column = trimmedString(rawSpec.column) ?? propertyToColumnName(property);
+
+  const spec = {
     property,
     column,
+    type,
+    columnType: type === "number" ? "double precision" : type,
     entityKey,
     createOnly: !!rawSpec.createOnly,
     public: !!rawSpec.public,
-    label:
-      typeof rawSpec.label === "string" && rawSpec.label.trim()
-        ? rawSpec.label.trim()
-        : property.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()),
+    readOnly: !!rawSpec.readOnly,
   };
+
+  const label = trimmedString(rawSpec.label);
+  if (label) {
+    spec.label = label;
+  }
+
+  if (rawSpec.unique) {
+    spec.unique = true;
+  }
+  if (rawSpec.default !== undefined) {
+    spec.default = rawSpec.default;
+    spec.columnDefault = sqlDefaultLiteral(rawSpec.default);
+  }
+
+  return spec;
+}
+
+/**
+ * @param {unknown} rawConstraints from a field declaration module
+ * @param {Record<string, { property: string, column: string }>} coreFieldsByProperty normalized core fields for the entity
+ * @param {string} contextLabel
+ * @returns {{ properties: string[], columns: string[] }[]}
+ */
+function normalizeUniqueConstraints(rawConstraints, coreFieldsByProperty, contextLabel) {
+  if (rawConstraints == null) {
+    return [];
+  }
+
+  if (!Array.isArray(rawConstraints)) {
+    throw new Error(`${contextLabel}: uniqueConstraints must be an array`);
+  }
+
+  return rawConstraints.map((entry, index) => {
+    if (!Array.isArray(entry) || entry.length < 1) {
+      throw new Error(
+        `${contextLabel}: uniqueConstraints[${index}] must be a non-empty array of property names`,
+      );
+    }
+
+    const properties = [];
+    const columns = [];
+
+    for (const rawProperty of entry) {
+      const property = trimmedString(rawProperty);
+      if (!property) {
+        throw new Error(
+          `${contextLabel}: uniqueConstraints[${index}] entries must be non-empty property names`,
+        );
+      }
+
+      const coreField = coreFieldsByProperty[property];
+      if (!coreField) {
+        throw new Error(
+          `${contextLabel}: uniqueConstraints[${index}] references unknown core field "${property}"`,
+        );
+      }
+
+      properties.push(property);
+      columns.push(coreField.column);
+    }
+
+    return { properties, columns };
+  });
 }
 
 /**
@@ -289,8 +381,8 @@ function normalizeFieldSpec(property, rawSpec, context) {
     throw new Error(`${contextLabel}: fields.${property} must be an object`);
   }
 
-  const type = typeof rawSpec.type === "string" ? rawSpec.type.trim() : "";
-  if (!Object.hasOwn(fieldTypes, type)) {
+  const type = trimmedString(rawSpec.type);
+  if (!type || !Object.hasOwn(fieldTypes, type)) {
     throw new Error(
       `${contextLabel}: fields.${property}.type must be one of: ${Object.keys(fieldTypes).join(", ")}`,
     );
@@ -303,7 +395,7 @@ function normalizeFieldSpec(property, rawSpec, context) {
 
   let refs;
   if (type === "entityRef") {
-    refs = typeof rawSpec.refs === "string" ? rawSpec.refs.trim() : "";
+    refs = trimmedString(rawSpec.refs);
     if (!refs) {
       throw new Error(`${contextLabel}: fields.${property} (entityRef) requires refs`);
     }
@@ -323,7 +415,7 @@ function normalizeFieldSpec(property, rawSpec, context) {
   const fieldColumn = propertyToColumnName(property);
   const table = `${entityKey}_${fieldColumn}`;
 
-  return {
+  const spec = {
     property,
     type,
     cardinality,
@@ -333,16 +425,19 @@ function normalizeFieldSpec(property, rawSpec, context) {
     entityTable: entityDef.table,
     table,
     column: fieldColumn,
-    label:
-      typeof rawSpec.label === "string" && rawSpec.label.trim()
-        ? rawSpec.label.trim()
-        : property.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()),
     required: !!rawSpec.required,
     ...(refs ? { refs } : {}),
     ...(rawSpec.default !== undefined ? { default: rawSpec.default } : {}),
     ...(rawSpec.inputType ? { inputType: rawSpec.inputType } : {}),
     fieldType: fieldTypes[type],
   };
+
+  const label = trimmedString(rawSpec.label);
+  if (label) {
+    spec.label = label;
+  }
+
+  return spec;
 }
 
 function isSpecObject(raw) {
@@ -405,20 +500,48 @@ function mergeSpecsByEntity(target, source, owners, pkgMachineName, specLabel) {
 }
 
 /**
+ * @param {Record<string, { properties: string[], columns: string[] }[]>} target
+ * @param {Record<string, { properties: string[], columns: string[] }[]>} source
+ * @param {Map<string, string>} owners
+ * @param {string} pkgMachineName
+ */
+function mergeUniqueConstraintsByEntity(target, source, owners, pkgMachineName) {
+  for (const [entityKey, constraints] of Object.entries(source)) {
+    if (!target[entityKey]) {
+      target[entityKey] = [];
+    }
+
+    for (const constraint of constraints) {
+      const ownerKey = `${entityKey}:${constraint.columns.slice().sort().join(",")}`;
+      if (owners.has(ownerKey)) {
+        throw packageLoadError(
+          null,
+          `Unique constraint on entity "${entityKey}" (${constraint.properties.join(", ")}) is defined by both ${owners.get(ownerKey)} and ${pkgMachineName}`,
+        );
+      }
+
+      owners.set(ownerKey, pkgMachineName);
+      target[entityKey].push(constraint);
+    }
+  }
+}
+
+/**
  * Load normalized field and core-field specs from one package manifest.
- * @returns {{ specsByEntity: Record<string, Record<string, object>>, coreSpecsByEntity: Record<string, Record<string, object>> }}
+ * @returns {{ specsByEntity: Record<string, Record<string, object>>, coreSpecsByEntity: Record<string, Record<string, object>>, uniqueConstraintsByEntity: Record<string, { properties: string[], columns: string[] }[]> }}
  */
 async function loadPackageFieldSpecs(pkg, fieldTypes, entities) {
   const packageDir = packageRootDir(pkg.path);
   const manifest = await readPackageEntitiesManifest(packageDir, pkg.machineName);
   if (!manifest?.fields?.length) {
-    return { specsByEntity: {}, coreSpecsByEntity: {} };
+    return { specsByEntity: {}, coreSpecsByEntity: {}, uniqueConstraintsByEntity: {} };
   }
 
   const yamlLabel = `${pkg.machineName}.entities.yml`;
   const modulesByPath = new Map();
   const specsByEntity = {};
   const coreSpecsByEntity = {};
+  const uniqueConstraintsByEntity = {};
 
   for (const entry of manifest.fields) {
     if (!/^[a-z][a-z0-9_]*$/.test(entry.entity)) {
@@ -468,9 +591,21 @@ async function loadPackageFieldSpecs(pkg, fieldTypes, entities) {
       duplicateLabel: "core field",
       normalize: (property, rawSpec) => normalizeCoreFieldSpec(property, rawSpec, coreContext),
     });
+
+    const normalizedUniqueConstraints = normalizeUniqueConstraints(
+      moduleExports?.uniqueConstraints,
+      coreSpecsByEntity[entry.entity] || {},
+      moduleLabel,
+    );
+    if (normalizedUniqueConstraints.length) {
+      if (!uniqueConstraintsByEntity[entry.entity]) {
+        uniqueConstraintsByEntity[entry.entity] = [];
+      }
+      uniqueConstraintsByEntity[entry.entity].push(...normalizedUniqueConstraints);
+    }
   }
 
-  return { specsByEntity, coreSpecsByEntity };
+  return { specsByEntity, coreSpecsByEntity, uniqueConstraintsByEntity };
 }
 
 async function loadMergedFieldAndCoreSpecs(packageNames = null) {
@@ -479,19 +614,27 @@ async function loadMergedFieldAndCoreSpecs(packageNames = null) {
 
   const { loadPackages } = require("../packages");
   const packages = await loadPackages({ strict: false, packageNames });
-  const merged = {};
-  const mergedCore = {};
+  const fields = {};
+  const coreFields = {};
+  const uniqueConstraints = {};
   const propertyOwners = new Map();
   const corePropertyOwners = new Map();
+  const uniqueConstraintOwners = new Map();
 
   for (const pkg of packages) {
-    const { specsByEntity, coreSpecsByEntity } = await loadPackageFieldSpecs(pkg, fieldTypes, entities);
+    const { machineName } = pkg;
+    const { specsByEntity, coreSpecsByEntity, uniqueConstraintsByEntity } = await loadPackageFieldSpecs(
+      pkg,
+      fieldTypes,
+      entities,
+    );
 
-    mergeSpecsByEntity(merged, specsByEntity, propertyOwners, pkg.machineName, "Field");
-    mergeSpecsByEntity(mergedCore, coreSpecsByEntity, corePropertyOwners, pkg.machineName, "Core field");
+    mergeSpecsByEntity(fields, specsByEntity, propertyOwners, machineName, "Field");
+    mergeSpecsByEntity(coreFields, coreSpecsByEntity, corePropertyOwners, machineName, "Core field");
+    mergeUniqueConstraintsByEntity(uniqueConstraints, uniqueConstraintsByEntity, uniqueConstraintOwners, machineName);
   }
 
-  return { fields: merged, coreFields: mergedCore };
+  return { fields, coreFields, uniqueConstraints };
 }
 
 /**
@@ -515,6 +658,16 @@ async function loadMergedCoreFieldSpecs(packageNames = null) {
 }
 
 /**
+ * Merge entity-level unique constraints from field modules across packages.
+ * @param {string[] | null} [packageNames]
+ * @returns {Promise<Record<string, { properties: string[], columns: string[] }[]>>}
+ */
+async function loadMergedUniqueConstraints(packageNames = null) {
+  const { uniqueConstraints } = await loadMergedFieldAndCoreSpecs(packageNames);
+  return uniqueConstraints;
+}
+
+/**
  * Flat list of all field specs from installed packages.
  * @param {string[] | null} [packageNames] limit to these machine names; default all packages
  * @returns {Promise<object[]>}
@@ -535,8 +688,11 @@ async function loadAllFieldSpecs(packageNames = null) {
 }
 
 module.exports = {
+  trimmedString,
   loadAllFieldSpecs,
   loadMergedFieldSpecs,
   loadMergedCoreFieldSpecs,
+  loadMergedUniqueConstraints,
+  loadEntitiesForPackages,
   loadEntityClassesByKey,
 };

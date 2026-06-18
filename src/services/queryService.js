@@ -1032,4 +1032,7 @@ module.exports = {
   createTableQuery,
   alterTableQuery,
   qualify,
+  qualifyTable,
+  quoteIdentifier,
+  quoteColumn,
 };

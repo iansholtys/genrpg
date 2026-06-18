@@ -99,10 +99,10 @@ async function getGlobalInstallVersions(pool) {
   try {
     const query = selectQuery()
       .from("genrpg", "packages", "p")
-      .addFields("p", ["package", "install_version"]);
+      .addFields("p", ["machine_name", "install_version"]);
 
     const result = await client.query(query.toString(), query.params);
-    return new Map(result.rows.map((row) => [row.package, row.install_version ?? 0]));
+    return new Map(result.rows.map((row) => [row.machine_name, row.install_version ?? 0]));
   } finally {
     client.release();
   }
@@ -116,8 +116,8 @@ async function getGlobalInstallVersions(pool) {
 async function setGlobalInstallVersion(client, machineName, installVersion) {
   const query = insertQuery()
     .into("genrpg", "packages")
-    .values(["package", "install_version"], [machineName, installVersion])
-    .onConflict(["package"], "DO UPDATE");
+    .values(["machine_name", "install_version"], [machineName, installVersion])
+    .onConflict(["machine_name"], "DO UPDATE");
 
   await client.query(query.toString(), query.params);
 }

@@ -5,6 +5,7 @@ const { pool } = require("../db/pool");
 const { isGlobalAdmin } = require("../auth");
 const { qualify, selectQuery } = require("./queryService");
 const InstanceStorage = require("../../genrpg/storage/instanceStorage");
+const UserStorage = require("../storage/userStorage");
 
 async function loadAccessibleInstance(instanceGuid, user, options = {}) {
   if (!(await userCanAccessInstance(instanceGuid, user))) {
@@ -24,48 +25,50 @@ async function userCanAccessInstance(instanceGuid, user) {
     return true;
   }
 
-  const instanceUserRoleAlias = "iur";
+  const instanceUserRoleAlias = "uir";
   const query = selectQuery()
-    .from("genrpg", "instance_user_roles", instanceUserRoleAlias)
-    .addFields(instanceUserRoleAlias, "user_guid")
+    .from("genrpg", "user_instance_roles", instanceUserRoleAlias)
+    .addFields(instanceUserRoleAlias, "entity_guid")
     .whereColumn(instanceUserRoleAlias, "instance_guid", instanceGuid)
-    .whereColumn(instanceUserRoleAlias, "user_guid", user.guid);
+    .whereColumn(instanceUserRoleAlias, "entity_guid", user.guid);
 
   const result = await pool.query(query.toString(), query.params);
   return result.rows.length > 0;
 }
 
 async function getInstancePermissions(instanceGuid, userGuid) {
-  const instanceUserRoleAlias = "iur";
+  const instanceUserRoleAlias = "uir";
   const rolePermissionAlias = "rp";
-  const permissionAlias = "p";
+  const permissionNameAlias = "pn";
+  const schema = "genrpg";
   const query = selectQuery()
-    .from("genrpg", "instance_user_roles", instanceUserRoleAlias)
-    .addJoin("genrpg", "role_permissions", rolePermissionAlias,
-      `${qualify(rolePermissionAlias, "role_id")} = ${qualify(instanceUserRoleAlias, "role_id")}`,
+    .from(schema, "user_instance_roles", instanceUserRoleAlias)
+    .addJoin(schema, "role_permissions", rolePermissionAlias,
+      `${qualify(rolePermissionAlias, "entity_guid")} = ${qualify(instanceUserRoleAlias, "role_guid")}`,
     )
-    .addJoin("genrpg", "permissions", permissionAlias,
-      `${qualify(permissionAlias, "id")} = ${qualify(rolePermissionAlias, "permission_id")}`,
+    .addJoin(schema, "permission_name", permissionNameAlias,
+      `${qualify(permissionNameAlias, "entity_guid")} = ${qualify(rolePermissionAlias, "value")}`,
     )
-    .addExpression(`DISTINCT ${qualify(permissionAlias, "name")}`)
+    .addExpression(`DISTINCT ${qualify(permissionNameAlias, "value")}`, "name")
     .whereColumn(instanceUserRoleAlias, "instance_guid", instanceGuid)
-    .whereColumn(instanceUserRoleAlias, "user_guid", userGuid);
+    .whereColumn(instanceUserRoleAlias, "entity_guid", userGuid);
 
   const result = await pool.query(query.toString(), query.params);
   return new Set(result.rows.map((row) => row.name));
 }
 
 async function getUserInstanceRole(instanceGuid, userGuid) {
-  const tableAlias = "iur";
-  const roleTableAlias = "r";
+  const tableAlias = "uir";
+  const roleNameAlias = "rn";
+  const schema = "genrpg";
   const query = selectQuery()
-    .from("genrpg", "instance_user_roles", tableAlias)
-    .addJoin("genrpg", "roles", roleTableAlias,
-      `${qualify(roleTableAlias, "id")} = ${qualify(tableAlias, "role_id")}`,
+    .from(schema, "user_instance_roles", tableAlias)
+    .addJoin(schema, "role_name", roleNameAlias,
+      `${qualify(roleNameAlias, "entity_guid")} = ${qualify(tableAlias, "role_guid")}`,
     )
-    .addFields(roleTableAlias, "name", "role_name")
+    .addFields(roleNameAlias, "value", "role_name")
     .whereColumn(tableAlias, "instance_guid", instanceGuid)
-    .whereColumn(tableAlias, "user_guid", userGuid);
+    .whereColumn(tableAlias, "entity_guid", userGuid);
 
   const result = await pool.query(query.toString(), query.params);
   return result.rows[0]?.role_name || null;
@@ -106,10 +109,37 @@ function hasPermission(context, permissionName) {
   return context.permissions?.has(permissionName) ?? false;
 }
 
+async function assignInstanceRole(userGuid, instanceGuid, roleGuid) {
+  const user = await UserStorage.global().load(userGuid, { skipEvents: true });
+  if (!user) {
+    return null;
+  }
+
+  const roles = [...(user.instanceRoles ?? [])];
+  const index = roles.findIndex((entry) => entry.instanceGuid === instanceGuid);
+  const assignment = { instanceGuid, roleGuid };
+
+  if (index >= 0) {
+    roles[index] = assignment;
+  } else {
+    roles.push(assignment);
+  }
+
+  user.set({ instanceRoles: roles });
+  const validationErrors = await user.validate();
+  if (validationErrors.length) {
+    throw new Error(validationErrors.join("; "));
+  }
+
+  await user.save({ skipEvents: true });
+  return user;
+}
+
 module.exports = {
   loadAccessibleInstance,
   getUserInstanceRole,
   userHasPermission,
   buildContext,
   hasPermission,
+  assignInstanceRole,
 };

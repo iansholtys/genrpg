@@ -3,14 +3,16 @@ const { NotFoundError } = require("../errors/NotFoundError");
 const express = require("express");
 const { pool } = require("../db/pool");
 const { withTransaction, getTransactionClient } = require("../db/transactionContext");
-const { deleteQuery, insertQuery, selectQuery, qualify } = require("../services/queryService");
+const { selectQuery, qualify } = require("../services/queryService");
 const { applyInstallForInstance } = require("../install");
 const { isGlobalAdmin } = require("../auth");
 const {
   loadAccessibleInstance,
   getUserInstanceRole,
   userHasPermission,
+  assignInstanceRole,
 } = require("../services/permissionService");
+const RoleStorage = require("../storage/roleStorage");
 const { asyncRoute } = require("../lib/httpResponse");
 const {
   loadPackages,
@@ -79,19 +81,26 @@ instancesRouter.get("/instances", asyncRoute(async (req, res) => {
       });
     }
   } else {
-    const iur = "iur";
-    const r = "r";
+    const iur = "uir";
+    const rn = "rn";
     const rp = "rp";
-    const p = "p";
+    const pn = "pn";
+    const schema = "genrpg";
     const accessQuery = selectQuery()
-      .from("genrpg", "instance_user_roles", iur)
+      .from("genrpg", "user_instance_roles", iur)
       .addFields(iur, "instance_guid")
-      .addJoin("genrpg", "roles", r, `${qualify(r, "id")} = ${qualify(iur, "role_id")}`)
-      .addFields(r, "name", "role_name")
-      .addLeftJoin("genrpg", "role_permissions", rp, `${qualify(rp, "role_id")} = ${qualify(iur, "role_id")}`)
-      .addLeftJoin("genrpg", "permissions", p, `${qualify(p, "id")} = ${qualify(rp, "permission_id")}`)
-      .addFields(p, "name", "permission_name")
-      .whereColumn(iur, "user_guid", user.guid);
+      .addJoin(schema, "role_name", rn,
+        `${qualify(rn, "entity_guid")} = ${qualify(iur, "role_guid")}`,
+      )
+      .addFields(rn, "value", "role_name")
+      .addLeftJoin(schema, "role_permissions", rp,
+        `${qualify(rp, "entity_guid")} = ${qualify(iur, "role_guid")}`,
+      )
+      .addLeftJoin(schema, "permission_name", pn,
+        `${qualify(pn, "entity_guid")} = ${qualify(rp, "value")}`,
+      )
+      .addFields(pn, "value", "permission_name")
+      .whereColumn(iur, "entity_guid", user.guid);
 
     const accessResult = await pool.query(accessQuery.toString(), accessQuery.params);
     for (const row of accessResult.rows) {
@@ -110,7 +119,7 @@ instancesRouter.get("/instances", asyncRoute(async (req, res) => {
 
     const guids = [...accessByGuid.keys()];
     instances = guids.length
-      ? await instanceStorage.list({ guid: guids, skipEvents: true })
+      ? await instanceStorage.load(guids, { skipEvents: true })
       : [];
 
     for (const [guid, access] of accessByGuid) {
@@ -222,22 +231,10 @@ instancesRouter.post("/instances", asyncRoute(async (req, res) => {
     const instanceGuid = instance.guid;
 
     // Assign Instance_Owner role to the creator
-    const roleTableAlias = "r";
-    const ownerRoleQuery = selectQuery()
-      .from("genrpg", "roles", roleTableAlias)
-      .addFields(roleTableAlias, "id")
-      .whereColumn(roleTableAlias, "name", "Instance_Owner");
-
-    const ownerRole = await client.query(ownerRoleQuery.toString(), ownerRoleQuery.params);
-    if (ownerRole.rows.length > 0) {
-      const ownerRoleInsert = insertQuery()
-        .into("genrpg", "instance_user_roles")
-        .values(
-          ["instance_guid", "user_guid", "role_id"],
-          [instanceGuid, req.session.user.guid, ownerRole.rows[0].id],
-        );
-
-      await client.query(ownerRoleInsert.toString(), ownerRoleInsert.params);
+    const ownerRoles = await RoleStorage.global().list({ name: "Instance_Owner", skipEvents: true });
+    const ownerRole = ownerRoles[0];
+    if (ownerRole) {
+      await assignInstanceRole(req.session.user.guid, instanceGuid, ownerRole.guid);
     }
 
     await createDefaultInstanceAlias(client, instanceGuid);
@@ -343,7 +340,7 @@ instancesRouter.get("/instances/:guid/users", async (req, res, next) => {
         guid: entity.guid,
         email: entity.email,
         displayName: entity.displayName,
-        roleId: entity.instanceRoles[0]?.roleId ?? null,
+        roleGuid: entity.instanceRoles[0]?.roleGuid ?? null,
         roleName: entity.instanceRoles[0]?.roleName ?? null,
       })),
     });
@@ -356,10 +353,10 @@ instancesRouter.put("/instances/:guid/users/:userGuid", async (req, res, next) =
   try {
     const user = req.session.user;
     const { guid: instanceGuid, userGuid: targetUserGuid } = req.params;
-    const { roleId } = req.body;
+    const { roleGuid } = req.body;
 
-    if (!roleId) {
-      res.status(400).json({ error: "roleId is required" });
+    if (!roleGuid || typeof roleGuid !== "string") {
+      res.status(400).json({ error: "roleGuid is required" });
       return;
     }
 
@@ -370,20 +367,13 @@ instancesRouter.put("/instances/:guid/users/:userGuid", async (req, res, next) =
       return;
     }
 
-    // Verify the role exists
-    const roleTableAlias = "r";
-    const roleLookupQuery = selectQuery()
-      .from("genrpg", "roles", roleTableAlias)
-      .addFields(roleTableAlias, ["id", "name"])
-      .whereColumn(roleTableAlias, "id", roleId);
-
-    const roleResult = await pool.query(roleLookupQuery.toString(), roleLookupQuery.params);
-    if (!roleResult.rows.length) {
+    const role = await RoleStorage.global().load(roleGuid, { skipEvents: true });
+    if (!role) {
       res.status(400).json({ error: "Invalid role" });
       return;
     }
 
-    const roleName = roleResult.rows[0].name;
+    const roleName = role.name;
 
     // GMs cannot assign Instance_Owner
     const isAdmin = await isGlobalAdmin(user.guid);
@@ -395,12 +385,7 @@ instancesRouter.put("/instances/:guid/users/:userGuid", async (req, res, next) =
       }
     }
 
-    const roleAssignment = insertQuery()
-      .into("genrpg", "instance_user_roles")
-      .values(["instance_guid", "user_guid", "role_id"], [instanceGuid, targetUserGuid, roleId])
-      .onConflict(["instance_guid", "user_guid"], "DO UPDATE");
-
-    await pool.query(roleAssignment.toString(), roleAssignment.params);
+    await assignInstanceRole(targetUserGuid, instanceGuid, roleGuid);
 
     res.json({ success: true });
   } catch (error) {
@@ -431,13 +416,15 @@ instancesRouter.delete("/instances/:guid/users/:userGuid", async (req, res, next
       }
     }
 
-    const tableAlias = "r";
-    const removeRoleQuery = deleteQuery()
-      .from("genrpg", "instance_user_roles", tableAlias)
-      .whereColumn(tableAlias, "instance_guid", instanceGuid)
-      .whereColumn(tableAlias, "user_guid", targetUserGuid);
-
-    await pool.query(removeRoleQuery.toString(), removeRoleQuery.params);
+    const targetUser = await UserStorage.global().load(targetUserGuid, { skipEvents: true });
+    if (targetUser) {
+      targetUser.set({
+        instanceRoles: (targetUser.instanceRoles ?? []).filter(
+          (entry) => entry.instanceGuid !== instanceGuid,
+        ),
+      });
+      await targetUser.save({ skipEvents: true });
+    }
 
     res.json({ success: true });
   } catch (error) {

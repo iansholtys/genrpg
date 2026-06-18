@@ -1,0 +1,7 @@
+[
+  { "name": "instance.edit", "description": "Edit instance name, description, and packages" },
+  { "name": "instance.delete", "description": "Delete an instance" },
+  { "name": "instance.run", "description": "Run/enter an instance" },
+  { "name": "instance.manage_packages", "description": "Manage packages assigned to an instance" },
+  { "name": "instance.manage_users", "description": "Manage user role assignments on an instance" }
+]

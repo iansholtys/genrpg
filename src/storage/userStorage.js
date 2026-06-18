@@ -1,6 +1,6 @@
 const { BaseStorage } = require("./baseStorage");
 const UserEntity = require("../entities/userEntity");
-const { qualify, selectQuery } = require("../services/queryService");
+const { selectQuery, qualify } = require("../services/queryService");
 
 class UserStorage extends BaseStorage {
   static schema = "genrpg";
@@ -21,22 +21,22 @@ class UserStorage extends BaseStorage {
   }
 
   async listForInstance(instanceGuid, options = {}) {
-    const tableAlias = "iur";
-    const roleTableAlias = "r";
+    const tableAlias = "uir";
+    const roleNameAlias = "rn";
     const schema = "genrpg";
     const rolesQuery = selectQuery()
-      .from(schema, "instance_user_roles", tableAlias)
-      .addJoin(schema, "roles", roleTableAlias,
-        `${qualify(roleTableAlias, "id")} = ${qualify(tableAlias, "role_id")}`,
+      .from(schema, "user_instance_roles", tableAlias)
+      .addJoin(schema, "role_name", roleNameAlias,
+        `${qualify(roleNameAlias, "entity_guid")} = ${qualify(tableAlias, "role_guid")}`,
       )
-      .addFields(tableAlias, ["user_guid", "role_id"])
-      .addFields(roleTableAlias, ["name"], ["role_name"])
+      .addFields(tableAlias, ["entity_guid", "role_guid"])
+      .addFields(roleNameAlias, ["value"], ["role_name"])
       .whereColumn(tableAlias, "instance_guid", instanceGuid);
 
     const rolesResult = await this.query(rolesQuery.toString(), rolesQuery.params);
     const assignments = rolesResult.rows.map((row) => ({
-      userGuid: row.user_guid,
-      roleId: row.role_id,
+      userGuid: row.entity_guid,
+      roleGuid: row.role_guid,
       roleName: row.role_name,
     }));
 
@@ -54,7 +54,7 @@ class UserStorage extends BaseStorage {
 
     for (const assignment of assignments) {
       userByGuid.get(assignment.userGuid)?.instanceRoles.push({
-        roleId: assignment.roleId,
+        roleGuid: assignment.roleGuid,
         roleName: assignment.roleName,
       });
     }

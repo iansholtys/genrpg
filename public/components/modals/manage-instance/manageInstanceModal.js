@@ -154,7 +154,7 @@ class ManageInstanceModal extends Modal {
     }).append($("<option>", { value: "", text: "Select a user…" }));
 
     this.elements.$addRoleSelect = $("<select>", {
-      name: "roleId",
+      name: "roleGuid",
       id: "addRoleSelect",
       required: true,
     }).append($("<option>", { value: "", text: "Select a role…" }));
@@ -499,7 +499,7 @@ class ManageInstanceModal extends Modal {
     const roles = await loadRoles();
     this.elements.$addRoleSelect.html('<option value="">Select a role…</option>');
     for (const role of roles) {
-      this.elements.$addRoleSelect.append($("<option>", { value: role.id, text: role.name }));
+      this.elements.$addRoleSelect.append($("<option>", { value: role.guid, text: role.name }));
     }
 
     try {
@@ -670,9 +670,9 @@ class ManageInstanceModal extends Modal {
 
     const formData = new FormData(event.currentTarget);
     const userGuid = formData.get("userGuid");
-    const roleId = Number(formData.get("roleId"));
+    const roleGuid = formData.get("roleGuid");
 
-    if (!userGuid || !roleId) {
+    if (!userGuid || !roleGuid) {
       notify("Select a user and a role.", "error");
       return;
     }
@@ -680,7 +680,7 @@ class ManageInstanceModal extends Modal {
     try {
       await requestJson(`/api/genrpg/instances/${this.instance.guid}/users/${userGuid}`, {
         method: "PUT",
-        body: JSON.stringify({ roleId }),
+        body: JSON.stringify({ roleGuid }),
       });
       notify("Role assigned.", "success");
       event.currentTarget.reset();

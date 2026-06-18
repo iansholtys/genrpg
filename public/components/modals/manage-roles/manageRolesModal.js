@@ -22,7 +22,7 @@ class ManageRolesModal extends Modal {
     this.elements.$roleFormId = $("<input>", {
       type: "hidden",
       id: "roleFormId",
-      name: "roleId",
+      name: "roleGuid",
       value: "",
     });
 
@@ -124,8 +124,8 @@ class ManageRolesModal extends Modal {
       const $label = $("<label>");
       const $checkbox = $("<input>", {
         type: "checkbox",
-        name: "permissionIds",
-        value: perm.id,
+        name: "permissionGuids",
+        value: perm.guid,
       });
       $label.append($checkbox).append($("<span>").text(`${perm.name} — ${perm.description}`));
       this.elements.$rolePermissionsList.append($label);
@@ -139,9 +139,8 @@ class ManageRolesModal extends Modal {
         data: roles,
         rowCount: { show: true, noun: "role" },
         searchPlaceholder: "Search roles…",
-        defaultSort: { field: "id" },
+        defaultSort: { field: "name" },
         columns: [
-          { title: "ID" },
           { title: "Name", searchable: true },
           { title: "Description", searchable: true, sortable: false },
           {
@@ -171,7 +170,7 @@ class ManageRolesModal extends Modal {
                   type: "button",
                   class: "danger-button-outline delete-role-btn",
                   text: "Delete",
-                }).attr("data-role-id", role.id),
+                }).attr("data-role-id", role.guid),
               );
               return $container;
             },
@@ -207,21 +206,21 @@ class ManageRolesModal extends Modal {
 
   async onFormSubmit(event) {
     event.preventDefault();
-    const roleId = this.elements.$roleFormId.val();
-    const isUpdate = !!roleId;
+    const roleGuid = this.elements.$roleFormId.val();
+    const isUpdate = !!roleGuid;
 
     const formData = new FormData(event.currentTarget);
     const payload = {
       name: formData.get("roleName"),
       description: formData.get("roleDescription"),
-      permissionIds: formData.getAll("permissionIds").map(Number),
+      permissionGuids: formData.getAll("permissionGuids"),
     };
 
     this.elements.$roleFormSubmitButton.prop("disabled", true);
 
     try {
       if (isUpdate) {
-        await requestJson(`/api/genrpg/roles/${roleId}`, {
+        await requestJson(`/api/genrpg/roles/${roleGuid}`, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
@@ -245,13 +244,13 @@ class ManageRolesModal extends Modal {
 
   onEditRole(event) {
     const role = $(event.currentTarget).data("role");
-    this.elements.$roleFormId.val(role.id);
+    this.elements.$roleFormId.val(role.guid);
     this.elements.$roleNameInput.val(role.name);
     this.elements.$roleDescriptionInput.val(role.description);
 
-    const rolePermissionIds = (role.permissions || []).map((p) => p.id);
-    this.elements.$roleForm.find("input[name='permissionIds']").each(function () {
-      $(this).prop("checked", rolePermissionIds.includes(Number($(this).val())));
+    const rolePermissionGuids = (role.permissions || []).map((p) => p.guid);
+    this.elements.$roleForm.find("input[name='permissionGuids']").each(function () {
+      $(this).prop("checked", rolePermissionGuids.includes($(this).val()));
     });
 
     this.elements.$roleFormSubmitButton.text("Update Role");
@@ -261,12 +260,12 @@ class ManageRolesModal extends Modal {
 
   async onDeleteRole(event) {
     const $btn = $(event.currentTarget);
-    const roleId = $btn.data("role-id");
+    const roleGuid = $btn.data("role-id");
     if (!confirm("Are you sure you want to delete this role?")) return;
 
     $btn.prop("disabled", true).text("Deleting...");
     try {
-      await requestJson(`/api/genrpg/roles/${roleId}`, { method: "DELETE" });
+      await requestJson(`/api/genrpg/roles/${roleGuid}`, { method: "DELETE" });
       notify("Role deleted.", "success");
       await this.reloadRolesData();
     } catch (error) {

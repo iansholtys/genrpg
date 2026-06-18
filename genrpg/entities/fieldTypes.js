@@ -44,5 +44,12 @@ module.exports = {
         { name: "install_version", type: "integer", nullable: false, default: "0" },
       ],
     },
+    instanceRole: {
+      defaultSortColumn: "instanceGuid",
+      columns: [
+        { name: "instance_guid", type: "uuid", nullable: false, refs: "instance" },
+        { name: "role_guid", type: "uuid", nullable: false, refs: "role" },
+      ],
+    },
   },
 };

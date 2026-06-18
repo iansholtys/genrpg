@@ -1,4 +1,8 @@
 entities:
+  - key: permission
+    module: entities/permission.js
+  - key: role
+    module: entities/role.js
   - key: package
     module: entities/package.js
   - key: instance
@@ -18,6 +22,10 @@ fieldTypes:
 fields:
   - entity: user
     module: entities/fields/user.js
+  - entity: permission
+    module: entities/fields/permission.js
+  - entity: role
+    module: entities/fields/role.js
   - entity: package
     module: entities/fields/package.js
   - entity: instance

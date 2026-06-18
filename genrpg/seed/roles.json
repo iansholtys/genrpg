@@ -1,0 +1,19 @@
+[
+  { "name": "Instance_Owner", "description": "Full control over the instance including user management", "permissions": [
+      "instance.edit",
+      "instance.delete",
+      "instance.run",
+      "instance.manage_packages",
+      "instance.manage_users"
+  ]},
+  { "name": "Instance_GM", "description": "Game Master with most permissions except managing owners", "permissions": [
+      "instance.edit",
+      "instance.delete",
+      "instance.run",
+      "instance.manage_packages",
+      "instance.manage_users"
+  ]},
+  { "name": "Instance_Player", "description": "Can run/enter the instance", "permissions": [
+      "instance.run"
+  ]}
+]
