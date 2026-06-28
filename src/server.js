@@ -4,6 +4,7 @@ const session = require("express-session");
 const PgSession = require("connect-pg-simple")(session);
 
 const { pool } = require("./db/pool");
+const { createSchemaQuery } = require("./services/queryService");
 const { applySchemaVersions } = require("./db/versions");
 const { applyPackageUpdates } = require("./updates");
 const { refreshPackageSubscribers } = require("./events/packageEvents");
@@ -139,7 +140,7 @@ app.use((error, req, res, next) => {
 async function prepareDatabase() {
   // Ensure genrpg schema exists.
   // @todo: Come up with a dedicated installation process so we only check this once.
-  await pool.query("CREATE SCHEMA IF NOT EXISTS genrpg");
+  await pool.query(createSchemaQuery("genrpg"));
 
   const { applied } = await applySchemaVersions({ pool });
   if (applied.length) {

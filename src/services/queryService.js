@@ -27,10 +27,11 @@ function quoteColumn(identifier) {
 /**
  * Fluent builder for PostgreSQL SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, and ALTER TABLE queries.
  *
- * Call {@link selectQuery}, {@link insertQuery}, {@link updateQuery}, {@link deleteQuery},
- * {@link createTableQuery}, or {@link alterTableQuery} to obtain a {@link QueryObject}, chain
- * configuration methods, then pass {@link QueryObject#toString toString()} and
- * {@link QueryObject#params params} to pg. This module only builds SQL strings; it does not execute them.
+ * Call the query builders ({@link selectQuery}, {@link insertQuery}, {@link updateQuery},
+ * {@link deleteQuery}, {@link createTableQuery}, {@link alterTableQuery}) to obtain a
+ * {@link QueryObject}, chain configuration methods, then pass {@link QueryObject#toString toString()}
+ * and {@link QueryObject#params params} to pg. Use {@link createSchemaQuery} for schema DDL.
+ * This module only builds SQL strings; it does not execute them.
  */
 
 /** Wrap a single value in a one-element array for field/alias handling. */
@@ -1024,6 +1025,16 @@ function alterTableQuery() {
   return new QueryObject("ALTER TABLE");
 }
 
+/**
+ * Build a CREATE SCHEMA IF NOT EXISTS statement with a safely quoted schema name.
+ *
+ * @param {string} schema
+ * @returns {string}
+ */
+function createSchemaQuery(schema) {
+  return `CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(schema)}`;
+}
+
 module.exports = {
   selectQuery,
   insertQuery,
@@ -1031,6 +1042,7 @@ module.exports = {
   deleteQuery,
   createTableQuery,
   alterTableQuery,
+  createSchemaQuery,
   qualify,
   qualifyTable,
   quoteIdentifier,

@@ -4,7 +4,7 @@ const path = require("node:path");
 const { loadPackages, sortPackagesByDependencies } = require("./packages");
 const { applySchemaVersions, applyPendingSchemaVersionsForPackage } = require("./db/versions");
 const { applyGlobalPackageInstalls } = require("./install");
-const { insertQuery, selectQuery } = require("./services/queryService");
+const { createSchemaQuery, insertQuery, selectQuery } = require("./services/queryService");
 const { HttpError } = require("./errors/HttpError");
 
 const REPO_ROOT = path.join(__dirname, "..");
@@ -99,7 +99,7 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
   if (pkg.machineName) {
     const client = await pool.connect();
     try {
-      await client.query(`CREATE SCHEMA IF NOT EXISTS "${pkg.machineName}"`);
+      await client.query(createSchemaQuery(pkg.machineName));
     } finally {
       client.release();
     }
@@ -194,7 +194,7 @@ async function applyPackageUpdates(pool) {
     if (pkg.machineName) {
       const client = await pool.connect();
       try {
-        await client.query(`CREATE SCHEMA IF NOT EXISTS "${pkg.machineName}"`);
+        await client.query(createSchemaQuery(pkg.machineName));
       } finally {
         client.release();
       }

@@ -3,7 +3,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { pool: defaultPool } = require("./pool");
-const { insertQuery, selectQuery } = require("../services/queryService");
+const { createSchemaQuery, insertQuery, selectQuery } = require("../services/queryService");
 
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
 
@@ -97,7 +97,7 @@ function assertNoDuplicateVersionFiles(schemaVersions) {
 }
 
 async function ensureSchemaVersionTable(client) {
-  await client.query("CREATE SCHEMA IF NOT EXISTS public");
+  await client.query(createSchemaQuery("public"));
   await client.query(`
     CREATE TABLE IF NOT EXISTS public.schema_versions (
       package_name text NOT NULL,
@@ -209,7 +209,7 @@ async function reapplyPackageSchemaVersions({
 
   try {
     await ensureSchemaVersionTable(client);
-    await client.query(`CREATE SCHEMA IF NOT EXISTS "${packageName}"`);
+    await client.query(createSchemaQuery(packageName));
 
     await syncEntityBaseTables(pool);
 
@@ -245,7 +245,7 @@ async function applyPendingSchemaVersionsForPackage({
 
   try {
     await ensureSchemaVersionTable(client);
-    await client.query(`CREATE SCHEMA IF NOT EXISTS "${packageName}"`);
+    await client.query(createSchemaQuery(packageName));
 
     await syncEntityBaseTables(pool);
 
@@ -288,7 +288,7 @@ async function applySchemaVersions({ pool = defaultPool, rootDir = ROOT_DIR } = 
     const packages = await loadPackages({ strict: false });
     for (const pkg of packages) {
       if (pkg.machineName) {
-        await client.query(`CREATE SCHEMA IF NOT EXISTS "${pkg.machineName}"`);
+        await client.query(createSchemaQuery(pkg.machineName));
       }
     }
 

@@ -13,7 +13,7 @@ const { applyEntityBaseTables } = require("../fields/applyEntityBaseTables");
 const { applyFieldTables } = require("../fields/applyFieldTables");
 const { requireAdmin } = require("../auth");
 const { parseYaml, readYamlFile } = require("../lib/yamlFile");
-const { insertQuery, selectQuery } = require("../services/queryService");
+const { createSchemaQuery, insertQuery, selectQuery } = require("../services/queryService");
 const { asyncRoute } = require("../lib/httpResponse");
 const {
   loadPackages,
@@ -51,7 +51,7 @@ async function registerPackageVersion(machineName) {
 async function applyPackageDatabase(machineName, packagePath, { reinstall = false } = {}) {
   const schemaClient = await pool.connect();
   try {
-    await schemaClient.query(`CREATE SCHEMA IF NOT EXISTS "${machineName}"`);
+    await schemaClient.query(createSchemaQuery(machineName));
   } finally {
     schemaClient.release();
   }

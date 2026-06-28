@@ -1,4 +1,4 @@
-const { alterTableQuery, selectQuery } = require("../services/queryService");
+const { alterTableQuery, createSchemaQuery, selectQuery } = require("../services/queryService");
 
 /**
  * Sync CREATE TABLE / ADD COLUMN DDL against PostgreSQL.
@@ -16,7 +16,7 @@ class TableSync {
    */
   async ensureSchemas(schemaNames) {
     for (const schema of schemaNames) {
-      await this.client.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+      await this.client.query(createSchemaQuery(schema));
     }
   }
 
