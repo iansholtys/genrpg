@@ -1,88 +1,98 @@
 const { PackageLoadError, packageRootDir, loadPackages } = require("../packages");
-const { SubscriberRegistry } = require("./SubscriberRegistry");
-const { EventDispatcher } = require("./EventDispatcher");
-const { PackageEventRegistry } = require("./PackageEventRegistry");
 const {
   readPackageEventsManifest,
   resolvePackageModule,
 } = require("./packageEventsManifest");
 
+class SubscriberRegistry {
+  constructor() {
+    this.listenersByEvent = new Map();
+  }
+
+  clear() {
+    this.listenersByEvent.clear();
+  }
+
+  addListener(eventName, packageName, method, subscriber, priority = 0) {
+    if (!this.listenersByEvent.has(eventName)) {
+      this.listenersByEvent.set(eventName, []);
+    }
+
+    this.listenersByEvent.get(eventName).push({
+      eventName,
+      packageName,
+      method,
+      subscriber,
+      priority,
+    });
+  }
+
+  addSubscriber(packageName, subscriber) {
+    const subscribed =
+      subscriber.getSubscribedEvents?.() ||
+      subscriber.constructor?.getSubscribedEvents?.();
+    if (!subscribed || typeof subscribed !== "object") {
+      return;
+    }
+
+    for (const [eventName, definition] of Object.entries(subscribed)) {
+      const entries = Array.isArray(definition) ? definition : [definition];
+      for (const entry of entries) {
+        let method = entry;
+        let priority = 0;
+
+        if (Array.isArray(entry)) {
+          [method, priority = 0] = entry;
+        }
+
+        if (typeof method !== "string" || typeof subscriber[method] !== "function") {
+          throw new Error(
+            `Package "${packageName}" subscriber is missing method "${method}" for ${eventName}`,
+          );
+        }
+
+        this.addListener(eventName, packageName, method, subscriber, priority);
+      }
+    }
+  }
+
+  getListeners(eventName) {
+    const listeners = this.listenersByEvent.get(eventName) || [];
+    return [...listeners].sort((a, b) => b.priority - a.priority);
+  }
+}
+
+class EventDispatcher {
+  constructor(registry) {
+    this.registry = registry;
+  }
+
+  async dispatch(event, instancePackageNames) {
+    const eventName = event.constructor.eventName || event.constructor.name;
+    const allowed = new Set(instancePackageNames);
+    const listeners = this.registry.getListeners(eventName);
+
+    for (const listener of listeners) {
+      if (!allowed.has(listener.packageName)) {
+        continue;
+      }
+
+      await listener.subscriber[listener.method](event);
+
+      if (event.isPropagationStopped()) {
+        break;
+      }
+    }
+
+    return event;
+  }
+}
+
 const subscriberRegistry = new SubscriberRegistry();
-const packageEventRegistry = new PackageEventRegistry();
+/** @type {Map<string, string>} eventName -> owning package machine name */
+const eventOwnersByName = new Map();
 const dispatcher = new EventDispatcher(subscriberRegistry);
 let subscribersLoaded = false;
-
-function loadSubscriberClass(moduleExports) {
-  if (typeof moduleExports === "function") {
-    return moduleExports;
-  }
-
-  if (moduleExports?.default && typeof moduleExports.default === "function") {
-    return moduleExports.default;
-  }
-
-  if (moduleExports?.Subscriber && typeof moduleExports.Subscriber === "function") {
-    return moduleExports.Subscriber;
-  }
-
-  return null;
-}
-
-function instantiateSubscriber(SubscriberClass) {
-  try {
-    return new SubscriberClass();
-  } catch {
-    return SubscriberClass;
-  }
-}
-
-function registerSubscriberModule(registry, packageName, moduleExports, listens) {
-  const SubscriberClass = loadSubscriberClass(moduleExports);
-  if (!SubscriberClass) {
-    throw new PackageLoadError("Invalid package configuration", [
-      `Package "${packageName}" subscriber module must export a subscriber class`,
-    ]);
-  }
-
-  const subscriber = instantiateSubscriber(SubscriberClass);
-
-  if (Array.isArray(listens) && listens.length) {
-    for (const binding of listens) {
-      if (typeof subscriber[binding.method] !== "function") {
-        throw new PackageLoadError("Invalid package configuration", [
-          `Package "${packageName}" subscriber is missing method "${binding.method}" for ${binding.event}`,
-        ]);
-      }
-      registry.addListener(
-        binding.event,
-        packageName,
-        binding.method,
-        subscriber,
-        binding.priority,
-      );
-    }
-    return;
-  }
-
-  registry.addSubscriber(packageName, subscriber);
-}
-
-function registerDeclaredEvent(packageEventRegistry, packageName, moduleExports, eventName) {
-  const EventClass =
-    (moduleExports && moduleExports[eventName]) ||
-    (typeof moduleExports === "function" &&
-    (moduleExports.eventName === eventName || moduleExports.name === eventName)
-      ? moduleExports
-      : null);
-
-  if (!EventClass || typeof EventClass !== "function") {
-    throw new PackageLoadError("Invalid package configuration", [
-      `Package "${packageName}" event module must export "${eventName}"`,
-    ]);
-  }
-
-  packageEventRegistry.register(packageName, eventName, EventClass);
-}
 
 async function refreshPackageSubscribers({ force = false } = {}) {
   if (subscribersLoaded && !force) {
@@ -90,7 +100,7 @@ async function refreshPackageSubscribers({ force = false } = {}) {
   }
 
   subscriberRegistry.clear();
-  packageEventRegistry.clear();
+  eventOwnersByName.clear();
   const packages = await loadPackages({ strict: false });
 
   for (const pkg of packages) {
@@ -112,12 +122,26 @@ async function refreshPackageSubscribers({ force = false } = {}) {
         eventModulesByPath.set(eventEntry.module, eventModule);
       }
 
-      registerDeclaredEvent(
-        packageEventRegistry,
-        pkg.machineName,
-        eventModule,
-        eventEntry.name,
-      );
+      const EventClass =
+        (eventModule && eventModule[eventEntry.name]) ||
+        (typeof eventModule === "function" &&
+        (eventModule.eventName === eventEntry.name || eventModule.name === eventEntry.name)
+          ? eventModule
+          : null);
+
+      if (!EventClass || typeof EventClass !== "function") {
+        throw new PackageLoadError("Invalid package configuration", [
+          `Package "${pkg.machineName}" event module must export "${eventEntry.name}"`,
+        ]);
+      }
+
+      const existingOwner = eventOwnersByName.get(eventEntry.name);
+      if (existingOwner && existingOwner !== pkg.machineName) {
+        throw new Error(
+          `Event "${eventEntry.name}" is already registered by package "${existingOwner}"`,
+        );
+      }
+      eventOwnersByName.set(eventEntry.name, pkg.machineName);
     }
 
     for (const subscriberEntry of manifest.subscribers) {
@@ -129,12 +153,45 @@ async function refreshPackageSubscribers({ force = false } = {}) {
       );
       delete require.cache[require.resolve(modulePath)];
       const subscriberModule = require(modulePath);
-      registerSubscriberModule(
-        subscriberRegistry,
-        pkg.machineName,
-        subscriberModule,
-        subscriberEntry.listens,
-      );
+
+      const SubscriberClass =
+        (typeof subscriberModule === "function" && subscriberModule) ||
+        (typeof subscriberModule?.default === "function" && subscriberModule.default) ||
+        (typeof subscriberModule?.Subscriber === "function" && subscriberModule.Subscriber) ||
+        null;
+
+      if (!SubscriberClass) {
+        throw new PackageLoadError("Invalid package configuration", [
+          `Package "${pkg.machineName}" subscriber module must export a subscriber class`,
+        ]);
+      }
+
+      let subscriber;
+      try {
+        subscriber = new SubscriberClass();
+      } catch {
+        subscriber = SubscriberClass;
+      }
+
+      if (Array.isArray(subscriberEntry.listens) && subscriberEntry.listens.length) {
+        for (const binding of subscriberEntry.listens) {
+          if (typeof subscriber[binding.method] !== "function") {
+            throw new PackageLoadError("Invalid package configuration", [
+              `Package "${pkg.machineName}" subscriber is missing method "${binding.method}" for ${binding.event}`,
+            ]);
+          }
+          subscriberRegistry.addListener(
+            binding.event,
+            pkg.machineName,
+            binding.method,
+            subscriber,
+            binding.priority,
+          );
+        }
+        continue;
+      }
+
+      subscriberRegistry.addSubscriber(pkg.machineName, subscriber);
     }
   }
 
@@ -146,12 +203,7 @@ function invalidatePackageSubscribers() {
   subscribersLoaded = false;
 }
 
-async function getEventDispatcher() {
-  return refreshPackageSubscribers();
-}
-
 module.exports = {
-  getEventDispatcher,
   refreshPackageSubscribers,
   invalidatePackageSubscribers,
 };

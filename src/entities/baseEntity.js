@@ -1,6 +1,6 @@
 const { getTransactionClient } = require("../db/transactionContext");
 const { ValidationError } = require("../errors/ValidationError");
-const { getEventDispatcher } = require("../events/packageEvents");
+const { refreshPackageSubscribers } = require("../events/packageEvents");
 const { collectFieldValidationErrors } = require("../fields/fieldStorage");
 
 class BaseEntity {
@@ -43,7 +43,7 @@ class BaseEntity {
       return null;
     }
 
-    const dispatcher = await getEventDispatcher();
+    const dispatcher = await refreshPackageSubscribers();
     const event = new EventClass(eventArgs);
     await dispatcher.dispatch(event, this.packageNames);
 
