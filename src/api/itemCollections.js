@@ -10,7 +10,6 @@ const {
 } = require("./instanceContext");
 const { asyncRoute } = require("../lib/httpResponse");
 const { trimmedString } = require("../lib/strings");
-const ItemCollectionEntity = require("../../genrpg/entities/itemCollection");
 const ItemCollectionStorage = require("../../genrpg/storage/itemCollectionStorage");
 
 const itemCollectionsRouter = express.Router();
@@ -33,7 +32,7 @@ function parseItemCollectionListQuery(query) {
 
 itemCollectionsRouter.get("/instances/:instanceGuid/item-collections/form", asyncRoute(async (req, res) => {
   const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-  const metadata = await ItemCollectionEntity.getFormSchema(context);
+  const metadata = await ItemCollectionStorage.Entity.getFormSchema(context);
   res.json(metadata);
 }));
 

@@ -2,7 +2,6 @@ const express = require("express");
 const { NotFoundError } = require("../errors/NotFoundError");
 const { ValidationError } = require("../errors/ValidationError");
 const { withTransaction } = require("../db/transactionContext");
-const CharacterEntity = require("../../genrpg/entities/character");
 const CharacterStorage = require("../../genrpg/storage/characterStorage");
 const {
   PERMISSION_VIEW,
@@ -15,7 +14,7 @@ const charactersRouter = express.Router();
 
 charactersRouter.get("/instances/:instanceGuid/characters/form", asyncRoute(async (req, res) => {
   const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-  const metadata = await CharacterEntity.getFormSchema(context);
+  const metadata = await CharacterStorage.Entity.getFormSchema(context);
   res.json(metadata);
 }));
 

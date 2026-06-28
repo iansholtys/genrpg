@@ -8,7 +8,6 @@ const {
   assertInstancePermissions,
 } = require("./instanceContext");
 const { asyncRoute } = require("../lib/httpResponse");
-const ItemEntity = require("../../genrpg/entities/item");
 const ItemStorage = require("../../genrpg/storage/itemStorage");
 const ItemTemplateStorage = require("../../genrpg/storage/itemTemplateStorage");
 
@@ -45,7 +44,7 @@ async function itemsToJson(instance, entities) {
 
 itemsRouter.get("/instances/:instanceGuid/items/form", asyncRoute(async (req, res) => {
   const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-  const metadata = await ItemEntity.getFormSchema(context);
+  const metadata = await ItemStorage.Entity.getFormSchema(context);
   res.json(metadata);
 }));
 

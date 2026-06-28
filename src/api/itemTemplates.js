@@ -9,7 +9,6 @@ const {
   assertInstancePermissions,
 } = require("./instanceContext");
 const { asyncRoute } = require("../lib/httpResponse");
-const ItemTemplateEntity = require("../../genrpg/entities/itemTemplate");
 const ItemTemplateStorage = require("../../genrpg/storage/itemTemplateStorage");
 const ItemStorage = require("../../genrpg/storage/itemStorage");
 
@@ -19,7 +18,7 @@ const DELETE_CONFLICT_MESSAGE = "Cannot delete this template while items still r
 
 itemTemplatesRouter.get("/instances/:instanceGuid/item-templates/form", asyncRoute(async (req, res) => {
   const context = await assertInstancePermissions(req, PERMISSION_VIEW);
-  const metadata = await ItemTemplateEntity.getFormSchema(context);
+  const metadata = await ItemTemplateStorage.Entity.getFormSchema(context);
   res.json(metadata);
 }));
 
