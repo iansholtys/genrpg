@@ -15,15 +15,22 @@ const authRouter = require("./routes/auth");
 const genrpgApi = require("./api");
 
 const PORT = Number(process.env.PORT || 3000);
-const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-in-production";
 
-function requireConfig() {
+/**
+ * Ensure required environment variables are present.
+ */
+function validateConfig() {
   const missing = [];
 
-  if (!process.env.OIDC_CONFIGURATION_URL) missing.push("OIDC_CONFIGURATION_URL");
-  if (!process.env.OIDC_CLIENT_ID) missing.push("OIDC_CLIENT_ID");
-  if (!process.env.OIDC_CLIENT_SECRET) missing.push("OIDC_CLIENT_SECRET");
-  if (SESSION_SECRET === "change-me-in-production") missing.push("SESSION_SECRET");
+  for (const key of [
+    "OIDC_CONFIGURATION_URL",
+    "OIDC_CLIENT_ID",
+    "OIDC_CLIENT_SECRET",
+    "SESSION_SECRET",
+  ]) {
+    if (!process.env[key]) missing.push(key);
+  }
+
   if (!process.env.DATABASE_URL && !process.env.PGHOST) {
     missing.push("DATABASE_URL or PGHOST/PGDATABASE/PGUSER/PGPASSWORD");
   }
@@ -45,7 +52,7 @@ app.use(
       createTableIfMissing: false,
     }),
     name: "genrpg.sid",
-    secret: SESSION_SECRET,
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -126,12 +133,13 @@ app.use((error, req, res, next) => {
   res.status(status).send(status === 500 ? "Internal server error" : error.message);
 });
 
-async function main() {
-  requireConfig();
-
-  // Ensure the genrpg schema exists before anything else, so the session
-  // table (and other core tables) can be created by applySchemaVersions.
-  await pool.query('CREATE SCHEMA IF NOT EXISTS genrpg');
+/**
+ * Ensure schema is current before the app accepts HTTP traffic.
+ */
+async function prepareDatabase() {
+  // Ensure genrpg schema exists.
+  // @todo: Come up with a dedicated installation process so we only check this once.
+  await pool.query("CREATE SCHEMA IF NOT EXISTS genrpg");
 
   const { applied } = await applySchemaVersions({ pool });
   if (applied.length) {
@@ -149,7 +157,14 @@ async function main() {
       `Applied package install steps: ${installApplied.map((entry) => `${entry.machineName} (global v${entry.toVersion})`).join(", ")}`,
     );
   }
+}
 
+/**
+ * Application startup: validate config, prepare dependencies, then listen for HTTP.
+ */
+async function main() {
+  validateConfig();
+  await prepareDatabase();
   await refreshPackageSubscribers({ force: true });
   await refreshPackageCache();
 
