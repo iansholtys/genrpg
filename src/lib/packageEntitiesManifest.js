@@ -4,53 +4,53 @@ const { PackageLoadError } = require("../errors/PackageLoadError");
 const { trimmedString } = require("./strings");
 const { readOptionalYamlFile } = require("./yamlFile");
 
-function packageLoadError(label, message) {
-  const detail = label ? `${label}: ${message}` : message;
+function packageLoadError(manifestFileName, message) {
+  const detail = manifestFileName ? `${manifestFileName}: ${message}` : message;
   return new PackageLoadError("Invalid package configuration", [detail]);
 }
 
-function normalizeRelativeModulePath(entry, label, field) {
+function normalizeRelativeModulePath(entry, manifestFileName, field) {
   if (entry === undefined || entry === null) {
-    throw packageLoadError(label, `${field} is required`);
+    throw packageLoadError(manifestFileName, `${field} is required`);
   }
   const trimmed = trimmedString(entry);
   if (!trimmed) {
-    throw packageLoadError(label, `${field} must be a non-empty string`);
+    throw packageLoadError(manifestFileName, `${field} must be a non-empty string`);
   }
 
   const normalized = trimmed.replace(/\\/g, "/");
   if (path.posix.isAbsolute(normalized) || normalized.startsWith("../") || normalized.includes("/../")) {
-    throw packageLoadError(label, `${field} path "${entry}" must be relative to the package root`);
+    throw packageLoadError(manifestFileName, `${field} path "${entry}" must be relative to the package root`);
   }
 
   return normalized;
 }
 
-function assertModuleInsidePackage(packageDir, absolutePath, relativePath, label, field) {
+function assertModuleInsidePackage(packageDir, absolutePath, relativePath, manifestFileName, field) {
   const relative = path.relative(packageDir, absolutePath);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw packageLoadError(label, `${field} path "${relativePath}" escapes the package directory`);
+    throw packageLoadError(manifestFileName, `${field} path "${relativePath}" escapes the package directory`);
   }
 }
 
-function normalizeEntityEntry(entry, label) {
+function normalizeEntityEntry(entry, manifestFileName) {
   if (!entry || typeof entry !== "object") {
-    throw packageLoadError(label, "each entities entry must be an object");
+    throw packageLoadError(manifestFileName, "each entities entry must be an object");
   }
 
   const key = trimmedString(entry.key);
-  const module = normalizeRelativeModulePath(entry.module, label, "entities.module");
+  const module = normalizeRelativeModulePath(entry.module, manifestFileName, "entities.module");
 
   if (!key) {
-    throw packageLoadError(label, "each entities entry requires key");
+    throw packageLoadError(manifestFileName, "each entities entry requires key");
   }
 
   return { key, module };
 }
 
-function normalizePackageEntitiesManifest(raw, label) {
+function normalizePackageEntitiesManifest(raw, manifestFileName) {
   if (!raw || typeof raw !== "object") {
-    throw packageLoadError(label, "manifest must be a YAML object");
+    throw packageLoadError(manifestFileName, "manifest must be a YAML object");
   }
 
   const fields = [];
@@ -59,33 +59,33 @@ function normalizePackageEntitiesManifest(raw, label) {
 
   if (raw.fieldTypes !== undefined) {
     if (!Array.isArray(raw.fieldTypes)) {
-      throw packageLoadError(label, "fieldTypes must be an array");
+      throw packageLoadError(manifestFileName, "fieldTypes must be an array");
     }
     for (const entry of raw.fieldTypes) {
       if (!entry || typeof entry !== "object") {
-        throw packageLoadError(label, "each fieldTypes entry must be an object");
+        throw packageLoadError(manifestFileName, "each fieldTypes entry must be an object");
       }
 
       fieldTypes.push({
-        module: normalizeRelativeModulePath(entry.module, label, "fieldTypes.module"),
+        module: normalizeRelativeModulePath(entry.module, manifestFileName, "fieldTypes.module"),
       });
     }
   }
 
   if (raw.fields !== undefined) {
     if (!Array.isArray(raw.fields)) {
-      throw packageLoadError(label, "fields must be an array");
+      throw packageLoadError(manifestFileName, "fields must be an array");
     }
     for (const entry of raw.fields) {
       if (!entry || typeof entry !== "object") {
-        throw packageLoadError(label, "each fields entry must be an object");
+        throw packageLoadError(manifestFileName, "each fields entry must be an object");
       }
 
       const entity = trimmedString(entry.entity);
-      const module = normalizeRelativeModulePath(entry.module, label, "fields.module");
+      const module = normalizeRelativeModulePath(entry.module, manifestFileName, "fields.module");
 
       if (!entity) {
-        throw packageLoadError(label, "each fields entry requires entity");
+        throw packageLoadError(manifestFileName, "each fields entry requires entity");
       }
 
       fields.push({ entity, module });
@@ -94,29 +94,28 @@ function normalizePackageEntitiesManifest(raw, label) {
 
   if (raw.entities !== undefined) {
     if (!Array.isArray(raw.entities)) {
-      throw packageLoadError(label, "entities must be an array");
+      throw packageLoadError(manifestFileName, "entities must be an array");
     }
     for (const entry of raw.entities) {
-      entities.push(normalizeEntityEntry(entry, label));
+      entities.push(normalizeEntityEntry(entry, manifestFileName));
     }
   }
 
   return { fields, fieldTypes, entities };
 }
 
-async function readPackageEntitiesManifest(packageDir, machineName) {
-  const manifestPath = path.join(packageDir, `${machineName}.entities.yml`);
-  const label = `${machineName}.entities.yml`;
+async function readPackageEntitiesManifest(packageDir, manifestFileName) {
+  const manifestPath = path.join(packageDir, manifestFileName);
   const raw = await readOptionalYamlFile(manifestPath);
   if (!raw) {
     return null;
   }
-  return normalizePackageEntitiesManifest(raw, label);
+  return normalizePackageEntitiesManifest(raw, manifestFileName);
 }
 
-function resolvePackageModule(packageDir, relativePath, label, field) {
+function resolvePackageModule(packageDir, relativePath, manifestFileName, field) {
   const absolutePath = path.resolve(packageDir, relativePath.split("/").join(path.sep));
-  assertModuleInsidePackage(packageDir, absolutePath, relativePath, label, field);
+  assertModuleInsidePackage(packageDir, absolutePath, relativePath, manifestFileName, field);
   return absolutePath;
 }
 

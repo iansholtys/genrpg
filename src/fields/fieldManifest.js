@@ -120,21 +120,22 @@ async function loadRegisteredEntities() {
   const packages = await loadPackages({ strict: false });
 
   for (const pkg of packages) {
-    const manifest = await readPackageEntitiesManifest(pkg.path, pkg.machineName);
+    const packageDir = packageRootDir(pkg.path);
+    const manifestFileName = `${pkg.machineName}.entities.yml`;
+    const manifest = await readPackageEntitiesManifest(packageDir, manifestFileName);
     if (!manifest?.entities?.length) {
       continue;
     }
 
-    const yamlLabel = `${pkg.machineName}.entities.yml`;
     const modulesByPath = new Map();
 
     for (const entry of manifest.entities) {
       let moduleExports = modulesByPath.get(entry.module);
       if (!moduleExports) {
         const modulePath = resolvePackageModule(
-          pkg.path,
+          packageDir,
           entry.module,
-          yamlLabel,
+          manifestFileName,
           "entities.module",
         );
         delete require.cache[require.resolve(modulePath)];
@@ -220,21 +221,22 @@ async function loadFieldTypesForPackages() {
   const packages = await loadPackages({ strict: false });
 
   for (const pkg of packages) {
-    const manifest = await readPackageEntitiesManifest(pkg.path, pkg.machineName);
+    const packageDir = packageRootDir(pkg.path);
+    const manifestFileName = `${pkg.machineName}.entities.yml`;
+    const manifest = await readPackageEntitiesManifest(packageDir, manifestFileName);
     if (!manifest?.fieldTypes?.length) {
       continue;
     }
 
-    const yamlLabel = `${pkg.machineName}.entities.yml`;
     const modulesByPath = new Map();
 
     for (const entry of manifest.fieldTypes) {
       let moduleExports = modulesByPath.get(entry.module);
       if (!moduleExports) {
         const modulePath = resolvePackageModule(
-          pkg.path,
+          packageDir,
           entry.module,
-          yamlLabel,
+          manifestFileName,
           "fieldTypes.module",
         );
         delete require.cache[require.resolve(modulePath)];
@@ -438,9 +440,9 @@ function isSpecObject(raw) {
  * @param {Record<string, Record<string, object>>} target
  * @param {string} entityKey
  * @param {Record<string, object> | null | undefined} rawSpecs
- * @param {{ yamlLabel: string, duplicateLabel: string, normalize: (property: string, rawSpec: object) => object }} options
+ * @param {{ manifestFileName: string, duplicateLabel: string, normalize: (property: string, rawSpec: object) => object }} options
  */
-function addNormalizedSpecs(target, entityKey, rawSpecs, { yamlLabel, duplicateLabel, normalize }) {
+function addNormalizedSpecs(target, entityKey, rawSpecs, { manifestFileName, duplicateLabel, normalize }) {
   if (!rawSpecs) {
     return;
   }
@@ -452,7 +454,7 @@ function addNormalizedSpecs(target, entityKey, rawSpecs, { yamlLabel, duplicateL
   for (const [property, rawSpec] of Object.entries(rawSpecs)) {
     if (target[entityKey][property]) {
       throw packageLoadError(
-        yamlLabel,
+        manifestFileName,
         `duplicate ${duplicateLabel} "${property}" on entity "${entityKey}"`,
       );
     }
@@ -522,12 +524,12 @@ function mergeUniqueConstraintsByEntity(target, source, owners, pkgMachineName) 
  */
 async function loadPackageFieldSpecs(pkg, fieldTypes, entities) {
   const packageDir = packageRootDir(pkg.path);
-  const manifest = await readPackageEntitiesManifest(packageDir, pkg.machineName);
+  const manifestFileName = `${pkg.machineName}.entities.yml`;
+  const manifest = await readPackageEntitiesManifest(packageDir, manifestFileName);
   if (!manifest?.fields?.length) {
     return { specsByEntity: {}, coreSpecsByEntity: {}, uniqueConstraintsByEntity: {} };
   }
 
-  const yamlLabel = `${pkg.machineName}.entities.yml`;
   const modulesByPath = new Map();
   const specsByEntity = {};
   const coreSpecsByEntity = {};
@@ -535,7 +537,7 @@ async function loadPackageFieldSpecs(pkg, fieldTypes, entities) {
 
   for (const entry of manifest.fields) {
     if (!/^[a-z][a-z0-9_]*$/.test(entry.entity)) {
-      throw packageLoadError(yamlLabel, `fields entity "${entry.entity}" must be a lowercase identifier`);
+      throw packageLoadError(manifestFileName, `fields entity "${entry.entity}" must be a lowercase identifier`);
     }
 
     let moduleExports = modulesByPath.get(entry.module);
@@ -543,7 +545,7 @@ async function loadPackageFieldSpecs(pkg, fieldTypes, entities) {
       const modulePath = resolvePackageModule(
         packageDir,
         entry.module,
-        yamlLabel,
+        manifestFileName,
         "fields.module",
       );
       delete require.cache[require.resolve(modulePath)];
@@ -572,12 +574,12 @@ async function loadPackageFieldSpecs(pkg, fieldTypes, entities) {
     };
 
     addNormalizedSpecs(specsByEntity, entry.entity, rawFields, {
-      yamlLabel,
+      manifestFileName,
       duplicateLabel: "field",
       normalize: (property, rawSpec) => normalizeFieldSpec(property, rawSpec, fieldContext),
     });
     addNormalizedSpecs(coreSpecsByEntity, entry.entity, rawCoreFields, {
-      yamlLabel,
+      manifestFileName,
       duplicateLabel: "core field",
       normalize: (property, rawSpec) => normalizeCoreFieldSpec(property, rawSpec, coreContext),
     });
