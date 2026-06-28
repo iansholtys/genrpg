@@ -1,4 +1,5 @@
-const { PackageLoadError, packageRootDir, loadPackages } = require("../packages");
+const { PackageLoadError } = require("../errors/PackageLoadError");
+const { packageRootDir, loadPackages } = require("../packages");
 const { resolvePackageModule } = require("../lib/packageEntitiesManifest");
 const { readPackageEventsManifest } = require("./packageEventsManifest");
 

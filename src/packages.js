@@ -3,20 +3,13 @@ const path = require("node:path");
 
 const semver = require("semver");
 
-const { HttpError } = require("./errors/HttpError");
+const { PackageLoadError } = require("./errors/PackageLoadError");
 const { trimmedString } = require("./lib/strings");
 const { readOptionalYamlFile } = require("./lib/yamlFile");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const STATIC_PKG_PREFIX = "/static/pkg";
 let packageCache = null;
-
-class PackageLoadError extends HttpError {
-  constructor(message, details = []) {
-    super(500, message, details.length ? details : null);
-    this.name = "PackageLoadError";
-  }
-}
 
 function parseRequirement(entry, sourceLabel) {
   if (typeof entry !== "string") {

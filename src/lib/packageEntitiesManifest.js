@@ -1,10 +1,10 @@
 const path = require("node:path");
 
+const { PackageLoadError } = require("../errors/PackageLoadError");
 const { trimmedString } = require("./strings");
 const { readOptionalYamlFile } = require("./yamlFile");
 
 function packageLoadError(label, message) {
-  const { PackageLoadError } = require("../packages");
   const detail = label ? `${label}: ${message}` : message;
   return new PackageLoadError("Invalid package configuration", [detail]);
 }
