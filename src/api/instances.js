@@ -14,6 +14,7 @@ const {
 } = require("../services/permissionService");
 const RoleStorage = require("../storage/roleStorage");
 const { asyncRoute } = require("../lib/httpResponse");
+const { trimmedString } = require("../lib/strings");
 const {
   loadPackages,
   resolveInstanceAssetsForRequest,
@@ -181,11 +182,10 @@ instancesRouter.get("/instances", asyncRoute(async (req, res) => {
 }));
 
 instancesRouter.post("/instances", asyncRoute(async (req, res) => {
-  const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
-  const description =
-    typeof req.body.description === "string" ? req.body.description.trim() : "";
+  const name = trimmedString(req.body.name);
+  const description = trimmedString(req.body.description);
   const selectedPackages = Array.isArray(req.body.packages) ? req.body.packages : null;
-  const rawUrl = typeof req.body.url === "string" ? req.body.url.trim() : "";
+  const rawUrl = trimmedString(req.body.url);
   const urlSegment = rawUrl ? slugifyInstanceUrlSegment(rawUrl) : "";
 
   if (!name) {
@@ -263,10 +263,9 @@ instancesRouter.post("/instances", asyncRoute(async (req, res) => {
 instancesRouter.put("/instances/:guid", asyncRoute(async (req, res) => {
   const user = req.session.user;
   const instanceGuid = req.params.guid;
-  const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
-  const description =
-    typeof req.body.description === "string" ? req.body.description.trim() : "";
-  const rawUrl = typeof req.body.url === "string" ? req.body.url.trim() : "";
+  const name = trimmedString(req.body.name);
+  const description = trimmedString(req.body.description);
+  const rawUrl = trimmedString(req.body.url);
   const urlSegment = rawUrl ? slugifyInstanceUrlSegment(rawUrl) : "";
 
   if (!name) {

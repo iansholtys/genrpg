@@ -9,6 +9,7 @@ const {
   assertInstancePermissions,
 } = require("./instanceContext");
 const { asyncRoute } = require("../lib/httpResponse");
+const { trimmedString } = require("../lib/strings");
 const ItemCollectionEntity = require("../../genrpg/entities/itemCollection");
 const ItemCollectionStorage = require("../../genrpg/storage/itemCollectionStorage");
 
@@ -18,10 +19,7 @@ function parseOptionalUuid(value, fieldLabel) {
   if (value === null || value === undefined || value === "") {
     return null;
   }
-  if (typeof value !== "string" || value.trim() === "") {
-    return { error: `${fieldLabel} must be a string` };
-  }
-  return value.trim();
+  return trimmedString(value) || { error: `${fieldLabel} must be a string` };
 }
 
 function parseItemCollectionListQuery(query) {
@@ -30,10 +28,7 @@ function parseItemCollectionListQuery(query) {
     throw new BadRequestError(itemGuid.error);
   }
 
-  const typeFilter =
-    typeof query.type === "string" && query.type.trim() !== "" ? query.type.trim() : null;
-
-  return { itemGuid, type: typeFilter };
+  return { itemGuid, type: trimmedString(query.type) };
 }
 
 itemCollectionsRouter.get("/instances/:instanceGuid/item-collections/form", asyncRoute(async (req, res) => {

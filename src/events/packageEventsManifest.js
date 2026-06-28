@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { packageLoadError, normalizeRelativeModulePath } = require("../lib/packageEntitiesManifest");
+const { trimmedString } = require("../lib/strings");
 
 function assertModuleInsidePackage(packageDir, absolutePath, relativePath, manifestFileName, field) {
   const relative = path.relative(packageDir, absolutePath);
@@ -15,7 +16,7 @@ function normalizeEventEntry(entry, manifestFileName) {
     throw packageLoadError(manifestFileName, "each events entry must be an object");
   }
 
-  const name = typeof entry.name === "string" ? entry.name.trim() : "";
+  const name = trimmedString(entry.name);
   const module = normalizeRelativeModulePath(entry.module, manifestFileName, "events.module");
 
   if (!name) {
@@ -30,8 +31,8 @@ function normalizeListenEntry(entry, manifestFileName, subscriberLabel) {
     throw packageLoadError(manifestFileName, `${subscriberLabel} listens entry must be an object`);
   }
 
-  const event = typeof entry.event === "string" ? entry.event.trim() : "";
-  const method = typeof entry.method === "string" ? entry.method.trim() : "";
+  const event = trimmedString(entry.event);
+  const method = trimmedString(entry.method);
   let priority = 0;
 
   if (entry.priority !== undefined && entry.priority !== null) {

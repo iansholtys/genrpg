@@ -1,7 +1,7 @@
 const express = require("express");
 const { requireAdmin } = require("../auth");
 const { withTransaction } = require("../db/transactionContext");
-const { trimmedString } = require("../fields/fieldManifest");
+const { trimmedString } = require("../lib/strings");
 const { NotFoundError } = require("../errors/NotFoundError");
 const { ValidationError } = require("../errors/ValidationError");
 const { asyncRoute } = require("../lib/httpResponse");
@@ -67,8 +67,8 @@ rolesRouter.get("/permissions", asyncRoute(async (req, res) => {
 }));
 
 rolesRouter.post("/roles", requireAdmin, asyncRoute(async (req, res) => {
-  const name = trimmedString(req.body.name) ?? "";
-  const description = trimmedString(req.body.description) ?? "";
+  const name = trimmedString(req.body.name);
+  const description = trimmedString(req.body.description);
   const permissionGuids = permissionGuidsFromBody(req.body);
 
   if (!name) {
@@ -99,8 +99,8 @@ rolesRouter.post("/roles", requireAdmin, asyncRoute(async (req, res) => {
 
 rolesRouter.put("/roles/:guid", requireAdmin, asyncRoute(async (req, res) => {
   const roleGuid = req.params.guid;
-  const name = trimmedString(req.body.name) ?? "";
-  const description = trimmedString(req.body.description) ?? "";
+  const name = trimmedString(req.body.name);
+  const description = trimmedString(req.body.description);
   const permissionGuids = permissionGuidsFromBody(req.body);
 
   if (!name) {

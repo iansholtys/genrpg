@@ -7,6 +7,7 @@ const {
   resolveAlias,
   resolvePath,
 } = require("../aliases");
+const { trimmedString } = require("../lib/strings");
 
 const aliasesRouter = express.Router();
 
@@ -18,12 +19,8 @@ aliasesRouter.get("/aliases/availability", async (req, res, next) => {
       return;
     }
 
-    const excludeInstanceGuid =
-      typeof req.query.excludeInstanceGuid === "string"
-        ? req.query.excludeInstanceGuid.trim()
-        : "";
     const available = await isAliasAvailable(alias, {
-      excludeInstanceGuid: excludeInstanceGuid || undefined,
+      excludeInstanceGuid: trimmedString(req.query.excludeInstanceGuid) || undefined,
     });
     res.json({ available });
   } catch (error) {
@@ -58,7 +55,7 @@ aliasesRouter.get("/aliases/resolve", async (req, res, next) => {
 
 aliasesRouter.get("/aliases/for-path", async (req, res, next) => {
   try {
-    const pathValue = typeof req.query.path === "string" ? req.query.path.trim() : "";
+    const pathValue = trimmedString(req.query.path);
     if (!pathValue) {
       res.status(400).json({ error: "path is required" });
       return;
@@ -73,7 +70,7 @@ aliasesRouter.get("/aliases/for-path", async (req, res, next) => {
 
 aliasesRouter.get("/aliases/resolve-path", async (req, res, next) => {
   try {
-    const pathValue = typeof req.query.path === "string" ? req.query.path.trim() : "";
+    const pathValue = trimmedString(req.query.path);
     if (!pathValue) {
       res.status(400).json({ error: "path is required" });
       return;

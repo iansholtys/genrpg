@@ -1,4 +1,5 @@
 const { BaseEntity } = require("../../src/entities/baseEntity");
+const { trimmedString } = require("../../src/lib/strings");
 
 class PermissionEntity extends BaseEntity {
   static key = "permission";
@@ -10,7 +11,7 @@ class PermissionEntity extends BaseEntity {
 
   async collectValidationErrors() {
     const errors = await super.collectValidationErrors();
-    const name = typeof this.name === "string" ? this.name.trim() : "";
+    const name = trimmedString(this.name);
 
     if (!name) {
       return errors;

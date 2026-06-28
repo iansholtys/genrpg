@@ -5,6 +5,7 @@ const semver = require("semver");
 const yaml = require("yaml");
 
 const { HttpError } = require("./errors/HttpError");
+const { trimmedString } = require("./lib/strings");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const STATIC_PKG_PREFIX = "/static/pkg";
@@ -182,10 +183,9 @@ function normalizeManifest(raw, { packagePath, directoryName, manifestFile }) {
     ]);
   }
 
-  const name = typeof raw.name === "string" ? raw.name.trim() : "";
-  const machineName =
-    typeof raw.machine_name === "string" ? raw.machine_name.trim() : "";
-  const version = typeof raw.version === "string" ? raw.version.trim() : "";
+  const name = trimmedString(raw.name);
+  const machineName = trimmedString(raw.machine_name);
+  const version = trimmedString(raw.version);
 
   if (!name) details.push(`${label}: name is required`);
   if (!machineName) details.push(`${label}: machine_name is required`);

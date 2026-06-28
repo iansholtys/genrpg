@@ -1,6 +1,8 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
+const { trimmedString } = require("./strings");
+
 function packageLoadError(label, message) {
   const { PackageLoadError } = require("../packages");
   const detail = label ? `${label}: ${message}` : message;
@@ -11,11 +13,12 @@ function normalizeRelativeModulePath(entry, label, field) {
   if (entry === undefined || entry === null) {
     throw packageLoadError(label, `${field} is required`);
   }
-  if (typeof entry !== "string" || !entry.trim()) {
+  const trimmed = trimmedString(entry);
+  if (!trimmed) {
     throw packageLoadError(label, `${field} must be a non-empty string`);
   }
 
-  const normalized = entry.trim().replace(/\\/g, "/");
+  const normalized = trimmed.replace(/\\/g, "/");
   if (path.posix.isAbsolute(normalized) || normalized.startsWith("../") || normalized.includes("/../")) {
     throw packageLoadError(label, `${field} path "${entry}" must be relative to the package root`);
   }
@@ -35,7 +38,7 @@ function normalizeEntityEntry(entry, label) {
     throw packageLoadError(label, "each entities entry must be an object");
   }
 
-  const key = typeof entry.key === "string" ? entry.key.trim() : "";
+  const key = trimmedString(entry.key);
   const module = normalizeRelativeModulePath(entry.module, label, "entities.module");
 
   if (!key) {
@@ -78,7 +81,7 @@ function normalizePackageEntitiesManifest(raw, label) {
         throw packageLoadError(label, "each fields entry must be an object");
       }
 
-      const entity = typeof entry.entity === "string" ? entry.entity.trim() : "";
+      const entity = trimmedString(entry.entity);
       const module = normalizeRelativeModulePath(entry.module, label, "fields.module");
 
       if (!entity) {
