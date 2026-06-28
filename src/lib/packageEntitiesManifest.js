@@ -1,7 +1,7 @@
-const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { trimmedString } = require("./strings");
+const { readOptionalYamlFile } = require("./yamlFile");
 
 function packageLoadError(label, message) {
   const { PackageLoadError } = require("../packages");
@@ -107,16 +107,10 @@ function normalizePackageEntitiesManifest(raw, label) {
 async function readPackageEntitiesManifest(packageDir, machineName) {
   const manifestPath = path.join(packageDir, `${machineName}.entities.yml`);
   const label = `${machineName}.entities.yml`;
-
-  try {
-    await fs.access(manifestPath);
-  } catch {
+  const raw = await readOptionalYamlFile(manifestPath);
+  if (!raw) {
     return null;
   }
-
-  const yaml = require("yaml");
-  const contents = await fs.readFile(manifestPath, "utf8");
-  const raw = yaml.parse(contents);
   return normalizePackageEntitiesManifest(raw, label);
 }
 

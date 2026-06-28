@@ -1,8 +1,6 @@
 const { PackageLoadError, packageRootDir, loadPackages } = require("../packages");
-const {
-  readPackageEventsManifest,
-  resolvePackageModule,
-} = require("./packageEventsManifest");
+const { resolvePackageModule } = require("../lib/packageEntitiesManifest");
+const { readPackageEventsManifest } = require("./packageEventsManifest");
 
 class SubscriberRegistry {
   constructor() {

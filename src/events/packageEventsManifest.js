@@ -1,15 +1,8 @@
-const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { packageLoadError, normalizeRelativeModulePath } = require("../lib/packageEntitiesManifest");
 const { trimmedString } = require("../lib/strings");
-
-function assertModuleInsidePackage(packageDir, absolutePath, relativePath, manifestFileName, field) {
-  const relative = path.relative(packageDir, absolutePath);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw packageLoadError(manifestFileName, `${field} path "${relativePath}" escapes the package directory`);
-  }
-}
+const { readOptionalYamlFile } = require("../lib/yamlFile");
 
 function normalizeEventEntry(entry, manifestFileName) {
   if (!entry || typeof entry !== "object") {
@@ -108,26 +101,13 @@ function normalizePackageEventsManifest(raw, manifestFileName) {
 
 async function readPackageEventsManifest(packageDir, manifestFileName) {
   const manifestPath = path.join(packageDir, manifestFileName);
-
-  try {
-    await fs.access(manifestPath);
-  } catch {
+  const raw = await readOptionalYamlFile(manifestPath);
+  if (!raw) {
     return null;
   }
-
-  const yaml = require("yaml");
-  const contents = await fs.readFile(manifestPath, "utf8");
-  const raw = yaml.parse(contents);
   return normalizePackageEventsManifest(raw, manifestFileName);
-}
-
-function resolvePackageModule(packageDir, relativePath, manifestFileName, field) {
-  const absolutePath = path.resolve(packageDir, relativePath.split("/").join(path.sep));
-  assertModuleInsidePackage(packageDir, absolutePath, relativePath, manifestFileName, field);
-  return absolutePath;
 }
 
 module.exports = {
   readPackageEventsManifest,
-  resolvePackageModule,
 };

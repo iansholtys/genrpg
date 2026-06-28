@@ -2,10 +2,10 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const semver = require("semver");
-const yaml = require("yaml");
 
 const { HttpError } = require("./errors/HttpError");
 const { trimmedString } = require("./lib/strings");
+const { readOptionalYamlFile } = require("./lib/yamlFile");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const STATIC_PKG_PREFIX = "/static/pkg";
@@ -161,15 +161,10 @@ function normalizeAssetsManifest(raw, label) {
 async function readPackageAssets(packageDir, machineName) {
   const assetsPath = path.join(packageDir, `${machineName}.assets.yml`);
   const label = `${machineName}.assets.yml`;
-
-  try {
-    await fs.access(assetsPath);
-  } catch {
+  const raw = await readOptionalYamlFile(assetsPath);
+  if (!raw) {
     return { css: [], js: [] };
   }
-
-  const contents = await fs.readFile(assetsPath, "utf8");
-  const raw = yaml.parse(contents);
   return normalizeAssetsManifest(raw, label);
 }
 
@@ -231,26 +226,15 @@ function normalizeManifest(raw, { packagePath, directoryName, manifestFile }) {
   };
 }
 
-async function readManifest(manifestPath, meta) {
-  const contents = await fs.readFile(manifestPath, "utf8");
-  const raw = yaml.parse(contents);
-  return normalizeManifest(raw, {
-    ...meta,
-    manifestFile: path.basename(manifestPath),
-  });
-}
-
 async function discoverPackageManifest(packageDir, packagePath) {
   const directoryName = path.basename(packageDir);
-  const manifestPath = path.join(packageDir, `${directoryName}.package.yml`);
-
-  try {
-    await fs.access(manifestPath);
-  } catch {
+  const manifestFile = `${directoryName}.package.yml`;
+  const manifestPath = path.join(packageDir, manifestFile);
+  const raw = await readOptionalYamlFile(manifestPath);
+  if (!raw) {
     return null;
   }
-
-  return readManifest(manifestPath, { packagePath, directoryName });
+  return normalizeManifest(raw, { packagePath, directoryName, manifestFile });
 }
 
 async function discoverPackages() {

@@ -4,7 +4,6 @@ const os = require("node:os");
 const { exec } = require("node:child_process");
 const { promisify } = require("node:util");
 const fs = require("node:fs/promises");
-const yaml = require("yaml");
 const semver = require("semver");
 const express = require("express");
 
@@ -13,6 +12,7 @@ const { applySchemaVersions, reapplyPackageSchemaVersions } = require("../db/ver
 const { applyEntityBaseTables } = require("../fields/applyEntityBaseTables");
 const { applyFieldTables } = require("../fields/applyFieldTables");
 const { requireAdmin } = require("../auth");
+const { parseYaml, readYamlFile } = require("../lib/yamlFile");
 const { insertQuery, selectQuery } = require("../services/queryService");
 const { asyncRoute } = require("../lib/httpResponse");
 const {
@@ -132,8 +132,7 @@ async function previewGitPackage(url) {
       throw new Error("No *.package.yml or *.package.yaml found in the repository root.");
     }
     
-    const manifestContent = await fs.readFile(path.join(tmpDir, manifestFile), "utf8");
-    const raw = yaml.parse(manifestContent);
+    const raw = await readYamlFile(path.join(tmpDir, manifestFile));
     
     if (!raw.name || !raw.machine_name || !raw.version) {
       throw new Error("Manifest is missing name, machine_name, or version.");
@@ -205,7 +204,7 @@ packagesRouter.get("/packages/git/status", requireAdmin, asyncRoute(async (req, 
       }
 
       const { stdout: manifestContent } = await execAsync(`git show ${branchRef}:${machineName}.package.yml`, { cwd: pkgPath });
-      const raw = yaml.parse(manifestContent);
+      const raw = parseYaml(manifestContent);
       const remoteVersion = raw.version || "0.0.0";
 
       const canUpdate = semver.valid(remoteVersion) && semver.valid(version)
