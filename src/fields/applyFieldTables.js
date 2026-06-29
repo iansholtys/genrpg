@@ -1,7 +1,7 @@
 const { pool: defaultPool } = require("../db/pool");
 const { createTableQuery } = require("../services/queryService");
 const { loadAllFieldSpecs } = require("./fieldManifest");
-const { TableSync } = require("./tableSync");
+const { TableSync } = require("../db/tableSync");
 
 /**
  * @param {object} spec normalized field spec from fieldManifest

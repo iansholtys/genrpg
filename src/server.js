@@ -5,6 +5,7 @@ const session = require("express-session");
 const PgSession = require("connect-pg-simple")(session);
 
 const { pool } = require("./db/pool");
+const { syncSessionTable } = require("./db/tableSync");
 const { createSchemaQuery } = require("./services/queryService");
 const { applySchemaVersions } = require("./db/versions");
 const { applyPackageUpdates } = require("./updates");
@@ -172,6 +173,8 @@ async function prepareDatabase() {
       `Applied package install steps: ${installApplied.map((entry) => `${entry.machineName} (global v${entry.toVersion})`).join(", ")}`,
     );
   }
+
+  await syncSessionTable(pool);
 }
 
 /**

@@ -5,7 +5,7 @@ const {
   loadMergedCoreFieldSpecs,
   loadMergedUniqueConstraints,
 } = require("./fieldManifest");
-const { TableSync } = require("./tableSync");
+const { TableSync, buildUpdateDatetimeTriggerSql } = require("../db/tableSync");
 
 /**
  * @param {{ instanceScoped: boolean }} entityDef
@@ -67,22 +67,6 @@ function buildUniqueIndexSql(schema, table, columns) {
   const indexName = `uniq_${table}_${columns.join("_")}`;
   const columnList = columns.map((name) => quoteColumn(name)).join(", ");
   return `CREATE UNIQUE INDEX IF NOT EXISTS ${quoteIdentifier(indexName)} ON ${qualifyTable(schema, table)} (${columnList})`;
-}
-
-/**
- * @param {string} schema
- * @param {string} table
- * @returns {string}
- */
-function buildUpdateDatetimeTriggerSql(schema, table) {
-  const qualified = qualifyTable(schema, table);
-  const triggerName = `${table}_update_datetime`;
-  return [
-    `DROP TRIGGER IF EXISTS ${quoteIdentifier(triggerName)} ON ${qualified};`,
-    `CREATE TRIGGER ${quoteIdentifier(triggerName)}`,
-    `  BEFORE UPDATE ON ${qualified}`,
-    "  FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();",
-  ].join("\n");
 }
 
 /**
