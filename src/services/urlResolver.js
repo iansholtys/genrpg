@@ -124,7 +124,7 @@ async function createCustomInstanceAlias(instanceGuid, slug) {
   }
 
   const entity = await storage.create();
-  entity.set({ alias, path });
+  entity.set({ alias, path, isCanonical: true });
   const validationErrors = await entity.validate();
   if (validationErrors.length) {
     throw new ValidationError(validationErrors);
@@ -142,6 +142,7 @@ async function createInstanceAliases(instanceGuid, slug) {
   entity.set({
     alias: defaultInstanceAlias(instanceGuid),
     path: instancePath(instanceGuid),
+    isCanonical: true,
   });
   const validationErrors = await entity.validate();
   if (validationErrors.length) {

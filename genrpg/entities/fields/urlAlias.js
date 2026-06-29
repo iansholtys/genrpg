@@ -16,7 +16,6 @@ module.exports = {
     isCanonical: {
       type: "boolean",
       label: "Canonical",
-      default: false,
     },
   },
   uniqueConstraints: [
