@@ -631,7 +631,6 @@ function invalidatePackageCache() {
 }
 
 module.exports = {
-  PackageLoadError,
   REPO_ROOT,
   packageRootDir,
   propertyToColumnName,

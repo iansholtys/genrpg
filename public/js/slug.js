@@ -1,4 +1,4 @@
-export function slugifyInstanceUrlSegment(value) {
+export function slugifyInstance(value) {
   if (!value || typeof value !== "string") {
     return "";
   }
@@ -15,9 +15,9 @@ export function isProperlySlugified(value) {
   if (value == null || typeof value !== "string") {
     return true;
   }
-  return value === slugifyInstanceUrlSegment(value);
+  return value === slugifyInstance(value);
 }
 
-export function instanceAliasFromSegment(segment) {
-  return `instance/${segment}`;
+export function instanceAliasFromSlug(slug) {
+  return `instance/${slug}`;
 }

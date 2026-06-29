@@ -270,9 +270,19 @@ class BaseEntity {
     return this.storage?.packageNames ?? [];
   }
 
-  /** @type {string[]} Keys applied by {@link BaseEntity#set}. */
+  /** @type {string[]} Manifest field and core-field keys applied by {@link BaseEntity#set}. */
   get inputFields() {
-    return Object.keys(this.fieldSpecs).filter((key) => !this.fieldSpecs[key].readOnly);
+    const keys = Object.keys(this.fieldSpecs).filter((key) => !this.fieldSpecs[key].readOnly);
+    for (const [key, spec] of Object.entries(this.coreFieldSpecs)) {
+      if (this.isWritableCoreField(spec)) {
+        keys.push(key);
+      }
+    }
+    return keys;
+  }
+
+  isWritableCoreField(spec) {
+    return !spec.readOnly && (!spec.createOnly || this.isNew);
   }
 
   assertHasStorage() {
@@ -324,14 +334,28 @@ class BaseEntity {
   }
 
   applyFieldValues(values) {
-    for (const [key, spec] of Object.entries(this.fieldSpecs)) {
-      if (key in values) {
+    for (const [key, value] of Object.entries(values)) {
+      const spec = this.fieldSpecs[key];
+      if (spec) {
         if (spec.readOnly || !spec.type) {
-          this[key] = values[key];
+          this[key] = value;
         } else {
-          this[key] = this.coerceField(key, values[key], spec);
+          this[key] = this.coerceField(key, value, spec);
         }
+        continue;
       }
+
+      const coreSpec = this.coreFieldSpecs[key];
+      if (!coreSpec || !this.isWritableCoreField(coreSpec)) {
+        continue;
+      }
+
+      this[key] = EntityFieldTypes.coerce(value, {
+        type: coreSpec.type,
+        key,
+        label: coreSpec.label ?? key,
+        ...(coreSpec.default !== undefined ? { default: coreSpec.default } : {}),
+      });
     }
   }
 

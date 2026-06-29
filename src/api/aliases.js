@@ -1,86 +1,67 @@
 const express = require("express");
+const { BadRequestError } = require("../errors/BadRequestError");
+const { normalizeAlias } = require("../../genrpg/entities/urlAlias");
 const {
-  normalizeAlias,
+  instancePath,
   lookupAlias,
-  isAliasAvailable,
-  lookupCanonicalAliasForPath,
-  resolveAlias,
+  canonicalAliasForPath,
   resolvePath,
-} = require("../aliases");
+} = require("../services/urlResolver");
+const { asyncRoute } = require("../lib/httpResponse");
 const { trimmedString } = require("../lib/strings");
 
 const aliasesRouter = express.Router();
 
-aliasesRouter.get("/aliases/availability", async (req, res, next) => {
-  try {
-    const alias = normalizeAlias(req.query.alias);
-    if (!alias) {
-      res.status(400).json({ error: "alias is required" });
-      return;
-    }
-
-    const available = await isAliasAvailable(alias, {
-      excludeInstanceGuid: trimmedString(req.query.excludeInstanceGuid) || undefined,
-    });
-    res.json({ available });
-  } catch (error) {
-    next(error);
+function requireNormalizedAlias(value) {
+  const alias = normalizeAlias(value);
+  if (!alias) {
+    throw new BadRequestError("alias is required");
   }
-});
+  return alias;
+}
 
-aliasesRouter.get("/aliases/resolve", async (req, res, next) => {
-  try {
-    const alias = normalizeAlias(req.query.alias);
-    if (!alias) {
-      res.status(400).json({ error: "alias is required" });
-      return;
-    }
-
-    const row = await lookupAlias(alias);
-    if (!row) {
-      res.json({ resolved: null });
-      return;
-    }
-
-    const boot = await resolveAlias(alias, req.session.user);
-    res.json({
-      resolved: boot,
-      path: row.path,
-      alias: row.alias,
-    });
-  } catch (error) {
-    next(error);
+function requirePath(value) {
+  const path = trimmedString(value);
+  if (!path) {
+    throw new BadRequestError("path is required");
   }
-});
+  return path;
+}
 
-aliasesRouter.get("/aliases/for-path", async (req, res, next) => {
-  try {
-    const pathValue = trimmedString(req.query.path);
-    if (!pathValue) {
-      res.status(400).json({ error: "path is required" });
-      return;
-    }
+aliasesRouter.get("/aliases/availability", asyncRoute(async (req, res) => {
+  const alias = requireNormalizedAlias(req.query.alias);
+  const aliasInfo = await lookupAlias(alias);
+  const excludeGuid = trimmedString(req.query.excludeInstanceGuid);
+  const available = !aliasInfo || (excludeGuid != null && aliasInfo.path === instancePath(excludeGuid));
+  res.json({ available });
+}));
 
-    const alias = await lookupCanonicalAliasForPath(pathValue);
-    res.json({ alias });
-  } catch (error) {
-    next(error);
+aliasesRouter.get("/aliases/resolve", asyncRoute(async (req, res) => {
+  const alias = requireNormalizedAlias(req.query.alias);
+  const aliasInfo = await lookupAlias(alias);
+  if (!aliasInfo) {
+    res.json({ resolved: null });
+    return;
   }
-});
 
-aliasesRouter.get("/aliases/resolve-path", async (req, res, next) => {
-  try {
-    const pathValue = trimmedString(req.query.path);
-    if (!pathValue) {
-      res.status(400).json({ error: "path is required" });
-      return;
-    }
+  const resolved = await resolvePath(aliasInfo.path, req.session.user);
+  res.json({
+    resolved,
+    path: aliasInfo.path,
+    alias: aliasInfo.alias,
+  });
+}));
 
-    const boot = await resolvePath(pathValue, req.session.user);
-    res.json({ resolved: boot });
-  } catch (error) {
-    next(error);
-  }
-});
+aliasesRouter.get("/aliases/for-path", asyncRoute(async (req, res) => {
+  const path = requirePath(req.query.path);
+  const alias = await canonicalAliasForPath(path);
+  res.json({ alias });
+}));
+
+aliasesRouter.get("/aliases/resolve-path", asyncRoute(async (req, res) => {
+  const path = requirePath(req.query.path);
+  const resolved = await resolvePath(path, req.session.user);
+  res.json({ resolved });
+}));
 
 module.exports = aliasesRouter;

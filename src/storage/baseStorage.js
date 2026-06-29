@@ -190,6 +190,9 @@ class BaseStorage {
    */
   async saveCoreRow(entity) {
     const { schema, table } = this.constructor;
+    const coreFieldSpecs = await this.getCoreFieldSpecs();
+    const coreFields = Object.entries(coreFieldSpecs);
+    const updatableCoreFields = coreFields.filter(([, spec]) => !spec.createOnly);
 
     if (entity.isNew) {
       const insertColumns = ["guid"];
@@ -199,11 +202,9 @@ class BaseStorage {
         insertValues.push(entity.instanceGuid);
       }
 
-      for (const [property, spec] of Object.entries(await this.getCoreFieldSpecs())) {
-        if (spec.createOnly) {
-          insertColumns.push(spec.column);
-          insertValues.push(entity[property]);
-        }
+      for (const [property, spec] of coreFields) {
+        insertColumns.push(spec.column);
+        insertValues.push(entity[property]);
       }
 
       const insert = insertQuery()
@@ -215,10 +216,17 @@ class BaseStorage {
       return entity;
     }
 
+    if (!updatableCoreFields.length) {
+      return (await this.exists(entity.guid)) ? entity : null;
+    }
+
     const t = this.tableAlias;
     const query = updateQuery()
       .from(schema, table, t)
-      .set(["guid"], [entity.guid])
+      .set(
+        updatableCoreFields.map(([, spec]) => spec.column),
+        updatableCoreFields.map(([property]) => entity[property]),
+      )
       .whereColumn(t, "guid", entity.guid);
 
     if (this.instanceGuid) {

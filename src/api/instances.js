@@ -2,7 +2,7 @@ const { ValidationError } = require("../errors/ValidationError");
 const { NotFoundError } = require("../errors/NotFoundError");
 const express = require("express");
 const { pool } = require("../db/pool");
-const { withTransaction, getTransactionClient } = require("../db/transactionContext");
+const { withTransaction } = require("../db/transactionContext");
 const { selectQuery, qualify } = require("../services/queryService");
 const { applyInstallForInstance } = require("../install");
 const { isGlobalAdmin } = require("../auth");
@@ -23,13 +23,14 @@ const {
 const InstanceStorage = require("../../genrpg/storage/instanceStorage");
 const UserStorage = require("../storage/userStorage");
 const {
-  createDefaultInstanceAlias,
-  createCustomInstanceAlias,
-  deleteAliasesForInstance,
-  lookupCustomInstanceUrlSegment,
-  syncCustomInstanceAlias,
-  slugifyInstanceUrlSegment,
-} = require("../aliases");
+  instancePath,
+  slugifyInstance,
+  customSlugForInstance,
+  customSlugsForInstances,
+  createInstanceAliases,
+  setInstanceSlug,
+  deleteInstanceAliases,
+} = require("../services/urlResolver");
 
 const instancesRouter = express.Router();
 
@@ -133,39 +134,10 @@ instancesRouter.get("/instances", asyncRoute(async (req, res) => {
     }
   }
 
-  // 2. Custom URL segment per instance (shortest non-default alias).
-  const urlSegmentByGuid = new Map();
-  if (instances.length) {
-    const paths = instances.map((instance) => `instance:${instance.guid}`);
-    const pathToGuid = new Map(paths.map((path, index) => [path, instances[index].guid]));
-    const aliasQuery = selectQuery()
-      .from("genrpg", "url_aliases", "ua")
-      .addFields("ua", ["path", "alias"])
-      .whereColumn("ua", "path", paths);
-    const aliasResult = await pool.query(aliasQuery.toString(), aliasQuery.params);
-
-    for (const row of aliasResult.rows) {
-      const instanceGuid = pathToGuid.get(row.path);
-      if (!instanceGuid || row.alias === `instance/${instanceGuid}`) {
-        continue;
-      }
-      if (!row.alias.startsWith("instance/")) {
-        continue;
-      }
-
-      const segment = row.alias.slice("instance/".length);
-      if (!segment || segment === instanceGuid) {
-        continue;
-      }
-
-      const current = urlSegmentByGuid.get(instanceGuid);
-      if (!current || row.alias.length < current.aliasLength || (
-        row.alias.length === current.aliasLength && row.alias < current.alias
-      )) {
-        urlSegmentByGuid.set(instanceGuid, { segment, aliasLength: row.alias.length });
-      }
-    }
-  }
+  // 2. Custom slug per instance (canonical non-default alias).
+  const slugByPath = await customSlugsForInstances(
+    instances.map((instance) => instance.guid),
+  );
 
   // 3. Resolve stored package guids to machine names for API responses.
   await Promise.all(instances.map((instance) => instance.resolvePackageNames()));
@@ -176,7 +148,7 @@ instancesRouter.get("/instances", asyncRoute(async (req, res) => {
       ...instance.toJSON(),
       packageNames: instance.packageNames,
       ...accessByGuid.get(instance.guid),
-      urlSegment: urlSegmentByGuid.get(instance.guid)?.segment ?? null,
+      slug: slugByPath.get(instancePath(instance.guid)) ?? null,
     })),
   });
 }));
@@ -186,14 +158,14 @@ instancesRouter.post("/instances", asyncRoute(async (req, res) => {
   const description = trimmedString(req.body.description);
   const selectedPackages = Array.isArray(req.body.packages) ? req.body.packages : null;
   const rawUrl = trimmedString(req.body.url);
-  const urlSegment = rawUrl ? slugifyInstanceUrlSegment(rawUrl) : "";
+  const slug = rawUrl ? slugifyInstance(rawUrl) : "";
 
   if (!name) {
     res.status(400).json({ error: "Instance name is required" });
     return;
   }
 
-  if (rawUrl && !urlSegment) {
+  if (rawUrl && !slug) {
     res.status(400).json({ error: "Instance URL is invalid" });
     return;
   }
@@ -213,7 +185,6 @@ instancesRouter.post("/instances", asyncRoute(async (req, res) => {
   }
 
   const savedInstance = await withTransaction(async () => {
-    const client = getTransactionClient();
     const instanceStorage = InstanceStorage.global();
     const instance = await instanceStorage.create();
     instance.set({
@@ -237,10 +208,7 @@ instancesRouter.post("/instances", asyncRoute(async (req, res) => {
       await assignInstanceRole(req.session.user.guid, instanceGuid, ownerRole.guid);
     }
 
-    await createDefaultInstanceAlias(client, instanceGuid);
-    if (urlSegment) {
-      await createCustomInstanceAlias(client, instanceGuid, urlSegment);
-    }
+    await createInstanceAliases(instanceGuid, slug);
 
     const catalog = await loadPackages({ strict: false });
     await instance.resolvePackageNames();
@@ -266,14 +234,14 @@ instancesRouter.put("/instances/:guid", asyncRoute(async (req, res) => {
   const name = trimmedString(req.body.name);
   const description = trimmedString(req.body.description);
   const rawUrl = trimmedString(req.body.url);
-  const urlSegment = rawUrl ? slugifyInstanceUrlSegment(rawUrl) : "";
+  const slug = rawUrl ? slugifyInstance(rawUrl) : "";
 
   if (!name) {
     res.status(400).json({ error: "Instance name is required" });
     return;
   }
 
-  if (rawUrl && !urlSegment) {
+  if (rawUrl && !slug) {
     res.status(400).json({ error: "Instance URL is invalid" });
     return;
   }
@@ -284,10 +252,9 @@ instancesRouter.put("/instances/:guid", asyncRoute(async (req, res) => {
     return;
   }
 
-  const currentUrlSegment = await lookupCustomInstanceUrlSegment(instanceGuid);
+  const currentSlug = await customSlugForInstance(instanceGuid);
 
   const updatedInstance = await withTransaction(async () => {
-    const client = getTransactionClient();
     const instanceStorage = InstanceStorage.global();
     const instance = await instanceStorage.load(instanceGuid, { skipEvents: true });
     if (!instance) {
@@ -302,20 +269,20 @@ instancesRouter.put("/instances/:guid", asyncRoute(async (req, res) => {
 
     await instance.save();
 
-    if (urlSegment !== currentUrlSegment) {
-      await syncCustomInstanceAlias(client, instanceGuid, urlSegment);
+    if (slug !== currentSlug) {
+      await setInstanceSlug(instanceGuid, slug);
     }
 
     return instance.resolvePackageNames();
   });
 
-  const resolvedUrlSegment = await lookupCustomInstanceUrlSegment(instanceGuid);
+  const resolvedSlug = await customSlugForInstance(instanceGuid);
 
   res.json({
     instance: {
       ...updatedInstance.toJSON(),
       packageNames: updatedInstance.packageNames,
-      urlSegment: resolvedUrlSegment || null,
+      slug: resolvedSlug || null,
     },
   });
 }));
@@ -458,8 +425,8 @@ instancesRouter.delete("/instances/:guid", async (req, res, next) => {
     }
 
     await withTransaction(async () => {
-      const client = getTransactionClient();
-      await deleteAliasesForInstance(client, instanceGuid);
+      await deleteInstanceAliases(instanceGuid);
+
       const deleted = await InstanceStorage.global().delete(instanceGuid);
       if (!deleted) {
         throw new NotFoundError("Instance not found");

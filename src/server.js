@@ -1,3 +1,4 @@
+const fs = require("node:fs/promises");
 const path = require("node:path");
 const express = require("express");
 const session = require("express-session");
@@ -11,7 +12,7 @@ const { refreshPackageSubscribers } = require("./events/packageEvents");
 const { REPO_ROOT, refreshPackageCache } = require("./packages");
 
 const { ensureAuthenticated } = require("./auth");
-const { resolveRequestPath, sendAppHtml } = require("./aliases");
+const { resolveRequestPath } = require("./services/urlResolver");
 const authRouter = require("./routes/auth");
 const genrpgApi = require("./api");
 
@@ -98,10 +99,23 @@ app.use(ensureAuthenticated);
 // Protected API routes
 app.use("/api/genrpg", genrpgApi);
 
+const APP_HTML_PATH = path.join(__dirname, "..", "public", "app.html");
+let appHtmlCache;
+
 async function sendAppForRequest(req, res, next) {
   try {
     const boot = await resolveRequestPath(req.path, req.session.user);
-    await sendAppHtml(res, boot);
+
+    if (!appHtmlCache) {
+      appHtmlCache = await fs.readFile(APP_HTML_PATH, "utf8");
+    }
+
+    if (!boot) {
+      res.type("html").send(appHtmlCache);
+    } else {
+      const bootScript = `<script>window.__GENRPG_BOOT__=${JSON.stringify(boot)};</script>`;
+      res.type("html").send(appHtmlCache.replace("</head>", `${bootScript}</head>`));
+    }
   } catch (error) {
     next(error);
   }

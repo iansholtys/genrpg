@@ -5,6 +5,8 @@ entities:
     module: entities/role.js
   - key: package
     module: entities/package.js
+  - key: url_alias
+    module: entities/urlAlias.js
   - key: instance
     module: entities/instance.js
   - key: character
@@ -28,6 +30,8 @@ fields:
     module: entities/fields/role.js
   - entity: package
     module: entities/fields/package.js
+  - entity: url_alias
+    module: entities/fields/urlAlias.js
   - entity: instance
     module: entities/fields/instance.js
   - entity: character

@@ -8,9 +8,9 @@ import {
   renderInstancePackageSelection,
 } from "../../../js/packages.js";
 import {
-  slugifyInstanceUrlSegment,
+  slugifyInstance,
   isProperlySlugified,
-  instanceAliasFromSegment,
+  instanceAliasFromSlug,
 } from "../../../js/slug.js";
 
 const { Modal, TabbedRegion } = window;
@@ -33,7 +33,7 @@ class ManageInstanceModal extends Modal {
     this.aliasCheckPending = false;
     this.aliasCheckGeneration = 0;
     this.aliasCheckTimer = null;
-    this.lastCheckedUrlSegment = "";
+    this.lastCheckedSlug = "";
     this.tabbedRegion = null;
   }
 
@@ -284,8 +284,8 @@ class ManageInstanceModal extends Modal {
     }
   }
 
-  getUrlSegment() {
-    return slugifyInstanceUrlSegment(this.elements.$instanceUrlInput.val());
+  getSlug() {
+    return slugifyInstance(this.elements.$instanceUrlInput.val());
   }
 
   cancelAliasCheckTimer() {
@@ -307,7 +307,7 @@ class ManageInstanceModal extends Modal {
   updateUrlHelpForEmpty() {
     this.aliasInUse = false;
     this.aliasCheckPending = false;
-    this.lastCheckedUrlSegment = "";
+    this.lastCheckedSlug = "";
     const hint = this.isManageMode()
       ? "Optional. Clear to use only the auto-generated URL."
       : "Optional. Leave blank for an auto-generated URL.";
@@ -315,19 +315,19 @@ class ManageInstanceModal extends Modal {
     this.updateSubmitDisabled();
   }
 
-  updateUrlHelpForAvailable(segment) {
+  updateUrlHelpForAvailable(slug) {
     this.aliasInUse = false;
     this.aliasCheckPending = false;
-    this.lastCheckedUrlSegment = segment;
+    this.lastCheckedSlug = slug;
     const base = window.location.origin;
-    this.setUrlHelp(`Your instance will be at ${base}/instance/${segment}`, "neutral");
+    this.setUrlHelp(`Your instance will be at ${base}/instance/${slug}`, "neutral");
     this.updateSubmitDisabled();
   }
 
-  updateUrlHelpForInUse(segment) {
+  updateUrlHelpForInUse(slug) {
     this.aliasInUse = true;
     this.aliasCheckPending = false;
-    this.lastCheckedUrlSegment = segment;
+    this.lastCheckedSlug = slug;
     this.setUrlHelp("This alias is already in use, please use another.", "error");
     this.updateSubmitDisabled();
   }
@@ -340,9 +340,9 @@ class ManageInstanceModal extends Modal {
 
   scheduleAliasAvailabilityCheck() {
     this.cancelAliasCheckTimer();
-    const segment = this.getUrlSegment();
+    const slug = this.getSlug();
 
-    if (!segment) {
+    if (!slug) {
       this.updateUrlHelpForEmpty();
       return;
     }
@@ -353,12 +353,12 @@ class ManageInstanceModal extends Modal {
 
     this.aliasCheckTimer = setTimeout(() => {
       this.aliasCheckTimer = null;
-      this.checkAliasAvailability(segment, generation);
+      this.checkAliasAvailability(slug, generation);
     }, ALIAS_CHECK_DEBOUNCE_MS);
   }
 
-  async checkAliasAvailability(segment, generation) {
-    const alias = instanceAliasFromSegment(segment);
+  async checkAliasAvailability(slug, generation) {
+    const alias = instanceAliasFromSlug(slug);
     const params = new URLSearchParams({ alias });
     if (this.instance?.guid) {
       params.set("excludeInstanceGuid", this.instance.guid);
@@ -373,14 +373,14 @@ class ManageInstanceModal extends Modal {
         return;
       }
 
-      if (this.getUrlSegment() !== segment) {
+      if (this.getSlug() !== slug) {
         return;
       }
 
       if (available) {
-        this.updateUrlHelpForAvailable(segment);
+        this.updateUrlHelpForAvailable(slug);
       } else {
-        this.updateUrlHelpForInUse(segment);
+        this.updateUrlHelpForInUse(slug);
       }
     } catch {
       if (generation !== this.aliasCheckGeneration) {
@@ -397,7 +397,7 @@ class ManageInstanceModal extends Modal {
     if (this.isManageMode()) {
       return;
     }
-    const slug = slugifyInstanceUrlSegment(this.elements.$instanceNameInput.val());
+    const slug = slugifyInstance(this.elements.$instanceNameInput.val());
     this.elements.$instanceUrlInput.val(slug);
     this.scheduleAliasAvailabilityCheck();
   }
@@ -405,11 +405,11 @@ class ManageInstanceModal extends Modal {
   onUrlBlur() {
     let value = this.elements.$instanceUrlInput.val();
     if (!isProperlySlugified(value)) {
-      value = slugifyInstanceUrlSegment(value);
+      value = slugifyInstance(value);
       this.elements.$instanceUrlInput.val(value);
     }
-    const segment = slugifyInstanceUrlSegment(value);
-    if (segment === this.lastCheckedUrlSegment) {
+    const slug = slugifyInstance(value);
+    if (slug === this.lastCheckedSlug) {
       return;
     }
     this.scheduleAliasAvailabilityCheck();
@@ -428,7 +428,7 @@ class ManageInstanceModal extends Modal {
     this.aliasCheckGeneration += 1;
     this.aliasInUse = false;
     this.aliasCheckPending = false;
-    this.lastCheckedUrlSegment = "";
+    this.lastCheckedSlug = "";
   }
 
   resetUsersTab() {
@@ -552,10 +552,10 @@ class ManageInstanceModal extends Modal {
       }
 
       if (instance.canEdit) {
-        const urlSegment = instance.urlSegment || "";
+        const slug = instance.slug || "";
         this.elements.$instanceNameInput.val(instance.name || "");
         this.elements.$instanceDescriptionInput.val(instance.description || "");
-        this.elements.$instanceUrlInput.val(urlSegment);
+        this.elements.$instanceUrlInput.val(slug);
         renderInstancePackageSelection(this.elements.$instancePackageList, {
           selectedPackages: instance.packageNames || [],
           readOnly: true,
@@ -602,7 +602,7 @@ class ManageInstanceModal extends Modal {
       return;
     }
 
-    const urlSegment = this.getUrlSegment();
+    const slug = this.getSlug();
     const $btn = this.elements.$instanceSubmitButton;
     $btn.prop("disabled", true);
 
@@ -611,7 +611,7 @@ class ManageInstanceModal extends Modal {
       const body = {
         name: formData.get("instanceName"),
         description: formData.get("description"),
-        url: urlSegment,
+        url: slug,
       };
 
       try {
@@ -643,8 +643,8 @@ class ManageInstanceModal extends Modal {
       description: formData.get("description"),
       packages: selectedPackages,
     };
-    if (urlSegment) {
-      body.url = urlSegment;
+    if (slug) {
+      body.url = slug;
     }
 
     try {
