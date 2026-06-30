@@ -1,5 +1,5 @@
 const { pool: defaultPool } = require("./pool");
-const { createSchemaQuery } = require("../services/queryService");
+const { createSchemaQuery, insertQuery } = require("../services/queryService");
 const { invalidateApplicationCaches } = require("../services/cacheService");
 const { TableSync } = require("./tableSync");
 const { applyEntityBaseTables } = require("../fields/applyEntityBaseTables");
@@ -12,7 +12,8 @@ const GENRPG_SCHEMA = "genrpg";
  *
  * Defaults to genrpg only (startup / `npm run db:apply`). When genrpg is included,
  * session is created before entity base tables (provides set_update_datetime); cache
- * is created after entity base tables (references instances).
+ * is created after entity base tables (references instances); the genrpg package
+ * registry row is ensured last.
  *
  * @param {{ pool?: import("pg").Pool, packageNames?: string[] }} [options]
  * @returns {Promise<{ entityBaseTables: { applied: string[] }, fieldTables: { applied: string[] } }>}
@@ -46,6 +47,14 @@ async function syncDatabase({ pool = defaultPool, packageNames = [GENRPG_SCHEMA]
   const fieldTables = await applyFieldTables({ pool, packageNames });
   if (fieldTables.applied.length) {
     console.log(`Synced field tables for ${label}: ${fieldTables.applied.join(", ")}`);
+  }
+
+  if (updatingCore) {
+    const query = insertQuery()
+      .into(GENRPG_SCHEMA, "packages")
+      .values(["machine_name", "version"], [GENRPG_SCHEMA, 0])
+      .onConflict(["machine_name"], "DO NOTHING");
+    await pool.query(query.toString(), query.params);
   }
 
   if (entityBaseTables.applied.length || fieldTables.applied.length) {
