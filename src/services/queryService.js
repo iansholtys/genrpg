@@ -30,7 +30,8 @@ function quoteColumn(identifier) {
  * Call the query builders ({@link selectQuery}, {@link insertQuery}, {@link updateQuery},
  * {@link deleteQuery}, {@link createTableQuery}, {@link alterTableQuery}) to obtain a
  * {@link QueryObject}, chain configuration methods, then pass {@link QueryObject#toString toString()}
- * and {@link QueryObject#params params} to pg. Use {@link createSchemaQuery} for schema DDL.
+ * and {@link QueryObject#params params} to pg. Use {@link createSchemaQuery} for schema DDL,
+ * {@link createUpdateFunctionQuery} and {@link createBeforeUpdateTriggerQuery} for trigger DDL.
  * This module only builds SQL strings; it does not execute them.
  */
 
@@ -1035,6 +1036,50 @@ function createSchemaQuery(schema) {
   return `CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(schema)}`;
 }
 
+/**
+ * Build CREATE OR REPLACE FUNCTION … set_{column}() that sets NEW.column to now() on each row.
+ *
+ * @param {string} schema
+ * @param {string} column
+ * @returns {string}
+ */
+function createUpdateFunctionQuery(schema, column) {
+  const functionName = `set_${column}`;
+  return [
+    `CREATE OR REPLACE FUNCTION ${qualifyTable(schema, functionName)}()`,
+    "RETURNS trigger AS $$",
+    "BEGIN",
+    `  NEW.${quoteColumn(column)} = now();`,
+    "  RETURN NEW;",
+    "END;",
+    "$$ LANGUAGE plpgsql;",
+  ].join("\n");
+}
+
+/**
+ * Build DROP TRIGGER IF EXISTS + CREATE TRIGGER … BEFORE UPDATE … EXECUTE FUNCTION set_{column}().
+ *
+ * Trigger name is `{table}_{column}` (e.g. `users_update_datetime`).
+ *
+ * @param {string} tableSchema schema owning the table
+ * @param {string} table
+ * @param {string} column column updated by the trigger function
+ * @param {string} [functionSchema=tableSchema] schema owning the trigger function
+ * @returns {string}
+ */
+function createBeforeUpdateTriggerQuery(tableSchema, table, column, functionSchema = tableSchema) {
+  const functionName = `set_${column}`;
+  const triggerName = `${table}_${column}`;
+  const qualifiedTable = qualifyTable(tableSchema, table);
+  const qualifiedFunction = qualifyTable(functionSchema, functionName);
+  return [
+    `DROP TRIGGER IF EXISTS ${quoteIdentifier(triggerName)} ON ${qualifiedTable};`,
+    `CREATE TRIGGER ${quoteIdentifier(triggerName)}`,
+    `  BEFORE UPDATE ON ${qualifiedTable}`,
+    `  FOR EACH ROW EXECUTE FUNCTION ${qualifiedFunction}();`,
+  ].join("\n");
+}
+
 module.exports = {
   selectQuery,
   insertQuery,
@@ -1043,6 +1088,8 @@ module.exports = {
   createTableQuery,
   alterTableQuery,
   createSchemaQuery,
+  createUpdateFunctionQuery,
+  createBeforeUpdateTriggerQuery,
   qualify,
   qualifyTable,
   quoteIdentifier,

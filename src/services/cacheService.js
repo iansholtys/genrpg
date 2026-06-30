@@ -174,8 +174,18 @@ async function getOrCompute(cacheKey, computeFn, { instanceGuid = null, memoryOn
   return value;
 }
 
+/**
+ * Clear persisted cache rows and in-memory entity cache, plus package manifest cache.
+ * Call after DDL sync or package update/install steps mutate schema or data.
+ */
+async function invalidateApplicationCaches() {
+  await clear();
+  const { invalidatePackageCache } = require("../packages");
+  invalidatePackageCache();
+}
+
 module.exports = {
   clear,
   getOrCompute,
-  clearMemory,
+  invalidateApplicationCaches,
 };

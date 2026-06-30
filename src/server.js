@@ -5,9 +5,7 @@ const session = require("express-session");
 const PgSession = require("connect-pg-simple")(session);
 
 const { pool } = require("./db/pool");
-const { syncSessionTable } = require("./db/tableSync");
-const { createSchemaQuery } = require("./services/queryService");
-const { applySchemaVersions } = require("./db/versions");
+const { syncDatabase } = require("./db/dbSync");
 const { applyPackageUpdates } = require("./updates");
 const { refreshPackageSubscribers } = require("./events/packageEvents");
 const { REPO_ROOT, refreshPackageCache } = require("./packages");
@@ -153,14 +151,9 @@ app.use((error, req, res, next) => {
  * Ensure schema is current before the app accepts HTTP traffic.
  */
 async function prepareDatabase() {
-  // Ensure genrpg schema exists.
+  // Ensure essential schemas, tables and functions exist.
   // @todo: Come up with a dedicated installation process so we only check this once.
-  await pool.query(createSchemaQuery("genrpg"));
-
-  const { applied } = await applySchemaVersions({ pool });
-  if (applied.length) {
-    console.log(`Applied database schema versions: ${applied.join(", ")}`);
-  }
+  await syncDatabase({ pool });
 
   const { applied: updatesApplied, installApplied } = await applyPackageUpdates(pool);
   if (updatesApplied.length) {
@@ -173,8 +166,6 @@ async function prepareDatabase() {
       `Applied package install steps: ${installApplied.map((entry) => `${entry.machineName} (global v${entry.toVersion})`).join(", ")}`,
     );
   }
-
-  await syncSessionTable(pool);
 }
 
 /**

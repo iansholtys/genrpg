@@ -8,19 +8,16 @@ const semver = require("semver");
 const express = require("express");
 
 const { pool } = require("../db/pool");
-const { applySchemaVersions, reapplyPackageSchemaVersions } = require("../db/versions");
-const { applyEntityBaseTables } = require("../fields/applyEntityBaseTables");
-const { applyFieldTables } = require("../fields/applyFieldTables");
+const { syncDatabase } = require("../db/dbSync");
 const { requireAdmin } = require("../auth");
 const { parseYaml, readYamlFile } = require("../lib/yamlFile");
-const { createSchemaQuery, insertQuery, selectQuery } = require("../services/queryService");
+const { insertQuery, selectQuery } = require("../services/queryService");
 const { asyncRoute } = require("../lib/httpResponse");
 const {
   loadPackages,
   getPackageConfigurationIssues,
-  invalidatePackageCache,
 } = require("../packages");
-const { clear: clearCache } = require("../services/cacheService");
+const { invalidateApplicationCaches } = require("../services/cacheService");
 const {
   applyPackageUpdates,
   applyPackageUpdatesForMachine,
@@ -49,28 +46,9 @@ async function registerPackageVersion(machineName) {
 }
 
 async function applyPackageDatabase(machineName, packagePath, { reinstall = false } = {}) {
-  const schemaClient = await pool.connect();
-  try {
-    await schemaClient.query(createSchemaQuery(machineName));
-  } finally {
-    schemaClient.release();
-  }
-
   let updateWarning = null;
   try {
-    if (reinstall) {
-      await reapplyPackageSchemaVersions({ pool, packageName: machineName });
-    } else {
-      await applySchemaVersions({ pool });
-    }
-    const entityBaseTables = await applyEntityBaseTables({ pool, packageNames: [machineName] });
-    if (entityBaseTables.applied.length) {
-      console.log(`Synced entity base tables for ${machineName}: ${entityBaseTables.applied.join(", ")}`);
-    }
-    const fieldTables = await applyFieldTables({ pool, packageNames: [machineName] });
-    if (fieldTables.applied.length) {
-      console.log(`Synced field tables for ${machineName}: ${fieldTables.applied.join(", ")}`);
-    }
+    await syncDatabase({ pool, packageNames: [machineName] });
     await applyPackageUpdatesForMachine(pool, machineName);
     await registerPackageVersion(machineName);
     const installApplied = await applyGlobalInstallForMachine(pool, machineName);
@@ -291,15 +269,14 @@ packagesRouter.post("/packages/git/pull", requireAdmin, async (req, res, next) =
 
     let updateWarning = null;
     try {
-      await applySchemaVersions({ pool });
+      await syncDatabase({ pool });
       await applyPackageUpdatesForMachine(pool, preview.machineName);
     } catch (error) {
       console.error(`Failed to apply DB updates for ${preview.machineName}:`, error);
       updateWarning = error.message || "Failed to apply package database updates";
     }
 
-    await clearCache();
-    invalidatePackageCache();
+    await invalidateApplicationCaches();
 
     await loadPackages({ strict: false });
 
@@ -338,8 +315,7 @@ packagesRouter.post("/packages/install", requireAdmin, asyncRoute(async (req, re
   }
 
   const { updateWarning } = await applyPackageDatabase(machineName, pkg.path);
-  await clearCache();
-  invalidatePackageCache();
+  await invalidateApplicationCaches();
 
   res.json({ success: true, updateWarning });
 }));
@@ -364,18 +340,15 @@ packagesRouter.post("/packages/reinstall", requireAdmin, asyncRoute(async (req, 
   }
 
   const { updateWarning } = await applyPackageDatabase(machineName, pkg.path, { reinstall: true });
-  await clearCache();
-  invalidatePackageCache();
+  await invalidateApplicationCaches();
 
   res.json({ success: true, updateWarning });
 }));
 
 packagesRouter.post("/update", requireAdmin, asyncRoute(async (req, res) => {
   if (req.body?.update === true) {
-    const result = await applyPackageUpdates(pool);
-    await clearCache();
-    invalidatePackageCache();
-    res.json(result);
+    await syncDatabase({ pool });
+    res.json(await applyPackageUpdates(pool));
     return;
   }
 

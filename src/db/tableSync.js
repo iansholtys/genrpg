@@ -1,6 +1,8 @@
 const { pool: defaultPool } = require("./pool");
 const {
   alterTableQuery,
+  createBeforeUpdateTriggerQuery,
+  createUpdateFunctionQuery,
   createSchemaQuery,
   createTableQuery,
   qualifyTable,
@@ -9,52 +11,12 @@ const {
   selectQuery,
 } = require("../services/queryService");
 
-const SESSION_SCHEMA = "genrpg";
-const SESSION_TABLE = "session";
-
-const SESSION_COLUMN_DEFS = [
-  { name: "sid", type: "varchar", nullable: false },
-  { name: "sess", type: "json", nullable: false },
-  { name: "expire", type: "timestamp(6)", nullable: false },
-  { name: "create_datetime", type: "timestamptz", nullable: false, default: "now()" },
-  { name: "update_datetime", type: "timestamptz", nullable: false, default: "now()" },
-];
-
-/**
- * @param {import("pg").PoolClient} client
- */
-async function ensureUpdateDatetimeFunction(client) {
-  await client.query(`
-    CREATE OR REPLACE FUNCTION genrpg.set_update_datetime()
-    RETURNS trigger AS $$
-    BEGIN
-      NEW.update_datetime = now();
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-  `);
-}
-
-/**
- * @param {string} schema
- * @param {string} table
- * @returns {string}
- */
-function buildUpdateDatetimeTriggerSql(schema, table) {
-  const qualified = qualifyTable(schema, table);
-  const triggerName = `${table}_update_datetime`;
-  return [
-    `DROP TRIGGER IF EXISTS ${quoteIdentifier(triggerName)} ON ${qualified};`,
-    `CREATE TRIGGER ${quoteIdentifier(triggerName)}`,
-    `  BEFORE UPDATE ON ${qualified}`,
-    "  FOR EACH ROW EXECUTE FUNCTION genrpg.set_update_datetime();",
-  ].join("\n");
-}
-
 /**
  * Sync CREATE TABLE / ADD COLUMN DDL against PostgreSQL.
  */
 class TableSync {
+  static GENRPG_SCHEMA = "genrpg";
+
   /**
    * @param {import("pg").PoolClient} client
    */
@@ -117,66 +79,76 @@ class TableSync {
 
     return applied;
   }
-}
 
-/**
- * Sync genrpg.session for connect-pg-simple. Runs every startup like entity base tables,
- * so it survives partial resets that drop genrpg without replaying schema_versions SQL.
- *
- * @param {import("pg").Pool} [pool]
- * @returns {Promise<{ applied: string[] }>}
- */
-async function syncSessionTable(pool = defaultPool) {
-  const client = await pool.connect();
-  const applied = [];
+  /**
+   * Create genrpg.session for connect-pg-simple if missing. Schema changes use update steps.
+   *
+   * @param {import("pg").Pool} [pool]
+   */
+  static async ensureSessionTable(pool = defaultPool) {
+    const schema = TableSync.GENRPG_SCHEMA;
+    const table = "session";
+    const updateDatetimeColumn = "update_datetime";
 
-  try {
-    await ensureUpdateDatetimeFunction(client);
-
-    const tableSync = new TableSync(client);
-    await tableSync.ensureSchemas([SESSION_SCHEMA]);
-
-    const createSessionTableSql = createTableQuery()
-      .ifNotExists()
-      .table(SESSION_SCHEMA, SESSION_TABLE);
-
-    for (const column of SESSION_COLUMN_DEFS) {
-      createSessionTableSql.addColumn(column.name, column);
+    const client = await pool.connect();
+    try {
+      await client.query(createUpdateFunctionQuery(schema, updateDatetimeColumn));
+      await client.query(
+        createTableQuery()
+          .ifNotExists()
+          .table(schema, table)
+          .addColumn("sid", { type: "varchar", nullable: false })
+          .addColumn("sess", { type: "json", nullable: false })
+          .addColumn("expire", { type: "timestamp(6)", nullable: false })
+          .addColumn("create_datetime", { type: "timestamptz", nullable: false, default: "now()" })
+          .addColumn("update_datetime", { type: "timestamptz", nullable: false, default: "now()" })
+          .primaryKey(["sid"])
+          .toString(),
+      );
+      await client.query(
+        `CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_session_expire")} ON ${qualifyTable(schema, table)} (${quoteColumn("expire")})`,
+      );
+      await client.query(createBeforeUpdateTriggerQuery(schema, table, updateDatetimeColumn));
+    } finally {
+      client.release();
     }
+  }
 
-    createSessionTableSql.primaryKey(["sid"]);
+  /**
+   * Create genrpg.cache if missing. Requires genrpg.instances. Schema changes use update steps.
+   *
+   * @param {import("pg").Pool} [pool]
+   */
+  static async ensureCacheTable(pool = defaultPool) {
+    const schema = TableSync.GENRPG_SCHEMA;
+    const table = "cache";
+    const cachedDatetimeColumn = "cached_datetime";
 
-    applied.push(
-      ...await tableSync.syncTable(
-        SESSION_SCHEMA,
-        SESSION_TABLE,
-        createSessionTableSql.toString(),
-        SESSION_COLUMN_DEFS,
-      ),
-    );
-
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_session_expire")} ON ${qualifyTable(SESSION_SCHEMA, SESSION_TABLE)} (${quoteColumn("expire")})`,
-    );
-    applied.push(`index:${SESSION_SCHEMA}.${SESSION_TABLE}:expire`);
-
-    await client.query(buildUpdateDatetimeTriggerSql(SESSION_SCHEMA, SESSION_TABLE));
-    applied.push(`trigger:${SESSION_SCHEMA}.${SESSION_TABLE}`);
-
-    const uniqueApplied = [...new Set(applied)];
-    if (uniqueApplied.length) {
-      console.log(`Synced session table: ${uniqueApplied.join(", ")}`);
+    const client = await pool.connect();
+    try {
+      await client.query(createUpdateFunctionQuery(schema, cachedDatetimeColumn));
+      const qualified = qualifyTable(schema, table);
+      await client.query(
+        [
+          `CREATE TABLE IF NOT EXISTS ${qualified} (`,
+          "  cache_key text NOT NULL,",
+          "  instance_guid uuid REFERENCES genrpg.instances(guid) ON DELETE CASCADE,",
+          "  value jsonb NOT NULL,",
+          "  cached_datetime timestamptz NOT NULL DEFAULT now(),",
+          "  UNIQUE NULLS NOT DISTINCT (cache_key, instance_guid)",
+          ")",
+        ].join("\n"),
+      );
+      await client.query(
+        `CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_cache_instance")} ON ${qualified} (${quoteColumn("instance_guid")}) WHERE instance_guid IS NOT NULL`,
+      );
+      await client.query(createBeforeUpdateTriggerQuery(schema, table, cachedDatetimeColumn));
+    } finally {
+      client.release();
     }
-
-    return { applied: uniqueApplied };
-  } finally {
-    client.release();
   }
 }
 
 module.exports = {
   TableSync,
-  buildUpdateDatetimeTriggerSql,
-  ensureUpdateDatetimeFunction,
-  syncSessionTable,
 };

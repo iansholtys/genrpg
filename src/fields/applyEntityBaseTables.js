@@ -1,11 +1,11 @@
 const { pool: defaultPool } = require("../db/pool");
-const { createTableQuery, qualifyTable, quoteIdentifier, quoteColumn } = require("../services/queryService");
+const { createTableQuery, createBeforeUpdateTriggerQuery, qualifyTable, quoteIdentifier, quoteColumn } = require("../services/queryService");
 const {
   loadEntitiesForPackages,
   loadMergedCoreFieldSpecs,
   loadMergedUniqueConstraints,
 } = require("./fieldManifest");
-const { TableSync, buildUpdateDatetimeTriggerSql } = require("../db/tableSync");
+const { TableSync } = require("../db/tableSync");
 
 /**
  * @param {{ instanceScoped: boolean }} entityDef
@@ -138,7 +138,9 @@ async function applyEntityBaseTables({ pool = defaultPool, packageNames = null }
         applied.push(`unique:${schema}.${table}:${columns.join(",")}`);
       }
 
-      await client.query(buildUpdateDatetimeTriggerSql(schema, table));
+      await client.query(
+        createBeforeUpdateTriggerQuery(schema, table, "update_datetime", "genrpg"),
+      );
       applied.push(`trigger:${schema}.${table}`);
     }
 

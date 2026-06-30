@@ -614,6 +614,11 @@ function getPackageConfigurationIssues() {
   return packageCache?.configurationIssues ?? [];
 }
 
+/**
+ * Drop in-memory package manifest cache and subscriber registry.
+ * Does not clear {@link genrpg.cache} or entity field-spec memory; use
+ * {@link invalidateApplicationCaches} for full invalidation after DB or code changes.
+ */
 function invalidatePackageCache() {
   packageCache = null;
   try {
@@ -621,12 +626,6 @@ function invalidatePackageCache() {
     invalidatePackageSubscribers();
   } catch {
     // events module may not be loaded yet during early startup
-  }
-  try {
-    const { clearMemory } = require("./services/cacheService");
-    clearMemory();
-  } catch {
-    // cache service may not be loaded yet during early startup
   }
 }
 

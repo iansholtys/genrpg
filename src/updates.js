@@ -2,9 +2,9 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const { loadPackages, sortPackagesByDependencies } = require("./packages");
-const { applySchemaVersions, applyPendingSchemaVersionsForPackage } = require("./db/versions");
 const { applyGlobalPackageInstalls } = require("./install");
-const { createSchemaQuery, insertQuery, selectQuery } = require("./services/queryService");
+const { invalidateApplicationCaches } = require("./services/cacheService");
+const { insertQuery, selectQuery } = require("./services/queryService");
 const { HttpError } = require("./errors/HttpError");
 
 const REPO_ROOT = path.join(__dirname, "..");
@@ -91,24 +91,10 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
     return { applied: [] };
   }
 
-  const schemaApplied = await applyPendingSchemaVersionsForPackage({
-    pool,
-    packageName: machineName,
-  });
-
-  if (pkg.machineName) {
-    const client = await pool.connect();
-    try {
-      await client.query(createSchemaQuery(pkg.machineName));
-    } finally {
-      client.release();
-    }
-  }
-
   const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
   const latestVersion = getLatestVersion(updatesModule);
   if (!latestVersion) {
-    return { applied: schemaApplied.applied };
+    return { applied: [] };
   }
 
   let currentVersion = 0;
@@ -121,7 +107,7 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
   }
 
   if (currentVersion >= latestVersion) {
-    return { applied: schemaApplied.applied };
+    return { applied: [] };
   }
 
   for (let version = currentVersion + 1; version <= latestVersion; version += 1) {
@@ -139,9 +125,10 @@ async function applyPackageUpdatesForMachine(pool, machineName) {
     }
   }
 
+  await invalidateApplicationCaches();
+
   return {
     applied: [
-      ...schemaApplied.applied,
       {
         machineName: pkg.machineName,
         fromVersion: currentVersion,
@@ -184,22 +171,11 @@ async function checkPackageUpdates(pool) {
 }
 
 async function applyPackageUpdates(pool) {
-  await applySchemaVersions({ pool });
-
   const packages = await loadPackages({ strict: false });
   const orderedPackages = sortPackagesByDependencies(packages);
   const applied = [];
 
   for (const pkg of orderedPackages) {
-    if (pkg.machineName) {
-      const client = await pool.connect();
-      try {
-        await client.query(createSchemaQuery(pkg.machineName));
-      } finally {
-        client.release();
-      }
-    }
-
     const updatesModule = await loadUpdatesModule(pkg.machineName, pkg.path);
     const latestVersion = getLatestVersion(updatesModule);
     if (!latestVersion) continue;
@@ -240,6 +216,10 @@ async function applyPackageUpdates(pool) {
   }
 
   const installApplied = await applyGlobalPackageInstalls(pool, orderedPackages);
+
+  if (applied.length || installApplied?.length) {
+    await invalidateApplicationCaches();
+  }
 
   return { updatesNeeded: false, applied, installApplied };
 }
